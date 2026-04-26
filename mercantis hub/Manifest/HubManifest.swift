@@ -1,4 +1,4 @@
-import MercantisCore       // replace `import Foundation`
+import MercantisCore
 
 public enum HubManifest: Sendable {
     public static let appID   = "app.mercantis.hub"
