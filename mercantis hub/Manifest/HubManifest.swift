@@ -11,14 +11,16 @@ public enum HubManifest: Sendable {
             name: appName,
             version: version,
             minimumCoreVersion: "0.1.0",
-            docTypes: [],          // populate as modules come online
+            description: "Mercantis Hub — first-party ERP application built on Mercantis Core.",
+            doctypes: [],
             workflows: [],
-            automationRules: [],
-            reports: [],
-            dashboards: [],
             permissions: [],
-            localizations: [],
-            extensionPoints: .empty
+            reports: [],
+            automationRules: [],
+            dashboards: [],
+            localizations: []
+            // extensionPoints defaults to .empty
+            // iconAsset defaults to nil
         )
     }
 }
