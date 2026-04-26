@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		0A138FD12F9EAFF800377CC5 /* MercantisCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0A138FD02F9EAFF800377CC5 /* MercantisCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		0AA63F2D2F8C4394006B68B5 /* mercantis hub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mercantis hub.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0A138FD12F9EAFF800377CC5 /* MercantisCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "mercantis hub";
 			packageProductDependencies = (
+				0A138FD02F9EAFF800377CC5 /* MercantisCore */,
 			);
 			productName = "mercantis hub";
 			productReference = 0AA63F2D2F8C4394006B68B5 /* mercantis hub.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 0AA63F242F8C4394006B68B5;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0A138FCF2F9EAFF800377CC5 /* XCRemoteSwiftPackageReference "mercantis.core" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0AA63F2E2F8C4394006B68B5 /* Products */;
 			projectDirPath = "";
@@ -345,6 +354,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0A138FCF2F9EAFF800377CC5 /* XCRemoteSwiftPackageReference "mercantis.core" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/KevinBusuttil/mercantis.core.app";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0A138FD02F9EAFF800377CC5 /* MercantisCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A138FCF2F9EAFF800377CC5 /* XCRemoteSwiftPackageReference "mercantis.core" */;
+			productName = MercantisCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0AA63F252F8C4394006B68B5 /* Project object */;
 }

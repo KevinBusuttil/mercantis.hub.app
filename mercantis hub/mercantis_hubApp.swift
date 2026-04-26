@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MercantisCore
 
 @main
 struct mercantis_hubApp: App {
