@@ -6,8 +6,11 @@
 //
 
 import SwiftUI
+import MercantisCore
 
 struct ContentView: View {
+    let engine: DocumentEngine
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "building.2.crop.circle")
@@ -19,8 +22,4 @@ struct ContentView: View {
         }
         .padding()
     }
-}
-
-#Preview {
-    ContentView()
 }

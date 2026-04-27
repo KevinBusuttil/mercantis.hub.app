@@ -30,7 +30,7 @@ struct mercantis_hubApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(engine: documentEngine)
         }
     }
 
