@@ -1,6 +1,6 @@
 # Hub on Core — Progress
 
-_Last updated: 2026-04-26_
+_Last updated: 2026-04-27_
 
 This doc tracks Hub's incremental adoption of Mercantis Core's public API surface,
 following ADR-001 / ADR-007. Companion docs live in the Core repo:
@@ -59,137 +59,58 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 # Expected: rows for v1..v6
 ```
 
-## Next step — save a Customer document end-to-end
+## Next step — expand CRM (Contact, Address, Lead)
 
-Saving via `DocumentEngine.save(_:)` exercises ~60% of Core's engine surface in
-one round-trip: `ValidationPipeline` (7 stages), `NamingService`,
-`DocumentVersion` diff, `MutationRecord` append, `DocumentSavedEvent`.
+The Customer save round-trip works and the UI is now driven by Core's
+`GenericFormView` (Wall 1 resolved — see below). The next increment is to
+flesh out CRM with the remaining DocTypes from the module roadmap.
 
-Two commits, in order:
+For each new DocType:
 
-### Commit 1 — wire `DocumentEngine` to `ContentView`
+1. Add the `DocType` declaration to `Modules/CRM/CRMDocTypes.swift`
+   alongside `customer`. Mirror Customer's shape: required fields, a
+   `naming_series:` autoname, `lastWriteWins` sync policy, a System
+   Manager `PermissionRule`.
+2. Append it to `CRM.allDocTypes` so `HubManifest.build()` picks it up.
+3. Build & run. Verify with
+   `sqlite3 "$DB" "SELECT id, name, module FROM doctypes;"` —
+   the new DocType should appear with `module = CRM`.
+4. Add a form view under `UI/` (e.g. `ContactFormView.swift`) that
+   instantiates `GenericFormView(docType: CRM.contact, document: $doc)`
+   plus a Save button calling `engine.save(_:)`. Cross-doc references
+   (e.g. Contact → Customer) come later — they need `lookup` /
+   relational field handling in `GenericFormView`, which may surface
+   the next Core wall.
+5. Wire a navigation entry point in `mercantis_hubApp.swift` (likely a
+   `NavigationSplitView` once there is more than one DocType form).
 
-`mercantis_hubApp.swift` — change the `WindowGroup`:
+Suggested order: **Contact → Address → Lead**. Contact is the closest
+analogue to Customer (no relational fields if we keep the first cut
+simple). Lead needs a status workflow eventually but can start as a
+flat document.
 
-```swift
-var body: some Scene {
-    WindowGroup {
-        ContentView(engine: documentEngine)
-    }
-}
-```
-
-`ContentView.swift` — accept the engine:
-
-```swift
-struct ContentView: View {
-    let engine: DocumentEngine
-    var body: some View { /* placeholder */ }
-}
-```
-
-### Commit 2 — save round-trip
-
-Replace `ContentView.swift` with:
-
-```swift
-import SwiftUI
-import MercantisCore
-
-struct ContentView: View {
-    let engine: DocumentEngine
-
-    @State private var customerName: String = ""
-    @State private var lastSavedID: String?
-    @State private var errorMessage: String?
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "building.2.crop.circle")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Mercantis Hub")
-                .font(.title)
-                .fontWeight(.semibold)
-
-            TextField("Customer name", text: $customerName)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 280)
-
-            Button("Save Customer") { save() }
-                .disabled(customerName.trimmingCharacters(in: .whitespaces).isEmpty)
-
-            if let id = lastSavedID {
-                Text("Saved as \(id)")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            if let error = errorMessage {
-                Text(error).font(.callout).foregroundStyle(.red)
-            }
-        }
-        .padding()
-        .frame(minWidth: 360, minHeight: 240)
-    }
-
-    private func save() {
-        let now = Date()
-        let doc = Document(
-            id: "",                              // empty ⇒ NamingService resolves CUST-2026-0001
-            docType: "Customer",
-            company: "Default Company",
-            status: "",
-            createdAt: now,
-            updatedAt: now,
-            syncVersion: 0,
-            syncState: .local,
-            fields: ["customer_name": .string(customerName)],
-            children: [:]
-        )
-
-        do {
-            let saved = try engine.save(doc)
-            lastSavedID = saved.id
-            errorMessage = nil
-            customerName = ""
-        } catch {
-            errorMessage = String(describing: error)
-            lastSavedID = nil
-        }
-    }
-}
-```
-
-### Verify the round-trip
+### Verify each new DocType
 
 ```bash
-sqlite3 "$DB" "SELECT id, doctype, status, syncState, syncVersion FROM documents;"
-sqlite3 "$DB" "SELECT id, doctype, mutationType, status FROM sync_queue;"
-sqlite3 "$DB" "SELECT documentId, savedAt FROM document_versions;"
+sqlite3 "$DB" "SELECT id, name, module FROM doctypes;"
+sqlite3 "$DB" "SELECT id, doctype FROM documents ORDER BY createdAt DESC LIMIT 5;"
 sqlite3 "$DB" "SELECT seriesKey, value FROM naming_counters;"
 ```
 
-Expected after one save:
-- `documents`: one row, `id` like `CUST-2026-0001`
-- `sync_queue`: one `pending` `upsertDocument` (no CloudAdapter yet, so it stays pending — correct)
-- `document_versions`: one row recording the field diff
-- `naming_counters`: `Customer::CUST-2026-` → `1`
-
-Save a second customer — counter advances to 2.
-
 ## Known walls ahead
 
-### Wall 1 — `UIShell` is excluded from `MercantisCore`
+### Wall 1 — `UIShell` is excluded from `MercantisCore` ✅ resolved
 
-`GenericFormView` and `GenericListView` live under `mercantis core/UIShell/` in
-the Core repo. That folder is `exclude:`'d from the `MercantisCore` SwiftPM
-library product (see Core's `Package.swift`). Hub can't `import` them.
+Core now ships a separate `MercantisCoreUI` library product alongside
+`MercantisCore`, exposing `GenericFormView` and `GenericListView`.
+The Hub app target depends on both products (see
+`mercantis hub.xcodeproj/project.pbxproj`).
 
-Until that's fixed in Core, Hub UI is hand-rolled SwiftUI per DocType. When
-this becomes painful, file a P-item back to Core:
-> Promote `UIShell/` to a separate `MercantisCoreUI` library target, or
-> include it in `MercantisCore`.
-
-This is the next likely Core-side change driven by Hub's needs (P2.7 anticipated this).
+The real `GenericFormView` signature is
+`GenericFormView(docType: DocType, document: Binding<Document>, …)` —
+it's a renderer, not a save coordinator, so the caller still owns the
+`@State Document` and the save button. `UI/CustomerFormView.swift`
+shows the integration pattern; copy it for new DocTypes.
 
 ### Wall 2 — `Document.company` required field
 

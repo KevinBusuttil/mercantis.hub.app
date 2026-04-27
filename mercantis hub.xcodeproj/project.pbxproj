@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0A138FD12F9EAFF800377CC5 /* MercantisCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0A138FD02F9EAFF800377CC5 /* MercantisCore */; };
+		0A138FD32F9EAFF800377CC5 /* MercantisCoreUI in Frameworks */ = {isa = PBXBuildFile; productRef = 0A138FD22F9EAFF800377CC5 /* MercantisCoreUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A138FD12F9EAFF800377CC5 /* MercantisCore in Frameworks */,
+				0A138FD32F9EAFF800377CC5 /* MercantisCoreUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = "mercantis hub";
 			packageProductDependencies = (
 				0A138FD02F9EAFF800377CC5 /* MercantisCore */,
+				0A138FD22F9EAFF800377CC5 /* MercantisCoreUI */,
 			);
 			productName = "mercantis hub";
 			productReference = 0AA63F2D2F8C4394006B68B5 /* mercantis hub.app */;
@@ -371,6 +374,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0A138FCF2F9EAFF800377CC5 /* XCRemoteSwiftPackageReference "mercantis.core" */;
 			productName = MercantisCore;
+		};
+		0A138FD22F9EAFF800377CC5 /* MercantisCoreUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0A138FCF2F9EAFF800377CC5 /* XCRemoteSwiftPackageReference "mercantis.core" */;
+			productName = MercantisCoreUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

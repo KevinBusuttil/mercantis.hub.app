@@ -30,9 +30,7 @@ struct mercantis_hubApp: App {
 
     var body: some Scene {
         WindowGroup {
-            // Swap to `CustomerFormView(engine: documentEngine)` once Core
-            // ships MercantisCoreUI (see UI/CustomerFormView.swift).
-            ContentView(engine: documentEngine)
+            CustomerFormView(engine: documentEngine)
         }
     }
 
