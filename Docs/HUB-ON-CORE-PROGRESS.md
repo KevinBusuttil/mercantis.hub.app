@@ -1,6 +1,6 @@
 # Hub on Core — Progress
 
-_Last updated: 2026-04-27_
+_Last updated: 2026-04-28_
 
 This doc tracks Hub's incremental adoption of Mercantis Core's public API surface,
 following ADR-001 / ADR-007. Companion docs live in the Core repo:
@@ -38,6 +38,13 @@ following ADR-001 / ADR-007. Companion docs live in the Core repo:
 ✅ **Stub placeholder removed** — `Shared/HubDocTypeDescriptor.swift` and the
   empty Sales/Buying/Inventory/Accounting/HR/Manufacturing/Projects/Assets module
   folders deleted. `Modules/CRM/` is the only module folder.
+✅ **Module-driven navigation shell** — `Navigation/HubNavigation.swift` defines
+  `HubModule` → `HubMenuGroup` → `HubMenuItem` (DocType / Report / Dashboard).
+  Each module contributes its own `<Name>Navigation.swift` (see
+  `Modules/CRM/CRMNavigation.swift`). `UI/RootView.swift` renders a
+  `NavigationSplitView` driven by `HubNavigation.allModules`. The same DocType
+  can appear under multiple modules — Hub composes the tree, Core's `module`
+  string on `DocType` is just a hint.
 
 ## Verification
 
@@ -81,8 +88,12 @@ For each new DocType:
    (e.g. Contact → Customer) come later — they need `lookup` /
    relational field handling in `GenericFormView`, which may surface
    the next Core wall.
-5. Wire a navigation entry point in `mercantis_hubApp.swift` (likely a
-   `NavigationSplitView` once there is more than one DocType form).
+5. Add the DocType to `Modules/CRM/CRMNavigation.swift` (in the appropriate
+   `HubMenuGroup`) so it appears in the sidebar. Cross-module DocTypes go in
+   each module's nav file (e.g. Customer is referenced from both
+   `CRMNavigation.swift` and a future `SalesNavigation.swift`). Routing in
+   `UI/RootView.swift`'s `docTypeDetail(_:)` then needs a case for the new
+   DocType ID.
 
 Suggested order: **Contact → Address → Lead**. Contact is the closest
 analogue to Customer (no relational fields if we keep the first cut
