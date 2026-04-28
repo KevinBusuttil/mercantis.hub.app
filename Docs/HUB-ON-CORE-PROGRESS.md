@@ -136,6 +136,190 @@ Harmless. Comes from Core's CLI target declaring a `systemLibrary` for
 the CLI executable, but SwiftPM emits the hint during resolution. Either
 ignore, or `brew install sqlite3` to silence.
 
+### Walls 4–9 — Core capabilities required for ERP breadth
+
+The walls below are **upcoming**, not resolved. Each blocks specific
+ERP DocType groups; the entries describe what Hub expects Core to
+deliver, the DocTypes that unlock when it lands, and a suggested
+resolution order. Hub will not pre-declare DocTypes that depend on an
+unresolved wall — adoption is incremental, post-resolution.
+
+Suggested order: **W4 → W5 → W6 → W7 → W8 → W9**, with W8 (tree
+DocTypes) optionally slotted earlier if Item Group / Customer Group
+hierarchies are wanted before Stock.
+
+#### Wall 4 — Relational fields (`link`)
+
+ERP DocTypes constantly reference each other: Customer.customer_group,
+Item.item_group, Sales Order.customer, Address.linked_to, etc. Today
+`FieldType` only covers scalar/primitive cases (`.string`, `.int`,
+`.double`, `.bool`, `.date`, `.dateTime`, `.data`, `.array` — see the
+P1.6 list under "Useful Core API references" below). There is no
+`.link` case.
+
+Hub-side expectations:
+- A new `FieldType.link(targetDocType: String)` (or an equivalent
+  `linkedDocType` parameter on `FieldDefinition` alongside an existing
+  type case).
+- Storage: link value persists as the target document's ID string —
+  reuses the existing Document ID system; no new join table needed.
+- `MercantisCoreUI.GenericFormView` renders link fields as a
+  search-and-pick combo box backed by `engine.lookup(...)` (which Core
+  already exposes per the API reference list). Hub won't need to wire
+  this per-field once the renderer handles `.link`.
+- Save-time validation: linked ID must resolve to an existing document
+  of the declared `targetDocType`; otherwise save fails with a typed
+  error.
+- Optional follow-up: cascade behavior on target-delete (block /
+  set-null / cascade). Can defer.
+
+DocTypes unlocked (not exhaustive): **Address** (the whole point of
+Address is `linked_to: Customer/Supplier`), **Customer**'s
+`customer_group` / `territory` / default price list, **Item**'s
+`item_group`, every transactional DocType's `customer` / `supplier` /
+`item` references.
+
+#### Wall 5 — Child tables
+
+Sales orders, quotations, invoices, journal entries, BOMs all carry
+N rows of structured data inside the parent (line items, debit/credit
+rows, BOM operations). ERPNext models these as child DocTypes
+(`isChildTable: true`) referenced by a parent field of type `.table`.
+
+Core has primitives in place: `Document.children: [String: [ChildRow]]`
+exists (per the API references), and `DocType` already accepts
+`isChildTable` (used as `false` everywhere in Hub today). What's
+missing is the parent-side declaration linking a field to a child
+DocType, plus form rendering.
+
+Hub-side expectations:
+- A new `FieldType.table(childDocType: String)` (or DocType-level
+  `childTables: [...]` declaration).
+- `GenericFormView` renders table fields as an inline editable grid:
+  row = a child DocType form; add/remove row controls; column ordering
+  follows the child DocType's `fields` array.
+- `engine.save(_:)` propagates parent + children atomically. Cancel /
+  amend follow the parent's lifecycle.
+- `engine.fetch` returns parent's children populated; `engine.list`
+  treats children as opaque (parent-level filtering only).
+
+DocTypes unlocked: **Quotation**, **Sales Order**, **Sales Invoice**,
+**Purchase Order**, **Purchase Invoice**, **Journal Entry** (debit/
+credit rows), **BOM**, **Stock Entry** (item rows). Combined with W4,
+also unlocks **Contact** / **Address** with proper Links child tables.
+
+#### Wall 6 — Submittable + workflow
+
+ERPNext distinguishes Draft (editable, no side effects) from Submitted
+(signed, immutable, downstream effects fire). Submit is a per-DocType
+lifecycle action; the workflow defines the state machine and role
+gating.
+
+Core has the primitives: `engine.submit / cancel / amend` exist;
+`WorkflowDefinition` is in `AppRuntimeTypes.swift`;
+`SyncPolicy.immutableAfterSubmit` exists. What's missing is the wiring
+that makes the form behave correctly across states.
+
+Hub-side expectations:
+- DocType declares `isSubmittable: Bool` and optional
+  `workflow: WorkflowDefinition`.
+- `WorkflowDefinition` expresses states + transitions + per-transition
+  role gating.
+- `Document.status` reflects current workflow state (already a top-level
+  field on `Document`).
+- `GenericFormView` shows state-aware action buttons: **Save** while
+  Draft; **Submit** when Draft completes; **Cancel** when Submitted;
+  **Amend** when Cancelled (clones to a new Draft with a derived ID).
+- Field-level: `readOnlyAfterSubmit: Bool` so fields freeze
+  post-submit. Core's `SyncPolicy.immutableAfterSubmit` should be
+  enforced at the engine level (save fails on submitted docs unless
+  via amend).
+
+DocTypes unlocked: every transactional DocType — **Sales Order**,
+**Sales Invoice**, **Purchase Order**, **Purchase Invoice**, **Stock
+Entry**, **Delivery Note**, **Purchase Receipt**, **Journal Entry**,
+**Payment Entry**, **Asset**, **Work Order**.
+
+#### Wall 7 — Ledger / derived documents
+
+Stock Ledger Entry and GL Entry are append-only ledgers populated
+automatically when source documents (Delivery Note, Sales Invoice,
+etc.) are submitted. They are not user-edited; they are a system
+byproduct of submits and reverse on cancel. Reports query them.
+
+Distinct from W6: this is about declarative side-effects on submit /
+cancel, not the lifecycle itself.
+
+Hub-side expectations:
+- Mechanism for declaring "when source DocType X is submitted, create
+  N entries in target DocType Y based on rule R". Could express via
+  the existing `AutomationRule` (per `AppRuntimeTypes.swift`) or via a
+  new ledger-specific primitive.
+- Engine enforces ledger immutability: ledger DocTypes refuse direct
+  edits; cancelling the source doc creates reversing entries with a
+  back-reference to the original.
+- `engine.list` over a ledger returns rows in source-time order; reports
+  built on top can group / aggregate.
+
+DocTypes unlocked: **Stock Ledger Entry** (from Stock Entry, Delivery
+Note, Purchase Receipt, Stock Reconciliation), **GL Entry** (from
+Sales Invoice, Purchase Invoice, Journal Entry, Payment Entry, Asset
+depreciation), **Bin** (cached aggregation of Stock Ledger by item +
+warehouse — could be derived eagerly or on-demand).
+
+#### Wall 8 — Tree DocTypes
+
+Chart of Accounts, Item Group, Territory, Customer Group, Supplier
+Group, Department, Cost Center are hierarchical — each record has a
+parent of the same DocType. Frappe stores `parent`, `lft`, `rgt` for
+nested-set queries; Core's storage details are an internal choice as
+long as the API exposes parent + descendants/ancestors queries.
+
+Independent of W5–W7. Could land any time after W4 — slot earlier if
+Item Group is wanted before Stock.
+
+Hub-side expectations:
+- DocType declares `isTree: Bool` (and optionally `treeRootName: String`
+  for an implicit root row, à la "All Item Groups").
+- Document gains a `parentID: String?` field (or equivalent canonical
+  mechanism) — Core decides whether this is a top-level Document field
+  or part of `fields` with a magic key.
+- API: `engine.fetchTree(docType: String)` returns the hierarchy in a
+  render-friendly form, OR a pair of `engine.descendants(of:)` /
+  `ancestors(of:)` lookups.
+- Forms render the parent picker as a tree-aware selector. Could reuse
+  W4's link UI with a "show as tree" hint.
+
+DocTypes unlocked: **Account**, **Cost Center**, **Item Group**,
+**Territory**, **Customer Group**, **Supplier Group**, **Department**,
+**Project Task** (sub-tasks).
+
+#### Wall 9 — Report engine
+
+ERPNext reports come in two flavors (query-driven / script-driven). For
+Hub v1, a saved-query engine is sufficient: declare columns, filters,
+sorts, group-bys, optional joins; engine returns rows; Hub renders in
+a `Table`.
+
+Core already exposes `ReportDefinition` (per the API reference list).
+What's missing is the runtime + a renderer in `MercantisCoreUI`.
+
+Hub-side expectations:
+- `ReportDefinition` declares: source DocType, columns (incl. computed
+  expressions), filters, groupBy, sortBy, optional join with another
+  DocType via a W4 link field (so reports can show, e.g., Customer
+  name alongside Sales Invoice rows).
+- `engine.runReport(id: String, filters: [...])` returns typed rows.
+- A new `GenericReportView` in `MercantisCoreUI` renders rows in a
+  SwiftUI `Table` with column sort + filter chips. Hub's existing
+  `HubMenuItem.report` case in `Navigation/HubNavigation.swift` then
+  routes to this renderer.
+
+Unlocks Hub's sidebar **Reports** entries (currently a placeholder in
+`UI/RootView.swift`'s `detail` switch). Specific reports to ship once
+W9 lands: **Sales Register**, **Customer Aging**, **Stock Ledger View**
+(needs W7), **Trial Balance** (needs W7 + W8).
+
 ## Module roadmap
 
 Once the Customer save round-trip works, the next modules to add (in rough
