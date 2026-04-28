@@ -30,8 +30,9 @@ struct mercantis_hubApp: App {
 
     var body: some Scene {
         WindowGroup {
-            CustomerFormView(engine: documentEngine)
+            RootView(engine: documentEngine)
         }
+        .defaultSize(width: 1100, height: 720)
     }
 
     // MARK: - Bootstrap helpers
