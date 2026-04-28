@@ -18,8 +18,18 @@ struct RootView: View {
         List(selection: $selection) {
             ForEach(HubNavigation.allModules) { module in
                 Section {
-                    ForEach(module.groups.indices, id: \.self) { idx in
-                        groupView(module.groups[idx])
+                    ForEach(module.groups.indices, id: \.self) { gIdx in
+                        let group = module.groups[gIdx]
+                        if let label = group.label {
+                            Text(label)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                        }
+                        ForEach(group.items, id: \.self) { item in
+                            Label(item.label, systemImage: item.systemImage)
+                        }
                     }
                 } header: {
                     Label(module.label, systemImage: module.systemImage)
@@ -29,21 +39,6 @@ struct RootView: View {
         .listStyle(.sidebar)
         .navigationTitle("Mercantis Hub")
         .frame(minWidth: 220)
-    }
-
-    @ViewBuilder
-    private func groupView(_ group: HubMenuGroup) -> some View {
-        if let label = group.label {
-            Text(label)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-        }
-        ForEach(group.items) { item in
-            Label(item.label, systemImage: item.systemImage)
-                .tag(item as HubMenuItem?)
-        }
     }
 
     @ViewBuilder
