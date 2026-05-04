@@ -1,5 +1,6 @@
 import SwiftUI
 import MercantisCore
+import MercantisCoreUI
 
 struct RootView: View {
     let engine: DocumentEngine
@@ -74,7 +75,7 @@ struct RootView: View {
         Group {
             switch selection {
             case .docType(let docType):
-                docTypeDetail(docType)
+                HubDocTypeView(docType: docType, engine: engine)
             case .report(_, let label):
                 placeholder("\(label) — Reports not yet implemented")
             case .dashboard(_, let label):
@@ -90,16 +91,6 @@ struct RootView: View {
         .navigationTitle(selection?.label ?? "Mercantis Hub")
     }
 
-    @ViewBuilder
-    private func docTypeDetail(_ docType: DocType) -> some View {
-        switch docType.id {
-        case "Customer":
-            CustomerFormView(engine: engine)
-        default:
-            placeholder("\(docType.name) — coming soon")
-        }
-    }
-
     private func placeholder(_ text: String) -> some View {
         VStack {
             Spacer()
@@ -107,5 +98,78 @@ struct RootView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct HubDocTypeView: View {
+    let docType: DocType
+    let engine: DocumentEngine
+
+    @State private var document: Document
+    @State private var lastSavedID: String?
+    @State private var errorMessage: String?
+
+    init(docType: DocType, engine: DocumentEngine) {
+        self.docType = docType
+        self.engine = engine
+        let now = Date()
+        self._document = State(initialValue: Document(
+            id: "",
+            docType: docType.id,
+            company: "",
+            status: "",
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: 0,
+            syncState: .local,
+            fields: [:],
+            children: [:]
+        ))
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            GenericFormView(
+                docType: docType,
+                document: $document,
+                linkSearchProvider: { targetDocType, _ in
+                    (try? engine.list(docType: targetDocType)) ?? []
+                },
+                childDocTypeProvider: { HubManifest.docType(for: $0) }
+            )
+            Button("Save \(docType.name)") { save() }
+            if let id = lastSavedID {
+                Text("Saved as \(id)").font(.callout).foregroundStyle(.secondary)
+            }
+            if let error = errorMessage {
+                Text(error).font(.callout).foregroundStyle(.red)
+            }
+        }
+        .padding()
+        .frame(minWidth: 360, minHeight: 320)
+    }
+
+    private func save() {
+        do {
+            let saved = try engine.save(document)
+            lastSavedID = saved.id
+            errorMessage = nil
+            let now = Date()
+            document = Document(
+                id: "",
+                docType: docType.id,
+                company: "",
+                status: "",
+                createdAt: now,
+                updatedAt: now,
+                syncVersion: 0,
+                syncState: .local,
+                fields: [:],
+                children: [:]
+            )
+        } catch {
+            errorMessage = String(describing: error)
+            lastSavedID = nil
+        }
     }
 }
