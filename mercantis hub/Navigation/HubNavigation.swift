@@ -53,6 +53,7 @@ extension HubMenuItem: Hashable {
 
 enum HubNavigation {
     static let allModules: [HubModule] = [
-        CRM.module
+        CRM.module,
+        Setup.module
     ]
 }
