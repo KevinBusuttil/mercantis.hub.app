@@ -77,27 +77,32 @@ struct RootView: View {
             case .docType(let docType):
                 HubDocTypeView(docType: docType, engine: engine)
             case .report(_, let label):
-                placeholder("\(label) — Reports not yet implemented")
+                reportPlaceholder(label: label)
             case .dashboard(_, let label):
-                placeholder("\(label) — Dashboards not yet implemented")
+                dashboardPlaceholder(label: label)
             case .none:
-                ContentUnavailableView(
-                    "Select an item",
-                    systemImage: "square.grid.2x2",
-                    description: Text("Choose a record type, report or dashboard from the sidebar.")
-                )
+                HubHomeView(engine: engine) { item in
+                    selection = item
+                }
             }
         }
         .navigationTitle(selection?.label ?? "Mercantis Hub")
     }
 
-    private func placeholder(_ text: String) -> some View {
-        VStack {
-            Spacer()
-            Text(text).foregroundStyle(.secondary)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func reportPlaceholder(label: String) -> some View {
+        ContentUnavailableView(
+            label,
+            systemImage: "chart.bar.doc.horizontal",
+            description: Text("Report rendering arrives when Core ships GenericReportView (Core Phase UX-4). Until then this view stays a placeholder rather than a stubbed table.")
+        )
+    }
+
+    private func dashboardPlaceholder(label: String) -> some View {
+        ContentUnavailableView(
+            label,
+            systemImage: "rectangle.grid.2x2",
+            description: Text("Dashboards arrive when Core ships GenericDashboardView (Core Phase UX-4). The widget definitions for this dashboard are tracked in HubDashboards.swift.")
+        )
     }
 }
 
