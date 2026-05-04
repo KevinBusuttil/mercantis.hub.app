@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/KevinBusuttil/mercantis.core.app",
       "state" : {
-        "branch" : "main",
-        "revision" : "dac58a3a115ad6c8cbae120a762f57032c7a7303"
+        "branch" : "claude/ux-plan-core-hub-rhoVV",
+        "revision" : "afc706d3a10ccb83585656580ae97a30d2028db6"
       }
     },
     {

@@ -44,7 +44,31 @@ enum CRM {
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
         indexes: [],
         searchFields: ["customer_name", "email"],
-        titleField: "customer_name"
+        titleField: "customer_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "identity",
+                title: "Customer",
+                fieldKeys: ["customer_name", "customer_type", "customer_group", "territory"]
+            ),
+            FormLayoutSection(
+                key: "contact",
+                title: "Contact",
+                helpText: "How sales and support reach this customer.",
+                fieldKeys: ["email", "phone", "mobile", "website"]
+            ),
+            FormLayoutSection(
+                key: "financial",
+                title: "Financial",
+                helpText: "Tax registration and accounts-receivable terms.",
+                fieldKeys: ["tax_id", "credit_limit", "payment_terms"]
+            ),
+            FormLayoutSection(
+                key: "notes",
+                title: "Notes",
+                fieldKeys: ["notes"]
+            )
+        ])
     )
 
     static let contact = DocType(
@@ -76,7 +100,24 @@ enum CRM {
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
         indexes: [],
         searchFields: ["first_name", "last_name", "email_id"],
-        titleField: "first_name"
+        titleField: "first_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "name",
+                title: "Name",
+                fieldKeys: ["first_name", "last_name"]
+            ),
+            FormLayoutSection(
+                key: "reach",
+                title: "Reach",
+                fieldKeys: ["email_id", "mobile_no", "phone"]
+            ),
+            FormLayoutSection(
+                key: "company",
+                title: "Company",
+                fieldKeys: ["company_name", "designation", "department", "address"]
+            )
+        ])
     )
 
     static let address = DocType(
@@ -107,7 +148,24 @@ enum CRM {
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
         indexes: [],
         searchFields: ["address_title", "city", "country"],
-        titleField: "address_title"
+        titleField: "address_title",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "label",
+                title: "Address",
+                fieldKeys: ["address_title", "address_type"]
+            ),
+            FormLayoutSection(
+                key: "street",
+                title: "Street",
+                fieldKeys: ["address_line1", "address_line2", "city", "state", "country", "pincode"]
+            ),
+            FormLayoutSection(
+                key: "reach",
+                title: "Reach",
+                fieldKeys: ["phone", "fax"]
+            )
+        ])
     )
 
     static let lead = DocType(
@@ -142,7 +200,30 @@ enum CRM {
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
         indexes: [],
         searchFields: ["lead_name", "company_name", "email_id"],
-        titleField: "lead_name"
+        titleField: "lead_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "identity",
+                title: "Lead",
+                fieldKeys: ["lead_name", "company_name"]
+            ),
+            FormLayoutSection(
+                key: "pipeline",
+                title: "Pipeline",
+                helpText: "Where this lead sits in the sales process.",
+                fieldKeys: ["status", "source", "territory"]
+            ),
+            FormLayoutSection(
+                key: "reach",
+                title: "Reach",
+                fieldKeys: ["email_id", "mobile_no", "phone"]
+            ),
+            FormLayoutSection(
+                key: "notes",
+                title: "Notes",
+                fieldKeys: ["notes"]
+            )
+        ])
     )
 
     static let allDocTypes: [DocType] = [customer, contact, address, lead]
