@@ -237,7 +237,7 @@ For each new DocType:
    Manager `PermissionRule`.
 2. Append it to `CRM.allDocTypes` so `HubManifest.build()` picks it up.
 3. Build & run. Verify with
-   `sqlite3 "$DB" "SELECT id, name, module FROM doctypes;"` —
+   `sqlite3 "$DB" "SELECT id, name, module FROM doctypes;"`
    the new DocType should appear with `module = CRM`.
 4. Add a form view under `UI/` (e.g. `ContactFormView.swift`) that
    instantiates `GenericFormView(docType: CRM.contact, document: $doc)`
@@ -520,6 +520,20 @@ The CLI's `mercantis new-doctype` scaffold output is also a working template.
 
 ---
 
+## UX/Product Direction
+
+Hub's UX strategy and product evolution plan are documented in [`Docs/HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md). Key points:
+
+- The current `RootView` is correct scaffolding for this stage; the long-term direction is a configurable Core shell API.
+- Hub should evolve from form-only DocType screens toward full workspace views with list, browse, and detail modes.
+- Module navigation polish (counts, badges, domain tones) comes after Core's design token layer matures (Core Phase UX-2).
+- Empty module areas should show honest `ContentUnavailableView` states, not bare placeholder strings.
+- The phased roadmap (Phases HUX-1 through HUX-5) is defined in that document.
+
+Core's companion UX direction: [`mercantis.core.app/Docs/UX-DIRECTION.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/UX-DIRECTION.md).
+
+---
+
 ## Cross-references
 
 - Core-side: [`STATUS.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/STATUS.md)
@@ -528,3 +542,4 @@ The CLI's `mercantis new-doctype` scaffold output is also a working template.
   — full Core architecture.
 - Core-side: [`ADR/`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/ADR/)
   — architecture decision records.
+- [`Docs/HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md) — Hub ERP UX direction, product strategy, and phased UX roadmap.
