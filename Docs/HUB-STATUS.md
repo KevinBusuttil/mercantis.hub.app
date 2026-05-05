@@ -1,8 +1,27 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-04_
+_Last updated: 2026-05-05 (Core Phase A landed — list operators, row access, audit log, workflow transition history)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
+
+> **Core Phase A is in (2026-05-05).** The four engine-level gaps STATUS.md flagged
+> (typed list operators, auto-applied row-level access, persisted workflow transition
+> history, and a real audit-log writer) all shipped on `mercantis.core.app` branch
+> `claude/review-next-steps-IFyi2`. Hub gains four new capabilities for free as soon
+> as it bumps its Core dependency:
+>
+> 1. List views can use `ListFilter` predicates (`gt`, `between`, `in`, `like`, etc.)
+>    instead of equality-only filters. Pushdown to SQL is automatic for system
+>    columns and indexed fields. (ADR-036)
+> 2. DocTypes can declare `rowAccessExpression` and `engine.list(...)` filters
+>    rows automatically — no per-call permission plumbing. (ADR-037)
+> 3. Every workflow transition persists to `workflow_transitions` and is readable
+>    via `engine.workflowTransitions(of: documentId)`. (ADR-038)
+> 4. Every document write appends to `audit_log` atomically; readable via
+>    `engine.auditEntries(forDocumentId:)`. Compliance trail is on by default. (ADR-039)
+>
+> The Walls 4–9 sequencing below is unchanged — Phase A was engine fitness, not
+> ERP breadth. Walls 4–9 are still the next moves on the Core side.
 
 Companion docs in the Core repo:
 
