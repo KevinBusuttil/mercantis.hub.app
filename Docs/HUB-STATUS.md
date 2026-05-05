@@ -1,27 +1,37 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Core Phase A landed — list operators, row access, audit log, workflow transition history)_
+_Last updated: 2026-05-05 (Core Phase B landed — scheduled automation, naming rules, counter block reservation)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
-> **Core Phase A is in (2026-05-05).** The four engine-level gaps STATUS.md flagged
-> (typed list operators, auto-applied row-level access, persisted workflow transition
-> history, and a real audit-log writer) all shipped on `mercantis.core.app` branch
-> `claude/review-next-steps-IFyi2`. Hub gains four new capabilities for free as soon
-> as it bumps its Core dependency:
+> **Core Phase A + B are both in (2026-05-05).** Seven engine-level gaps closed
+> in two stacked revisions on `mercantis.core.app` branch `claude/review-next-steps-IFyi2`.
+> Hub gains seven capabilities for free on its next Core dependency bump:
 >
-> 1. List views can use `ListFilter` predicates (`gt`, `between`, `in`, `like`, etc.)
->    instead of equality-only filters. Pushdown to SQL is automatic for system
->    columns and indexed fields. (ADR-036)
-> 2. DocTypes can declare `rowAccessExpression` and `engine.list(...)` filters
->    rows automatically — no per-call permission plumbing. (ADR-037)
-> 3. Every workflow transition persists to `workflow_transitions` and is readable
->    via `engine.workflowTransitions(of: documentId)`. (ADR-038)
-> 4. Every document write appends to `audit_log` atomically; readable via
->    `engine.auditEntries(forDocumentId:)`. Compliance trail is on by default. (ADR-039)
+> Phase A (engine fitness):
 >
-> The Walls 4–9 sequencing below is unchanged — Phase A was engine fitness, not
-> ERP breadth. Walls 4–9 are still the next moves on the Core side.
+> 1. `ListFilter` predicates for list views (`gt`, `between`, `in`, `like`, …),
+>    with automatic SQL pushdown for system columns and indexed fields. (ADR-036)
+> 2. `DocType.rowAccessExpression` is auto-applied by `engine.list(...)`. No
+>    per-call permission plumbing. (ADR-037)
+> 3. Workflow transitions persist to `workflow_transitions`; reader on
+>    `engine.workflowTransitions(of:)`. (ADR-038)
+> 4. Every write appends to `audit_log` atomically; reader on
+>    `engine.auditEntries(forDocumentId:)`. (ADR-039)
+>
+> Phase B (wiring + naming):
+>
+> 5. `DocType.namingRules: [DocumentNamingRule]` for per-company / per-fiscal-year /
+>    per-warehouse conditional naming series. (ADR-040)
+> 6. `AutomationRule.schedule: ScheduleInterval?` + runner ↔ scheduler integration:
+>    `onSchedule` rules now fire across every document of the rule's DocType,
+>    with per-document condition gating. (ADR-041)
+> 7. Per-device counter blocks (migration v9, `naming_counter_blocks`): two
+>    devices saving offline never pick the same `SINV-2026-0001`. (ADR-042)
+>
+> The Walls 4–9 sequencing below is unchanged — Phases A + B were engine fitness,
+> not ERP breadth. Walls 4–9 (link fields, child tables, submittables, ledgers,
+> trees, reports) are still the next moves on the Core side.
 
 Companion docs in the Core repo:
 
