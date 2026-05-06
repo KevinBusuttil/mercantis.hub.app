@@ -214,8 +214,7 @@ enum Setup {
     )
 
     /// Price list. Per-customer-group / per-currency pricing reference.
-    /// Item-level price rows (the actual numbers) are a child-table concern
-    /// blocked on Wall 5; this DocType is the linkable header.
+    /// Item-level price rows live in the `items` child table (Wall 5).
     static let priceList = DocType(
         id: "PriceList",
         name: "Price List",
@@ -232,7 +231,9 @@ enum Setup {
             FieldDefinition(key: "selling", label: "Used for Selling",
                             type: .boolean, required: false, defaultValue: .bool(true)),
             FieldDefinition(key: "enabled", label: "Enabled",
-                            type: .boolean, required: false, defaultValue: .bool(true))
+                            type: .boolean, required: false, defaultValue: .bool(true)),
+            FieldDefinition(key: "items", label: "Item Rates",
+                            type: .table, required: false, childDocType: "ItemPrice")
         ],
         permissions: [systemManagerPermission],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
@@ -241,16 +242,49 @@ enum Setup {
         titleField: "price_list_name"
     )
 
+    /// One row inside a PriceList.items child table — the per-item rate
+    /// for the parent price list. (Wall 5)
+    static let itemPrice = DocType(
+        id: "ItemPrice",
+        name: "Item Price",
+        module: "Setup",
+        appId: HubManifest.appID,
+        isChildTable: true,
+        fields: [
+            FieldDefinition(key: "item", label: "Item",
+                            type: .link, required: true, linkedDocType: "Item"),
+            FieldDefinition(key: "uom", label: "UOM",
+                            type: .link, required: false, linkedDocType: "UOM"),
+            FieldDefinition(key: "rate", label: "Rate",
+                            type: .currency, required: true),
+            FieldDefinition(key: "min_qty", label: "Min Qty",
+                            type: .decimal, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "valid_from", label: "Valid From",
+                            type: .date, required: false),
+            FieldDefinition(key: "valid_upto", label: "Valid Upto",
+                            type: .date, required: false)
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: [],
+        titleField: "item"
+    )
+
     static let allDocTypes: [DocType] = [
+        // Tree masters
         customerGroup,
         territory,
         itemGroup,
         supplierGroup,
         warehouse,
         costCenter,
+        // Flat masters
         currency,
         uom,
         brand,
-        priceList
+        priceList,
+        // Child DocTypes
+        itemPrice
     ]
 }

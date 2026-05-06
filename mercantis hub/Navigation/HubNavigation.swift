@@ -56,6 +56,8 @@ enum HubNavigation {
         CRM.module,
         Selling.module,
         Buying.module,
+        Stock.module,
+        Accounting.module,
         Setup.module
     ]
 }

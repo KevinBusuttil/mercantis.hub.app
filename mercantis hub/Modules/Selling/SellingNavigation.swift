@@ -6,6 +6,11 @@ extension Selling {
         groups: [
             HubMenuGroup(label: "Catalogue", items: [
                 .docType(Selling.item)
+            ]),
+            HubMenuGroup(label: "Transactions", items: [
+                .docType(Selling.quotation),
+                .docType(Selling.salesOrder),
+                .docType(Selling.salesInvoice)
             ])
         ]
     )

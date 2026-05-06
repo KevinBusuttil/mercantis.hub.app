@@ -6,6 +6,11 @@ extension Buying {
         groups: [
             HubMenuGroup(label: "Suppliers", items: [
                 .docType(Buying.supplier)
+            ]),
+            HubMenuGroup(label: "Transactions", items: [
+                .docType(Buying.supplierQuotation),
+                .docType(Buying.purchaseOrder),
+                .docType(Buying.purchaseInvoice)
             ])
         ]
     )
