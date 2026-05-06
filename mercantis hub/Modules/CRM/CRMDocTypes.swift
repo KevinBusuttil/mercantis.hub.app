@@ -33,6 +33,14 @@ enum CRM {
             FieldDefinition(key: "mobile", label: "Mobile", type: .phone, required: false),
             FieldDefinition(key: "website", label: "Website", type: .text, required: false),
             FieldDefinition(key: "tax_id", label: "Tax ID", type: .text, required: false),
+            FieldDefinition(key: "default_currency", label: "Default Currency",
+                            type: .link, required: false, linkedDocType: "Currency"),
+            FieldDefinition(key: "default_price_list", label: "Default Price List",
+                            type: .link, required: false, linkedDocType: "PriceList"),
+            FieldDefinition(key: "default_cost_center", label: "Default Cost Center",
+                            type: .link, required: false, linkedDocType: "CostCenter"),
+            FieldDefinition(key: "default_warehouse", label: "Default Warehouse",
+                            type: .link, required: false, linkedDocType: "Warehouse"),
             FieldDefinition(key: "credit_limit", label: "Credit Limit", type: .currency,
                             required: false),
             FieldDefinition(key: "payment_terms", label: "Payment Terms", type: .text,
@@ -56,6 +64,13 @@ enum CRM {
                 title: "Contact",
                 helpText: "How sales and support reach this customer.",
                 fieldKeys: ["email", "phone", "mobile", "website"]
+            ),
+            FormLayoutSection(
+                key: "defaults",
+                title: "Defaults",
+                helpText: "Used when raising new transactions for this customer.",
+                fieldKeys: ["default_currency", "default_price_list",
+                            "default_cost_center", "default_warehouse"]
             ),
             FormLayoutSection(
                 key: "financial",
@@ -193,6 +208,8 @@ enum CRM {
             FieldDefinition(key: "phone", label: "Phone", type: .phone, required: false),
             FieldDefinition(key: "territory", label: "Territory", type: .link,
                             required: false, linkedDocType: "Territory"),
+            FieldDefinition(key: "converted_customer", label: "Converted Customer",
+                            type: .link, required: false, linkedDocType: "Customer"),
             FieldDefinition(key: "notes", label: "Notes", type: .longText, required: false)
         ],
         permissions: [systemManagerPermission],
@@ -217,6 +234,12 @@ enum CRM {
                 key: "reach",
                 title: "Reach",
                 fieldKeys: ["email_id", "mobile_no", "phone"]
+            ),
+            FormLayoutSection(
+                key: "conversion",
+                title: "Conversion",
+                helpText: "Once this lead becomes a paying customer, link the resulting Customer record here.",
+                fieldKeys: ["converted_customer"]
             ),
             FormLayoutSection(
                 key: "notes",

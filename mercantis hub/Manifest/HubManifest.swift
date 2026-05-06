@@ -5,7 +5,11 @@ public enum HubManifest: Sendable {
     public static let appName = "Mercantis Hub"
     public static let version = "0.1.0"
 
-    public static let allDocTypes: [DocType] = CRM.allDocTypes + Setup.allDocTypes
+    public static let allDocTypes: [DocType] =
+        CRM.allDocTypes
+        + Setup.allDocTypes
+        + Selling.allDocTypes
+        + Buying.allDocTypes
 
     public static func docType(for id: String) -> DocType? {
         allDocTypes.first { $0.id == id }
