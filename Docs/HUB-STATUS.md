@@ -1,13 +1,14 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Core Phase C landed — files/attachments, print/PDF, dashboards, import/export)_
+_Last updated: 2026-05-05 (Core Phases A–D landed — engine is feature-complete)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
-> **Core Phases A + B + C are all in (2026-05-05).** Eleven engine-level
-> capabilities shipped in three stacked revisions on `mercantis.core.app`
-> branch `claude/review-next-steps-IFyi2`. Hub gains them all on its next
-> Core dependency bump.
+> **Core Phases A + B + C + D are all in (2026-05-05).** Fourteen
+> engine-level capabilities shipped in four stacked revisions on
+> `mercantis.core.app` branch `claude/review-next-steps-IFyi2`. The Core
+> engine is now feature-complete relative to the original ERP-readiness
+> scorecard. Hub gains all fourteen on its next Core dependency bump.
 >
 > **Phase A (engine fitness):**
 >
@@ -40,10 +41,27 @@ This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` 
 >     through `DocumentEngine.save(...)` so all validation and audit
 >     paths fire identically to interactive saves. (ADR-046)
 >
-> The Walls 4–9 sequencing below is unchanged — Phases A / B / C have been
-> engine breadth and host-app polish, not ERP DocType implementation. Walls
-> 4–9 (link fields, child tables, submittables, ledgers, trees, reports)
-> are still the next moves on the Core side.
+> **Phase D (production-readiness):**
+>
+> 12. `FileSystemCloudAdapter` as the reference `CloudAdapter`. Two
+>     adapters against the same shared folder (iCloud Drive / Dropbox /
+>     SMB / NAS) form a peer-to-peer transport without a central server.
+>     Hub multi-device deployments can ship today on any consumer
+>     file-sync product. (ADR-047)
+> 13. `SQLiteNotificationLog` (persistent writer) + `NotificationInbox`
+>     (reader) + `CompositeNotificationLog` /
+>     `ChannelFilteredNotificationLog`. The in-app inbox is queryable
+>     by recipient with unread/mark-read/unread-count. Adding email /
+>     push / SMS later is one new sink conformance. (ADR-048)
+> 14. `ReportDefinition.allowedRoles` gates `ReportEngine.availableReports(for:)`
+>     visibility, plus `MercantisCoreUI.GenericReportView` renders any
+>     `ReportResult` as a SwiftUI table with refresh / CSV-export hooks.
+>     Hub Wall 9 is satisfied. (ADR-049)
+>
+> **The next moves are on Hub.** Walls 4–9 (link fields, child tables,
+> submittables, ledgers, trees, reports) all need *Core* capabilities
+> that now exist; the actual ERP module breadth — Customer, Item, Sales
+> Invoice, GL Entry, etc. — is Hub-side work against a complete substrate.
 
 Companion docs in the Core repo:
 
