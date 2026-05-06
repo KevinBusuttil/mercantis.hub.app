@@ -1,67 +1,241 @@
-// mercantis hub
-// Created by Kevin Busuttil on 12/04/2026.
-
 import Foundation
+import MercantisCore
 
-// Uses Core's WorkflowDefinition, WorkflowState, WorkflowTransition — imported from MercantisCore when dependency is wired up.
-
-/// Stub namespace for all Hub workflow definitions.
+/// Hub workflow definitions wired into `AppManifest.workflows` and consumed
+/// by Core's `WorkflowEngine` (ADR-004). One workflow per transactional
+/// DocType. Every workflow includes the canonical `Draft → Submitted →
+/// Cancelled` transitions that mirror Core's `docStatus` lifecycle (ADR-013);
+/// most also model post-submit application states (Lost / Ordered / Paid).
 ///
-/// Hub workflows are declarative `WorkflowDefinition` values (ADR-004) that describe
-/// state machines for transactional DocTypes. They are registered in the `AppManifest`
-/// and evaluated entirely by Core's `WorkflowEngine` — Hub provides no custom runtime logic.
-///
-/// - ADR-004: Workflows are declarative manifest data.
-/// - ADR-008: No dynamic code loading; all states and transitions are statically declared.
+/// Conventions:
+/// - State names match the eventual `Document.status` strings.
+/// - The "Submit" transition only flips `Document.status` to "Submitted";
+///   the actual `docStatus` 0→1 transition runs through
+///   `DocumentEngine.submit(_:)` separately. The Hub UI invokes both
+///   when the user taps the Submit button.
+/// - "Cancel" similarly mirrors `DocumentEngine.cancel(_:)` (docStatus 1→2).
+/// - All transitions are gated to `System Manager` for now; tighter
+///   role gating arrives with the role-import work in a later revision.
 public enum HubWorkflows: Sendable {
 
-    // MARK: - Sales Order Approval
+    private static let systemManagerRole = "System Manager"
 
-    /// Workflow for the **Sales Order** document.
-    ///
-    /// Proposed states: Draft → Pending Approval → Approved → Cancelled
-    ///
-    /// - TODO: Implement using `WorkflowDefinition` from MercantisCore.
-    public static var salesOrderApproval: Never {
-        fatalError("salesOrderApproval is a stub — implement with Core's WorkflowDefinition.")
+    // MARK: - Selling
+
+    public static let quotation = WorkflowDefinition(
+        id: "wf-quotation",
+        name: "Quotation",
+        docType: "Quotation",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Ordered",   isDefault: false, allowEdit: false),
+            WorkflowState(name: "Lost",      isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Ordered",   action: "Mark as Ordered",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Lost",      action: "Mark as Lost",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let salesOrder = WorkflowDefinition(
+        id: "wf-sales-order",
+        name: "Sales Order",
+        docType: "SalesOrder",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Closed",    isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Closed",    action: "Close",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Closed",    to: "Submitted", action: "Re-open",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let salesInvoice = WorkflowDefinition(
+        id: "wf-sales-invoice",
+        name: "Sales Invoice",
+        docType: "SalesInvoice",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Paid",      isDefault: false, allowEdit: false),
+            WorkflowState(name: "Overdue",   isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Paid",      action: "Mark as Paid",
+                               allowedRoles: [systemManagerRole],
+                               conditionExpression: "outstanding_amount <= 0"),
+            WorkflowTransition(from: "Submitted", to: "Overdue",   action: "Mark as Overdue",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Overdue",   to: "Paid",      action: "Mark as Paid",
+                               allowedRoles: [systemManagerRole],
+                               conditionExpression: "outstanding_amount <= 0"),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    // MARK: - Buying
+
+    public static let supplierQuotation = WorkflowDefinition(
+        id: "wf-supplier-quotation",
+        name: "Supplier Quotation",
+        docType: "SupplierQuotation",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Ordered",   isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Ordered",   action: "Mark as Ordered",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let purchaseOrder = WorkflowDefinition(
+        id: "wf-purchase-order",
+        name: "Purchase Order",
+        docType: "PurchaseOrder",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Closed",    isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Closed",    action: "Close",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Closed",    to: "Submitted", action: "Re-open",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let purchaseInvoice = WorkflowDefinition(
+        id: "wf-purchase-invoice",
+        name: "Purchase Invoice",
+        docType: "PurchaseInvoice",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Paid",      isDefault: false, allowEdit: false),
+            WorkflowState(name: "Overdue",   isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Paid",      action: "Mark as Paid",
+                               allowedRoles: [systemManagerRole],
+                               conditionExpression: "outstanding_amount <= 0"),
+            WorkflowTransition(from: "Submitted", to: "Overdue",   action: "Mark as Overdue",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Overdue",   to: "Paid",      action: "Mark as Paid",
+                               allowedRoles: [systemManagerRole],
+                               conditionExpression: "outstanding_amount <= 0"),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    // MARK: - Stock + Accounting (canonical Draft / Submitted / Cancelled only)
+
+    public static let stockEntry = WorkflowDefinition(
+        id: "wf-stock-entry",
+        name: "Stock Entry",
+        docType: "StockEntry",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let journalEntry = WorkflowDefinition(
+        id: "wf-journal-entry",
+        name: "Journal Entry",
+        docType: "JournalEntry",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let paymentEntry = WorkflowDefinition(
+        id: "wf-payment-entry",
+        name: "Payment Entry",
+        docType: "PaymentEntry",
+        states: [
+            WorkflowState(name: "Draft",      isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted",  isDefault: false, allowEdit: false),
+            WorkflowState(name: "Reconciled", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled",  isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted",  action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Reconciled", action: "Reconcile",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled",  action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    // MARK: - Registration
+
+    public static let allWorkflows: [WorkflowDefinition] = [
+        quotation,
+        salesOrder,
+        salesInvoice,
+        supplierQuotation,
+        purchaseOrder,
+        purchaseInvoice,
+        stockEntry,
+        journalEntry,
+        paymentEntry,
+    ]
+
+    public static func workflow(forDocTypeId docTypeId: String) -> WorkflowDefinition? {
+        allWorkflows.first { $0.docType == docTypeId }
     }
-
-    // MARK: - Purchase Order Approval
-
-    /// Workflow for the **Purchase Order** document.
-    ///
-    /// Proposed states: Draft → Pending Approval → Approved → Cancelled
-    ///
-    /// - TODO: Implement using `WorkflowDefinition` from MercantisCore.
-    public static var purchaseOrderApproval: Never {
-        fatalError("purchaseOrderApproval is a stub — implement with Core's WorkflowDefinition.")
-    }
-
-    // MARK: - Leave Application
-
-    /// Workflow for the **Leave Application** document.
-    ///
-    /// Proposed states: Open → Approved → Rejected
-    ///
-    /// - TODO: Implement using `WorkflowDefinition` from MercantisCore.
-    public static var leaveApplicationApproval: Never {
-        fatalError("leaveApplicationApproval is a stub — implement with Core's WorkflowDefinition.")
-    }
-
-    // MARK: - Expense Claim
-
-    /// Workflow for the **Expense Claim** document.
-    ///
-    /// Proposed states: Draft → Submitted → Approved → Paid → Rejected
-    ///
-    /// - TODO: Implement using `WorkflowDefinition` from MercantisCore.
-    public static var expenseClaimApproval: Never {
-        fatalError("expenseClaimApproval is a stub — implement with Core's WorkflowDefinition.")
-    }
-
-    // MARK: - All Workflows
-
-    /// All workflow definitions — will be wired into `HubManifest.build()`.
-    /// - TODO: Replace with an array of `WorkflowDefinition` values from MercantisCore.
-    public static let allWorkflows: [Any] = []
 }

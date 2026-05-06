@@ -203,7 +203,17 @@ enum Selling {
         )
     ]
 
-    private static func salesParentFields(includeDelivery: Bool) -> [FieldDefinition] {
+    /// Submittable transactional DocTypes need the version-checked /
+    /// immutable-after-submit policy.
+    private static let submittableSyncPolicy = SyncPolicy(
+        conflictResolution: .versionChecked,
+        immutableAfterSubmit: true
+    )
+
+    private static func salesParentFields(
+        includeDelivery: Bool,
+        includeOutstanding: Bool = false
+    ) -> [FieldDefinition] {
         var fields: [FieldDefinition] = [
             FieldDefinition(key: "customer", label: "Customer",
                             type: .link, required: true, linkedDocType: "Customer"),
@@ -216,7 +226,8 @@ enum Selling {
         ]
         if includeDelivery {
             fields.append(FieldDefinition(key: "delivery_date", label: "Required Delivery Date",
-                                          type: .date, required: false))
+                                          type: .date, required: false,
+                                          allowOnSubmit: true))
         }
         fields.append(contentsOf: [
             FieldDefinition(key: "items", label: "Items",
@@ -226,63 +237,77 @@ enum Selling {
             FieldDefinition(key: "grand_total", label: "Grand Total",
                             type: .currency, required: false),
             FieldDefinition(key: "notes", label: "Notes",
-                            type: .longText, required: false)
+                            type: .longText, required: false,
+                            allowOnSubmit: true)
         ])
+        if includeOutstanding {
+            fields.append(FieldDefinition(key: "due_date", label: "Due Date",
+                                          type: .date, required: false,
+                                          allowOnSubmit: true))
+            fields.append(FieldDefinition(key: "outstanding_amount", label: "Outstanding",
+                                          type: .currency, required: false,
+                                          allowOnSubmit: true))
+        }
         return fields
     }
 
-    /// Quotation — pre-sale offer to a Customer / Lead. Without Wall 6
-    /// this stays Draft-only; the schema is what Wall 5 unlocks.
+    /// Quotation — pre-sale offer to a Customer / Lead. Wall 6 makes it
+    /// submittable with the `wf-quotation` workflow (Draft → Submitted →
+    /// Ordered / Lost / Cancelled).
     static let quotation = DocType(
         id: "Quotation",
         name: "Quotation",
         module: "Selling",
         appId: HubManifest.appID,
         isChildTable: false,
+        isSubmittable: true,
         fields: salesParentFields(includeDelivery: true),
         permissions: [systemManagerPermission],
+        workflowId: "wf-quotation",
         autoname: "naming_series:SQTN-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
         formLayout: FormLayout(sections: salesParentLayout)
     )
 
-    /// Sales Order — confirmed sale, awaiting delivery.
+    /// Sales Order — confirmed sale, awaiting delivery. Wall 6 makes it
+    /// submittable with the `wf-sales-order` workflow.
     static let salesOrder = DocType(
         id: "SalesOrder",
         name: "Sales Order",
         module: "Selling",
         appId: HubManifest.appID,
         isChildTable: false,
+        isSubmittable: true,
         fields: salesParentFields(includeDelivery: true),
         permissions: [systemManagerPermission],
+        workflowId: "wf-sales-order",
         autoname: "naming_series:SO-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
         formLayout: FormLayout(sections: salesParentLayout)
     )
 
-    /// Sales Invoice — billable line items, account-receivable trigger.
-    /// GL-entry derivation waits on Wall 7.
+    /// Sales Invoice — billable line items, accounts-receivable trigger.
+    /// Wall 6 makes it submittable with the `wf-sales-invoice` workflow
+    /// (Draft → Submitted → Paid / Overdue / Cancelled). GL-entry
+    /// derivation waits on Wall 7.
     static let salesInvoice = DocType(
         id: "SalesInvoice",
         name: "Sales Invoice",
         module: "Selling",
         appId: HubManifest.appID,
         isChildTable: false,
-        fields: salesParentFields(includeDelivery: false) + [
-            FieldDefinition(key: "due_date", label: "Due Date",
-                            type: .date, required: false),
-            FieldDefinition(key: "outstanding_amount", label: "Outstanding",
-                            type: .currency, required: false)
-        ],
+        isSubmittable: true,
+        fields: salesParentFields(includeDelivery: false, includeOutstanding: true),
         permissions: [systemManagerPermission],
+        workflowId: "wf-sales-invoice",
         autoname: "naming_series:SINV-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
