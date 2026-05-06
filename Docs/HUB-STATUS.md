@@ -1,37 +1,49 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Core Phase B landed — scheduled automation, naming rules, counter block reservation)_
+_Last updated: 2026-05-05 (Core Phase C landed — files/attachments, print/PDF, dashboards, import/export)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
-> **Core Phase A + B are both in (2026-05-05).** Seven engine-level gaps closed
-> in two stacked revisions on `mercantis.core.app` branch `claude/review-next-steps-IFyi2`.
-> Hub gains seven capabilities for free on its next Core dependency bump:
+> **Core Phases A + B + C are all in (2026-05-05).** Eleven engine-level
+> capabilities shipped in three stacked revisions on `mercantis.core.app`
+> branch `claude/review-next-steps-IFyi2`. Hub gains them all on its next
+> Core dependency bump.
 >
-> Phase A (engine fitness):
+> **Phase A (engine fitness):**
 >
 > 1. `ListFilter` predicates for list views (`gt`, `between`, `in`, `like`, …),
->    with automatic SQL pushdown for system columns and indexed fields. (ADR-036)
-> 2. `DocType.rowAccessExpression` is auto-applied by `engine.list(...)`. No
->    per-call permission plumbing. (ADR-037)
-> 3. Workflow transitions persist to `workflow_transitions`; reader on
->    `engine.workflowTransitions(of:)`. (ADR-038)
-> 4. Every write appends to `audit_log` atomically; reader on
->    `engine.auditEntries(forDocumentId:)`. (ADR-039)
+>    with automatic SQL pushdown. (ADR-036)
+> 2. `DocType.rowAccessExpression` auto-applied by `engine.list(...)`. (ADR-037)
+> 3. Workflow transitions persist to `workflow_transitions`. (ADR-038)
+> 4. Every write appends to `audit_log` atomically. (ADR-039)
 >
-> Phase B (wiring + naming):
+> **Phase B (wiring + naming):**
 >
-> 5. `DocType.namingRules: [DocumentNamingRule]` for per-company / per-fiscal-year /
->    per-warehouse conditional naming series. (ADR-040)
-> 6. `AutomationRule.schedule: ScheduleInterval?` + runner ↔ scheduler integration:
->    `onSchedule` rules now fire across every document of the rule's DocType,
->    with per-document condition gating. (ADR-041)
-> 7. Per-device counter blocks (migration v9, `naming_counter_blocks`): two
->    devices saving offline never pick the same `SINV-2026-0001`. (ADR-042)
+> 5. `DocType.namingRules: [DocumentNamingRule]` for per-company / per-fiscal-year
+>    conditional naming series. (ADR-040)
+> 6. `AutomationRule.schedule` + runner ↔ scheduler: `onSchedule` rules fan out
+>    across every document of the rule's DocType. (ADR-041)
+> 7. Per-device counter blocks (`naming_counter_blocks`): no more
+>    `SINV-2026-0001` collisions on offline multi-device saves. (ADR-042)
 >
-> The Walls 4–9 sequencing below is unchanged — Phases A + B were engine fitness,
-> not ERP breadth. Walls 4–9 (link fields, child tables, submittables, ledgers,
-> trees, reports) are still the next moves on the Core side.
+> **Phase C (ERP feature breadth):**
+>
+> 8. `Files/` subsystem: `AttachmentManager`, on-disk byte store, atomic
+>    metadata + audit, `DocumentEngine` cascade-on-delete. (ADR-043)
+> 9. `Printing/` subsystem: declarative `PrintFormat` / `LetterHead`,
+>    pluggable `PrintRenderer`, plain-text + CoreGraphics PDF renderers,
+>    `PrintService` coordinator. (ADR-044)
+> 10. `DashboardEngine`: resolves `DashboardDefinition` widgets into typed
+>     `DashboardResult` tiles. SwiftUI rendering is a `MercantisCoreUI`
+>     follow-up. (ADR-045)
+> 11. `ImportExport/` subsystem: CSV + JSON exporter / importer routed
+>     through `DocumentEngine.save(...)` so all validation and audit
+>     paths fire identically to interactive saves. (ADR-046)
+>
+> The Walls 4–9 sequencing below is unchanged — Phases A / B / C have been
+> engine breadth and host-app polish, not ERP DocType implementation. Walls
+> 4–9 (link fields, child tables, submittables, ledgers, trees, reports)
+> are still the next moves on the Core side.
 
 Companion docs in the Core repo:
 
