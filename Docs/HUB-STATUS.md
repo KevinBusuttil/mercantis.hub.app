@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Core Phases A–D landed — engine is feature-complete)_
+_Last updated: 2026-05-05 (Wall 4 implemented — link fields used across CRM, Selling, Buying, Setup)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -128,24 +128,27 @@ sqlite3 "$DB" "SELECT id, name, module, appId FROM doctypes;"
 
 # Migrations applied?
 sqlite3 "$DB" "SELECT * FROM schema_versions;"
-# Expected: rows for v1..v6
+# Expected: rows for v1..v11 (Core Phases A–D shipped 2026-05-05)
 ```
 
 ---
 
 ## ERP Coverage Grade
 
-**Hub is ~5% of a usable ERP.** The platform plumbing (Core dependency, install
-pipeline, manifest, navigation shell, per-module folder convention) is in
-place, and a single CRM DocType (Customer, three fields) round-trips through
-`GenericFormView`. Every other ERP module — Selling, Buying, Stock,
-Accounting, HR, Manufacturing, Projects, Assets — is **empty**: not just
-unimplemented, but not declared either.
+**Hub is ~12% of a usable ERP.** Wall 4 (link fields) is shipped end-to-end
+on the Hub side: every flat link-field master that becomes possible has
+been declared. CRM has Customer / Contact / Address / Lead with their full
+relational set; Setup ships every link-target master (Customer Group,
+Territory, Item Group, Supplier Group, Warehouse, Cost Center, Currency,
+UOM, Brand, Price List); Selling ships Item with all its link fields;
+Buying ships Supplier with all its link fields. Stock ledgers,
+journal entries, transactional submittables, and child tables are still
+empty — they wait on Walls 5–7.
 
-This is not a criticism of the work to date — it is the correct state for an
-incremental, wall-driven adoption strategy. It does mean any timeline
-conversation about "Hub as an ERP" needs to start from "we have built the
-runway, not the plane."
+This is the correct state for an incremental, wall-driven adoption
+strategy. It does mean any timeline conversation about "Hub as an ERP"
+still needs to start from "we have built the masters layer; the
+transactional layer comes after Walls 5–7."
 
 ### What's done
 
@@ -156,14 +159,17 @@ runway, not the plane."
 | Manifest scaffold | ✅ `HubManifest.build()` returns a real `AppManifest` (id `app.mercantis.hub`, version `0.1.0`) |
 | Navigation shell | ✅ Module → menu group → menu item, driven by `HubNavigation.allModules` |
 | Module folder convention | ✅ `Modules/<Name>/<Name>DocTypes.swift` + `<Name>Navigation.swift` |
-| First DocType (Customer) | ✅ 3 fields (name, email, phone), `naming_series:CUST-.YYYY.-.####`, `lastWriteWins` |
-| Form rendering | ✅ `UI/CustomerFormView.swift` uses Core's `GenericFormView` |
-| Database | ✅ SQLite at `Application Support/MercantisHub/hub.sqlite`, migrations v1–v6 applied |
-| Hub-side dashboards declaration | ⚠️ `Dashboards/HubDashboards.swift` declares dashboards but Core has no `DashboardView` to render them |
+| First DocType (Customer) | ✅ Full link-field set: customer_group, territory, default currency / price list / cost center / warehouse |
+| Form rendering | ✅ `UI/RootView.swift` uses Core's `GenericFormView` with `linkSearchProvider:` wired to `engine.list(docType:)`, so every link field renders as a search-and-pick combo box |
+| Database | ✅ SQLite at `Application Support/MercantisHub/hub.sqlite`, migrations v1–v11 applied |
+| Hub-side dashboards declaration | ✅ `Dashboards/HubDashboards.swift` declares dashboards; Core's `DashboardEngine` (Phase C / ADR-045) resolves them into typed result tiles. SwiftUI rendering is a follow-up. |
+| CRM module | ✅ Customer, Contact, Address, Lead — all link-field-complete |
+| Setup module | ✅ CustomerGroup, Territory, ItemGroup (trees) + SupplierGroup, Warehouse, CostCenter (trees) + Currency, UOM, Brand, PriceList (flat masters) |
+| Selling module | ✅ Item with item_group / brand / stock_uom / default_warehouse links. Sales transactions (Quotation → Sales Order → Sales Invoice) wait on Walls 5+6+7. |
+| Buying module | ✅ Supplier with supplier_group / default_currency / default_price_list / default_cost_center links. Purchase transactions wait on Walls 5+6+7. |
 
-That is the entire shipped surface. `HubManifest.build()` passes empty arrays
-for `workflows`, `permissions`, `reports`, `automationRules`, `dashboards`, and
-`localizations`.
+`HubManifest.build()` still passes empty arrays for `workflows`,
+`permissions`, `reports`, `automationRules`, and `localizations`.
 
 ---
 
@@ -174,59 +180,60 @@ Modules are listed in roughly the dependency order an ERP would need them.
 
 Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 
-### CRM — partial
+### CRM — Wall-4-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Customer | 🟡 | 3 fields only. Missing: address, tax id, currency, credit limit, payment terms, customer group, territory, default price list, default cost center. |
-| Contact | ❌ | Needs Wall 4 (link fields) + Wall 5 (links child table) before it's worth modelling. |
-| Address | ❌ | The whole point of Address is `linked_to: Customer/Supplier`. Hard-blocked on Wall 4. |
-| Lead | ❌ | Flat for now; later needs Wall 6 (workflow). |
-| Opportunity | ❌ | Needs Wall 4 (link to Lead/Customer) + Wall 6 (workflow). |
+| Customer | ✅ | Full link-field set: customer_group, territory, default currency / price list / cost center / warehouse. |
+| Contact | ✅ | first/last name, email, phone, company_name link to Customer, address link to Address. |
+| Address | ✅ | Standalone Address with billing/shipping/other type. Per-target Links child table waits on Wall 5. |
+| Lead | ✅ | Pipeline status + source + territory link + converted_customer link to Customer. Workflow gating waits on Wall 6. |
+| Opportunity | ❌ | Needs Wall 6 (workflow). |
 
-### Selling — not started
-
-| DocType | State | Blocking walls |
-|---|---|---|
-| Item | ❌ | W4 (item_group link), W5 (UOMs / barcodes child tables), W8 (item group tree) |
-| Item Group | ❌ | W8 (tree) |
-| Price List | ❌ | W5 (price rows) |
-| Quotation | ❌ | W4, W5, W6 |
-| Sales Order | ❌ | W4, W5, W6 |
-| Delivery Note | ❌ | W4, W5, W6, W7 (stock ledger entries) |
-| Sales Invoice | ❌ | W4, W5, W6, W7 (GL entries) |
-
-### Buying — not started
+### Selling — Wall-4 masters shipped
 
 | DocType | State | Blocking walls |
 |---|---|---|
-| Supplier | ❌ | W4 (supplier_group), W5 (addresses) |
-| Supplier Group | ❌ | W8 (tree) |
-| Supplier Quotation | ❌ | W4, W5 |
-| Purchase Order | ❌ | W4, W5, W6 |
-| Purchase Receipt | ❌ | W4, W5, W6, W7 |
-| Purchase Invoice | ❌ | W4, W5, W6, W7 |
+| Item | ✅ | item_group / brand / stock_uom / default_warehouse links + barcode + image. UOM-conversion / supplier rows wait on Wall 5. |
+| Item Group | ✅ | Tree DocType in Setup (parent_item_group self-link). |
+| Price List | ✅ | Setup-level header DocType linked from Customer / Supplier. Per-item rate rows wait on Wall 5. |
+| Quotation | ❌ | W5 (line items), W6 (workflow). |
+| Sales Order | ❌ | W5, W6. |
+| Delivery Note | ❌ | W5, W6, W7 (stock ledger entries). |
+| Sales Invoice | ❌ | W5, W6, W7 (GL entries). |
 
-### Stock — not started
-
-| DocType | State | Blocking walls |
-|---|---|---|
-| Warehouse | ❌ | W8 (warehouse tree) |
-| Stock Entry | ❌ | W4, W5, W6, W7 |
-| Stock Ledger Entry | ❌ | W7 (derived ledger), append-only |
-| Bin | ❌ | W7 (derived from Stock Ledger) |
-| Stock Reconciliation | ❌ | W4, W5, W6, W7 |
-
-### Accounting — not started
+### Buying — Wall-4 masters shipped
 
 | DocType | State | Blocking walls |
 |---|---|---|
-| Account | ❌ | W8 (Chart of Accounts is a tree) |
-| Cost Center | ❌ | W8 (tree) |
-| Fiscal Year | ❌ | Flat — no walls, but pointless without other accounting DocTypes |
-| Journal Entry | ❌ | W4, W5 (debit/credit rows), W6, W7 (GL entries) |
-| Payment Entry | ❌ | W4, W5 (allocation rows), W6, W7 |
-| GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry) |
+| Supplier | ✅ | supplier_group / default_currency / default_price_list / default_cost_center links. Address / contact rows wait on Wall 5. |
+| Supplier Group | ✅ | Tree DocType in Setup. |
+| Supplier Quotation | ❌ | W5. |
+| Purchase Order | ❌ | W5, W6. |
+| Purchase Receipt | ❌ | W5, W6, W7. |
+| Purchase Invoice | ❌ | W5, W6, W7. |
+
+### Stock — Wall-4 master shipped
+
+| DocType | State | Blocking walls |
+|---|---|---|
+| Warehouse | ✅ | Tree DocType in Setup (parent_warehouse self-link, is_group flag). |
+| Stock Entry | ❌ | W5, W6, W7. |
+| Stock Ledger Entry | ❌ | W7 (derived ledger), append-only. |
+| Bin | ❌ | W7 (derived from Stock Ledger). |
+| Stock Reconciliation | ❌ | W5, W6, W7. |
+
+### Accounting — Wall-4 masters shipped
+
+| DocType | State | Blocking walls |
+|---|---|---|
+| Account | ❌ | W8 (Chart of Accounts is a tree). |
+| Cost Center | ✅ | Tree DocType in Setup (parent_cost_center self-link, is_group flag). |
+| Currency | ✅ | Flat master in Setup (ISO code, symbol, smallest_unit). |
+| Fiscal Year | ❌ | Flat — no walls, but pointless without other accounting DocTypes. |
+| Journal Entry | ❌ | W5 (debit/credit rows), W6, W7 (GL entries). |
+| Payment Entry | ❌ | W5 (allocation rows), W6, W7. |
+| GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry). |
 
 ### HR — not started
 
@@ -282,36 +289,29 @@ for several cross-cutting concerns:
 
 ---
 
-## Next Step — Expand CRM (Contact, Address, Lead)
+## Next Step — Wall 5 (child tables)
 
-The Customer save round-trip works and the UI is now driven by Core's
-`GenericFormView` (Wall 1 resolved — see below). The next increment is to
-flesh out CRM with the remaining DocTypes from the module roadmap.
+Wall 4 (link fields) is shipped Hub-side. The masters layer of CRM,
+Selling, Buying, Stock, and Accounting all have the link-target DocTypes
+they need. The next increment is **Wall 5 — child tables**, which
+unlocks every transactional DocType the masters reference:
 
-For each new DocType:
+- **Selling:** Quotation / Sales Order / Sales Invoice line items.
+- **Buying:** Supplier Quotation / Purchase Order / Purchase Invoice
+  line items.
+- **Stock:** Stock Entry item rows; Bin (per-warehouse-per-item).
+- **Accounting:** Journal Entry debit/credit rows; Payment Entry
+  allocation rows.
+- **Selling/Buying enrichment:** Item.uom_conversion / item.suppliers
+  rows; PriceList item-rate rows; Address.links rows
+  (multi-target relations).
 
-1. Add the `DocType` declaration to `Modules/CRM/CRMDocTypes.swift`
-   alongside `customer`. Mirror Customer's shape: required fields, a
-   `naming_series:` autoname, `lastWriteWins` sync policy, a System
-   Manager `PermissionRule`.
-2. Append it to `CRM.allDocTypes` so `HubManifest.build()` picks it up.
-3. Build & run. Verify with
-   `sqlite3 "$DB" "SELECT id, name, module FROM doctypes;"`
-   the new DocType should appear with `module = CRM`.
-4. Add a form view under `UI/` (e.g. `ContactFormView.swift`) that
-   instantiates `GenericFormView(docType: CRM.contact, document: $doc)`
-   plus a Save button calling `engine.save(_:)`. Cross-doc references
-   (e.g. Contact → Customer) come later — they need `lookup` /
-   relational field handling in `GenericFormView`, which may surface
-   the next Core wall.
-5. Add the DocType to `Modules/CRM/CRMNavigation.swift` (in the appropriate
-   `HubMenuGroup`) so it appears in the sidebar. Cross-module DocTypes go in
-   each module's nav file (e.g. Customer is referenced from both
-   `CRMNavigation.swift` and a future `SalesNavigation.swift`). Routing in
-   `UI/RootView.swift`'s `docTypeDetail(_:)` then needs a case for the new
-   DocType ID.
-
-Suggested order: **Contact → Address → Lead**.
+Core has the moving parts in place (`Document.children`,
+`FieldType.table`, `MercantisCoreUI.ChildTableField` per ADR-031).
+Hub's `HubDocTypeView` already passes
+`childDocTypeProvider: { HubManifest.docType(for: $0) }`, so a
+`FieldType.table(childDocType:)` field on a parent DocType will
+render an inline grid the moment Hub declares the child DocType.
 
 ### Verify each new DocType
 
@@ -361,32 +361,33 @@ Suggested order: **W4 → W5 → W6 → W7 → W8 → W9**, with W8 (tree
 DocTypes) optionally slotted earlier if Item Group / Customer Group
 hierarchies are wanted before Stock.
 
-#### Wall 4 — Relational fields (`link`)
+#### Wall 4 — Relational fields (`link`) ✅ resolved
 
-ERP DocTypes constantly reference each other: Customer.customer_group,
-Item.item_group, Sales Order.customer, Address.linked_to, etc. Today
-`FieldType` only covers scalar/primitive cases (`.string`, `.int`,
-`.double`, `.bool`, `.date`, `.dateTime`, `.data`, `.array`). There is no
-`.link` case.
+Core shipped `FieldType.link` + `FieldDefinition.linkedDocType` (ADR-030
+in Core), plus the link-validation stage in the validation pipeline and
+`LinkPickerField` for `MercantisCoreUI.GenericFormView`. Hub's
+`HubDocTypeView` (in `UI/RootView.swift`) wires
+`linkSearchProvider:` to `engine.list(docType:)` so every link field
+renders as a search-and-pick combo box automatically.
 
-Hub-side expectations:
-- A new `FieldType.link(targetDocType: String)` (or an equivalent
-  `linkedDocType` parameter on `FieldDefinition` alongside an existing
-  type case).
-- Storage: link value persists as the target document's ID string —
-  reuses the existing Document ID system; no new join table needed.
-- `MercantisCoreUI.GenericFormView` renders link fields as a
-  search-and-pick combo box backed by `engine.lookup(...)`. Hub won't
-  need to wire this per-field once the renderer handles `.link`.
-- Save-time validation: linked ID must resolve to an existing document
-  of the declared `targetDocType`; otherwise save fails with a typed error.
-- Optional follow-up: cascade behavior on target-delete (block /
-  set-null / cascade). Can defer.
+Hub-side declarations shipped under Wall 4:
 
-DocTypes unlocked (not exhaustive): **Address**, **Customer**'s
-`customer_group` / `territory` / default price list, **Item**'s
-`item_group`, every transactional DocType's `customer` / `supplier` /
-`item` references.
+- **Setup:** CustomerGroup, Territory, ItemGroup, SupplierGroup,
+  Warehouse, CostCenter (all tree); Currency, UOM, Brand, PriceList
+  (flat). PriceList carries a `currency` link to Currency.
+- **CRM:** Customer with `customer_group` / `territory` / `default_currency`
+  / `default_price_list` / `default_cost_center` / `default_warehouse`
+  links. Contact with `company_name` (→ Customer) and `address`
+  (→ Address). Lead with `territory` and `converted_customer` (→ Customer).
+- **Selling:** Item with `item_group` / `brand` / `stock_uom` /
+  `default_warehouse` links plus `barcode` and `image` fields.
+- **Buying:** Supplier with `supplier_group` / `default_currency` /
+  `default_price_list` / `default_cost_center` links.
+
+Optional cascade-on-target-delete (block / set-null) is still deferred —
+it would require either a Core-side `linkCascadePolicy: ...` field on
+`FieldDefinition` or a Hub-side scan, and is not blocking any open
+DocType today.
 
 #### Wall 5 — Child tables
 
@@ -499,15 +500,20 @@ Don't pre-populate all modules speculatively.
 
 **Phase 1 — Finish CRM and prove relational + child-table plumbing**
 
-1. **Wall 4 lands in Core (link fields).** Then Hub adds Address, Contact,
-   and fleshes Customer out with `customer_group`, `territory`, `currency`,
-   default price list, default cost center.
-2. **Wall 5 lands in Core (child tables).** Then Hub adds Customer's
-   `addresses` / `contacts` child tables, Item with UOM rows, Price List
-   with item_price rows.
-3. **Wall 8 lands in Core (tree DocTypes).** Slot here so Item Group,
-   Customer Group, Territory, Department, Warehouse, Account, Cost Center
-   are unblocked together.
+1. ✅ **Wall 4 (link fields) shipped.** Hub-side: Address, Contact, Lead;
+   Customer fleshed out with `customer_group`, `territory`,
+   `default_currency`, `default_price_list`, `default_cost_center`,
+   `default_warehouse`. Selling / Buying / Stock / Accounting masters
+   declared (Item, Supplier, Warehouse, CostCenter, Currency, UOM,
+   Brand, PriceList).
+2. **Wall 5 (child tables) is next.** Hub adds Customer's `addresses` /
+   `contacts` child tables, Item with UOM rows, PriceList with
+   item_price rows, and the line-item rows that unlock every
+   transactional DocType.
+3. ✅ **Wall 8 (tree DocTypes) shipped at the master level.** Item Group,
+   Customer Group, Supplier Group, Territory, Warehouse, Cost Center
+   all declared `isTree: true` with `parent_*` self-links. Account
+   tree (Chart of Accounts) waits on the Accounting module proper.
 
 **Phase 2 — Submittables: minimal Selling + Buying**
 
