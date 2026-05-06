@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Wall 4 implemented — link fields used across CRM, Selling, Buying, Setup)_
+_Last updated: 2026-05-05 (Wall 5 implemented — child tables; transactional DocTypes declarable end-to-end)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -135,20 +135,37 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 
 ## ERP Coverage Grade
 
-**Hub is ~12% of a usable ERP.** Wall 4 (link fields) is shipped end-to-end
-on the Hub side: every flat link-field master that becomes possible has
-been declared. CRM has Customer / Contact / Address / Lead with their full
-relational set; Setup ships every link-target master (Customer Group,
-Territory, Item Group, Supplier Group, Warehouse, Cost Center, Currency,
-UOM, Brand, Price List); Selling ships Item with all its link fields;
-Buying ships Supplier with all its link fields. Stock ledgers,
-journal entries, transactional submittables, and child tables are still
-empty — they wait on Walls 5–7.
+**Hub is ~30% of a usable ERP.** Wall 5 (child tables) is shipped end-to-end
+on the Hub side. Every transactional DocType the masters layer
+references is now declarable as a Draft document with its line-item,
+debit/credit, or allocation rows — only the submit-time gate is
+missing, and that's what Wall 6 unblocks.
 
-This is the correct state for an incremental, wall-driven adoption
-strategy. It does mean any timeline conversation about "Hub as an ERP"
-still needs to start from "we have built the masters layer; the
-transactional layer comes after Walls 5–7."
+What's declarable as of this revision:
+
+- **Address.links / Contact.links** — the multi-target `DynamicLink`
+  child rows, replacing Contact's single-target `company_name` link
+  with a full ERPNext-style links table.
+- **PriceList.items** — per-item `ItemPrice` child rows
+  (rate / UOM / min-qty / validity window).
+- **Item.uoms / Item.suppliers** — UOM-conversion + per-supplier
+  sourcing rows.
+- **Selling transactions** — Quotation, Sales Order, Sales Invoice,
+  each with a `SalesItem` line-items child.
+- **Buying transactions** — Supplier Quotation, Purchase Order,
+  Purchase Invoice, each with a `PurchaseItem` line-items child.
+- **Stock** — Stock Entry with per-row source/target warehouse +
+  valuation in `StockEntryDetail`. Stock-ledger derivation waits on
+  Wall 7.
+- **Accounting** — Chart-of-Accounts tree (`Account`) plus Journal
+  Entry (`JournalEntryAccount` debit/credit rows) and Payment Entry
+  (`PaymentEntryReference` allocation rows). GL-entry derivation
+  waits on Wall 7.
+
+All transactional documents stay at `docStatus = 0` (Draft) until
+Wall 6 lands — at which point flipping `isSubmittable: true` on each
+parent DocType unlocks the existing Core submit/cancel/amend pipeline
+without further Hub schema work.
 
 ### What's done
 
@@ -180,59 +197,67 @@ Modules are listed in roughly the dependency order an ERP would need them.
 
 Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 
-### CRM — Wall-4-complete
+### CRM — Wall-5-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Customer | ✅ | Full link-field set: customer_group, territory, default currency / price list / cost center / warehouse. |
-| Contact | ✅ | first/last name, email, phone, company_name link to Customer, address link to Address. |
-| Address | ✅ | Standalone Address with billing/shipping/other type. Per-target Links child table waits on Wall 5. |
-| Lead | ✅ | Pipeline status + source + territory link + converted_customer link to Customer. Workflow gating waits on Wall 6. |
+| Customer | ✅ | Full link-field set + Defaults section. |
+| Contact | ✅ | first/last name, email, phone, role + `links` child table replacing the single-target company link. |
+| Address | ✅ | Billing/shipping/other type + `links` child table for multi-target relations. |
+| Lead | ✅ | Pipeline status + source + territory link + converted_customer link. Workflow gating waits on Wall 6. |
+| DynamicLink (child) | ✅ | Shared `(link_doctype, link_name, is_primary)` row used by Address.links and Contact.links. |
 | Opportunity | ❌ | Needs Wall 6 (workflow). |
 
-### Selling — Wall-4 masters shipped
+### Selling — Wall-5-complete
 
-| DocType | State | Blocking walls |
+| DocType | State | Notes |
 |---|---|---|
-| Item | ✅ | item_group / brand / stock_uom / default_warehouse links + barcode + image. UOM-conversion / supplier rows wait on Wall 5. |
-| Item Group | ✅ | Tree DocType in Setup (parent_item_group self-link). |
-| Price List | ✅ | Setup-level header DocType linked from Customer / Supplier. Per-item rate rows wait on Wall 5. |
-| Quotation | ❌ | W5 (line items), W6 (workflow). |
-| Sales Order | ❌ | W5, W6. |
-| Delivery Note | ❌ | W5, W6, W7 (stock ledger entries). |
-| Sales Invoice | ❌ | W5, W6, W7 (GL entries). |
+| Item | ✅ | All Wall-4 link fields + `uoms` (UOMConversionDetail) and `suppliers` (ItemSupplier) child tables. |
+| Item Group | ✅ | Tree DocType in Setup. |
+| Price List | ✅ | Setup header + `items` (ItemPrice) child rows. |
+| Quotation | 🟡 | Customer + currency + price-list header + `items` (SalesItem) child. Draft-only until Wall 6. |
+| Sales Order | 🟡 | Same shape as Quotation + delivery_date. Draft-only until Wall 6. |
+| Sales Invoice | 🟡 | Same shape + due_date / outstanding. Draft-only until Wall 6; GL derivation waits on Wall 7. |
+| Delivery Note | ❌ | Symmetric to Sales Invoice; wait until W6/W7 lands and we can derive Stock Ledger entries. |
+| SalesItem (child) | ✅ | item / qty / rate / amount / uom / source-warehouse / delivery_date with `amount = qty * rate` formula. |
+| UOMConversionDetail (child) | ✅ | Item.uoms row. |
+| ItemSupplier (child) | ✅ | Item.suppliers row. |
 
-### Buying — Wall-4 masters shipped
+### Buying — Wall-5-complete
 
-| DocType | State | Blocking walls |
+| DocType | State | Notes |
 |---|---|---|
-| Supplier | ✅ | supplier_group / default_currency / default_price_list / default_cost_center links. Address / contact rows wait on Wall 5. |
+| Supplier | ✅ | All Wall-4 link fields. Per-supplier address / contact rows live on the shared Address / Contact DocTypes. |
 | Supplier Group | ✅ | Tree DocType in Setup. |
-| Supplier Quotation | ❌ | W5. |
-| Purchase Order | ❌ | W5, W6. |
-| Purchase Receipt | ❌ | W5, W6, W7. |
-| Purchase Invoice | ❌ | W5, W6, W7. |
+| Supplier Quotation | 🟡 | supplier + currency + price-list header + `items` (PurchaseItem) child. Draft-only until Wall 6. |
+| Purchase Order | 🟡 | Same shape. Draft-only until Wall 6. |
+| Purchase Invoice | 🟡 | Same shape + due_date / outstanding. Draft-only until Wall 6; GL derivation waits on Wall 7. |
+| Purchase Receipt | ❌ | Wait until W6/W7 lands and we can derive Stock Ledger entries. |
+| PurchaseItem (child) | ✅ | item / qty / rate / amount / uom / target-warehouse / schedule_date with `amount = qty * rate` formula. |
 
-### Stock — Wall-4 master shipped
+### Stock — Wall-5-complete (transit layer ready)
 
-| DocType | State | Blocking walls |
+| DocType | State | Notes |
 |---|---|---|
-| Warehouse | ✅ | Tree DocType in Setup (parent_warehouse self-link, is_group flag). |
-| Stock Entry | ❌ | W5, W6, W7. |
+| Warehouse | ✅ | Tree DocType in Setup. |
+| Stock Entry | 🟡 | Purpose + posting date + default warehouses + `items` (StockEntryDetail) child. Draft-only until Wall 6; Stock Ledger derivation waits on Wall 7. |
+| StockEntryDetail (child) | ✅ | item / qty / source + target warehouse / valuation_rate / amount with `amount = qty * valuation_rate` formula. |
 | Stock Ledger Entry | ❌ | W7 (derived ledger), append-only. |
 | Bin | ❌ | W7 (derived from Stock Ledger). |
-| Stock Reconciliation | ❌ | W5, W6, W7. |
+| Stock Reconciliation | ❌ | W6, W7. |
 
-### Accounting — Wall-4 masters shipped
+### Accounting — Wall-5-complete (vouchers ready)
 
-| DocType | State | Blocking walls |
+| DocType | State | Notes |
 |---|---|---|
-| Account | ❌ | W8 (Chart of Accounts is a tree). |
-| Cost Center | ✅ | Tree DocType in Setup (parent_cost_center self-link, is_group flag). |
-| Currency | ✅ | Flat master in Setup (ISO code, symbol, smallest_unit). |
-| Fiscal Year | ❌ | Flat — no walls, but pointless without other accounting DocTypes. |
-| Journal Entry | ❌ | W5 (debit/credit rows), W6, W7 (GL entries). |
-| Payment Entry | ❌ | W5 (allocation rows), W6, W7. |
+| Account | ✅ | Tree DocType: parent_account self-link, is_group, account_type, root_type, currency. |
+| Cost Center | ✅ | Tree DocType in Setup. |
+| Currency | ✅ | Flat master in Setup. |
+| Fiscal Year | ❌ | Trivial flat DocType; not yet needed. |
+| Journal Entry | 🟡 | Voucher type + posting date + `accounts` (JournalEntryAccount) child rows. Draft-only until Wall 6; total-debit-equals-total-credit guard waits on W6. GL derivation waits on Wall 7. |
+| JournalEntryAccount (child) | ✅ | account / party_type / party / debit / credit / cost_center / reference link. |
+| Payment Entry | 🟡 | Receive / Pay / Internal Transfer + paid-from / paid-to + `references` (PaymentEntryReference) allocations. Draft-only until Wall 6. |
+| PaymentEntryReference (child) | ✅ | reference_doctype / reference_name / total / outstanding / allocated. |
 | GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry). |
 
 ### HR — not started
@@ -289,29 +314,43 @@ for several cross-cutting concerns:
 
 ---
 
-## Next Step — Wall 5 (child tables)
+## Next Step — Wall 6 (submittables + workflow)
 
-Wall 4 (link fields) is shipped Hub-side. The masters layer of CRM,
-Selling, Buying, Stock, and Accounting all have the link-target DocTypes
-they need. The next increment is **Wall 5 — child tables**, which
-unlocks every transactional DocType the masters reference:
+Walls 4 + 5 are shipped Hub-side. Every transactional DocType across
+Selling, Buying, Stock, and Accounting is declarable end-to-end with
+its child rows and links. The remaining gap is the *gate*: today
+those documents stay in Draft (`docStatus = 0`) forever, because no
+parent declares `isSubmittable: true` yet.
 
-- **Selling:** Quotation / Sales Order / Sales Invoice line items.
-- **Buying:** Supplier Quotation / Purchase Order / Purchase Invoice
-  line items.
-- **Stock:** Stock Entry item rows; Bin (per-warehouse-per-item).
-- **Accounting:** Journal Entry debit/credit rows; Payment Entry
-  allocation rows.
-- **Selling/Buying enrichment:** Item.uom_conversion / item.suppliers
-  rows; PriceList item-rate rows; Address.links rows
-  (multi-target relations).
+**Wall 6 is purely a Hub flip + workflow declaration.** Core's
+submit/cancel/amend pipeline (ADR-013), workflow engine
+(`WorkflowEngine` + Phase A `WorkflowTransitionHistoryWriter`,
+ADR-038), and immutability guard for non-`allowOnSubmit` fields are
+all shipped. Hub work to land Wall 6:
 
-Core has the moving parts in place (`Document.children`,
-`FieldType.table`, `MercantisCoreUI.ChildTableField` per ADR-031).
-Hub's `HubDocTypeView` already passes
-`childDocTypeProvider: { HubManifest.docType(for: $0) }`, so a
-`FieldType.table(childDocType:)` field on a parent DocType will
-render an inline grid the moment Hub declares the child DocType.
+1. Set `isSubmittable: true` on every transactional parent
+   (Quotation, Sales Order, Sales Invoice, Supplier Quotation,
+   Purchase Order, Purchase Invoice, Stock Entry, Journal Entry,
+   Payment Entry).
+2. Mark balance-touching fields as `allowOnSubmit: false` (the
+   default), and editable-after-submit fields like `notes` /
+   `remarks` as `allowOnSubmit: true`.
+3. Declare `WorkflowDefinition`s in `Workflows/HubWorkflows.swift`
+   for state-driven flows (Quotation: Draft → Submitted → Lost /
+   Ordered; Sales Invoice: Draft → Submitted → Paid / Cancelled;
+   Stock Entry: Draft → Submitted; Journal Entry: Draft → Submitted).
+4. Wire `workflowId` on each parent DocType.
+5. (Optional) Add submit-time validation rules: Journal Entry's
+   total debit must equal total credit; Stock Entry items' totals
+   must reconcile; Sales Invoice / Purchase Invoice
+   outstanding_amount initial = grand_total.
+
+After Wall 6, **Wall 7** (derived ledgers — `StockLedgerEntry` and
+`GLEntry`) becomes the next Core-side ask: an automation rule fires
+on submit and writes the derived rows. The infrastructure for
+post-submit automation rules exists (Phase B / ADR-041); only the
+ledger-DocType declarations and the auto-derive automation are
+left to wire.
 
 ### Verify each new DocType
 
@@ -389,28 +428,37 @@ it would require either a Core-side `linkCascadePolicy: ...` field on
 `FieldDefinition` or a Hub-side scan, and is not blocking any open
 DocType today.
 
-#### Wall 5 — Child tables
+#### Wall 5 — Child tables ✅ resolved
 
-Sales orders, quotations, invoices, journal entries, BOMs all carry
-N rows of structured data inside the parent (line items, debit/credit
-rows, BOM operations). ERPNext models these as child DocTypes
-(`isChildTable: true`) referenced by a parent field of type `.table`.
+Core's `Document.children: [String: [ChildRow]]`, `DocType.isChildTable`,
+`FieldType.table` + `FieldDefinition.childDocType`, atomic save/fetch
+of parent + children, and `MercantisCoreUI.ChildTableField` (ADR-031)
+have all been in place. Hub's `HubDocTypeView` already passes
+`childDocTypeProvider: { HubManifest.docType(for: $0) }`, so any
+parent field of type `.table` renders an inline grid the moment Hub
+declares the matching child DocType.
 
-Core has primitives in place: `Document.children: [String: [ChildRow]]`
-exists, and `DocType` already accepts `isChildTable` (used as `false`
-everywhere in Hub today). What's missing is the parent-side declaration
-linking a field to a child DocType, plus form rendering.
+Hub-side declarations shipped under Wall 5:
 
-Hub-side expectations:
-- A new `FieldType.table(childDocType: String)`.
-- `GenericFormView` renders table fields as an inline editable grid.
-- `engine.save(_:)` propagates parent + children atomically.
-- `engine.fetch` returns parent's children populated.
+- **CRM:** `DynamicLink` child + `Address.links` / `Contact.links`
+  (multi-target relations replacing Contact's single static link).
+- **Setup:** `ItemPrice` child + `PriceList.items`.
+- **Selling:** `UOMConversionDetail` child + `Item.uoms`;
+  `ItemSupplier` child + `Item.suppliers`; `SalesItem` child +
+  Quotation / Sales Order / Sales Invoice line-items tables (with
+  `amount = qty * rate` formula).
+- **Buying:** `PurchaseItem` child + Supplier Quotation / Purchase
+  Order / Purchase Invoice line-items tables.
+- **Stock (new module):** `StockEntryDetail` child + `StockEntry.items`.
+- **Accounting (new module):** Chart-of-Accounts tree (`Account`),
+  `JournalEntryAccount` child + `JournalEntry.accounts`, and
+  `PaymentEntryReference` child + `PaymentEntry.references`.
 
-DocTypes unlocked: **Quotation**, **Sales Order**, **Sales Invoice**,
-**Purchase Order**, **Purchase Invoice**, **Journal Entry**, **BOM**,
-**Stock Entry**. Combined with W4, also unlocks **Contact** / **Address**
-with proper Links child tables.
+Every transactional document above stays at `docStatus = 0` (Draft)
+until Wall 6 lands. Flipping `isSubmittable: true` on each parent is
+the only pending Hub-side change; the line-item / debit-credit /
+allocation child rows already round-trip atomically through
+`engine.save(_:)`.
 
 #### Wall 6 — Submittable + workflow
 
@@ -498,7 +546,7 @@ Don't pre-populate all modules speculatively.
 
 ### Phase-by-phase sequence
 
-**Phase 1 — Finish CRM and prove relational + child-table plumbing**
+**Phase 1 — Finish CRM and prove relational + child-table plumbing — ✅ shipped**
 
 1. ✅ **Wall 4 (link fields) shipped.** Hub-side: Address, Contact, Lead;
    Customer fleshed out with `customer_group`, `territory`,
@@ -506,14 +554,17 @@ Don't pre-populate all modules speculatively.
    `default_warehouse`. Selling / Buying / Stock / Accounting masters
    declared (Item, Supplier, Warehouse, CostCenter, Currency, UOM,
    Brand, PriceList).
-2. **Wall 5 (child tables) is next.** Hub adds Customer's `addresses` /
-   `contacts` child tables, Item with UOM rows, PriceList with
-   item_price rows, and the line-item rows that unlock every
-   transactional DocType.
+2. ✅ **Wall 5 (child tables) shipped.** DynamicLink + Address.links /
+   Contact.links; ItemPrice + PriceList.items; UOMConversionDetail +
+   ItemSupplier on Item; SalesItem on Quotation / Sales Order /
+   Sales Invoice; PurchaseItem on Supplier Quotation / Purchase Order
+   / Purchase Invoice; StockEntryDetail on Stock Entry;
+   JournalEntryAccount on Journal Entry; PaymentEntryReference on
+   Payment Entry.
 3. ✅ **Wall 8 (tree DocTypes) shipped at the master level.** Item Group,
    Customer Group, Supplier Group, Territory, Warehouse, Cost Center
-   all declared `isTree: true` with `parent_*` self-links. Account
-   tree (Chart of Accounts) waits on the Accounting module proper.
+   all declared `isTree: true` with `parent_*` self-links.
+   Chart-of-Accounts (`Account`) tree shipped with Wall 5.
 
 **Phase 2 — Submittables: minimal Selling + Buying**
 

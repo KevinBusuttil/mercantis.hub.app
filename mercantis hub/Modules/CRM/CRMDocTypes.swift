@@ -12,6 +12,36 @@ private let systemManagerPermission = PermissionRule(
 
 enum CRM {
 
+    // MARK: - Child DocTypes
+
+    /// One row inside an Address.links or Contact.links table. Declares a
+    /// dynamic relation: `link_doctype` chooses the target DocType and
+    /// `link_name` carries that document's id. Wall 5 unlocks this in
+    /// place of the single static link Contact carried before.
+    static let dynamicLink = DocType(
+        id: "DynamicLink",
+        name: "Dynamic Link",
+        module: "CRM",
+        appId: HubManifest.appID,
+        isChildTable: true,
+        fields: [
+            FieldDefinition(key: "link_doctype", label: "Link DocType",
+                            type: .select, required: true,
+                            options: ["Customer", "Supplier", "Lead", "Contact"]),
+            FieldDefinition(key: "link_name", label: "Link Name",
+                            type: .text, required: true),
+            FieldDefinition(key: "is_primary", label: "Primary",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: [],
+        titleField: "link_name"
+    )
+
+    // MARK: - Parent DocTypes
+
     static let customer = DocType(
         id: "Customer",
         name: "Customer",
@@ -101,14 +131,12 @@ enum CRM {
                             required: false, isSearchable: true),
             FieldDefinition(key: "mobile_no", label: "Mobile", type: .phone, required: false),
             FieldDefinition(key: "phone", label: "Phone", type: .phone, required: false),
-            FieldDefinition(key: "company_name", label: "Company", type: .link,
-                            required: false, linkedDocType: "Customer"),
             FieldDefinition(key: "designation", label: "Designation", type: .text,
                             required: false),
             FieldDefinition(key: "department", label: "Department", type: .text,
                             required: false),
-            FieldDefinition(key: "address", label: "Address", type: .link,
-                            required: false, linkedDocType: "Address")
+            FieldDefinition(key: "links", label: "Linked To",
+                            type: .table, required: false, childDocType: "DynamicLink")
         ],
         permissions: [systemManagerPermission],
         autoname: "naming_series:CONT-.YYYY.-.####",
@@ -128,9 +156,15 @@ enum CRM {
                 fieldKeys: ["email_id", "mobile_no", "phone"]
             ),
             FormLayoutSection(
-                key: "company",
-                title: "Company",
-                fieldKeys: ["company_name", "designation", "department", "address"]
+                key: "role",
+                title: "Role",
+                fieldKeys: ["designation", "department"]
+            ),
+            FormLayoutSection(
+                key: "links",
+                title: "Linked To",
+                helpText: "Customers, Suppliers, or Leads this contact is associated with.",
+                fieldKeys: ["links"]
             )
         ])
     )
@@ -156,7 +190,9 @@ enum CRM {
             FieldDefinition(key: "country", label: "Country", type: .text, required: true),
             FieldDefinition(key: "pincode", label: "Postcode", type: .text, required: false),
             FieldDefinition(key: "phone", label: "Phone", type: .phone, required: false),
-            FieldDefinition(key: "fax", label: "Fax", type: .text, required: false)
+            FieldDefinition(key: "fax", label: "Fax", type: .text, required: false),
+            FieldDefinition(key: "links", label: "Linked To",
+                            type: .table, required: false, childDocType: "DynamicLink")
         ],
         permissions: [systemManagerPermission],
         autoname: "naming_series:ADDR-.YYYY.-.####",
@@ -179,6 +215,12 @@ enum CRM {
                 key: "reach",
                 title: "Reach",
                 fieldKeys: ["phone", "fax"]
+            ),
+            FormLayoutSection(
+                key: "links",
+                title: "Linked To",
+                helpText: "Customers, Suppliers, or Leads this address belongs to.",
+                fieldKeys: ["links"]
             )
         ])
     )
@@ -249,5 +291,10 @@ enum CRM {
         ])
     )
 
-    static let allDocTypes: [DocType] = [customer, contact, address, lead]
+    static let allDocTypes: [DocType] = [
+        // Child DocTypes first so install ordering matches reference order.
+        dynamicLink,
+        // Parents
+        customer, contact, address, lead
+    ]
 }

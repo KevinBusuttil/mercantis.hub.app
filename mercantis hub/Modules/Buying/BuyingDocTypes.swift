@@ -12,10 +12,49 @@ private let systemManagerPermission = PermissionRule(
 
 enum Buying {
 
-    /// Supplier is the canonical "we buy from" entity. Wall 4 unlocks the
-    /// link fields (`supplier_group`, `default_currency`,
-    /// `default_price_list`); supplier-side address / contact rows wait
-    /// for Wall 5 (child tables).
+    // MARK: - Child DocTypes
+
+    /// One row inside a buy-side line-item table (Supplier Quotation,
+    /// Purchase Order, Purchase Invoice). Wall 5 unlocks the structure;
+    /// Wall 6 will add workflow gating on the parent.
+    static let purchaseItem = DocType(
+        id: "PurchaseItem",
+        name: "Purchase Item",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: true,
+        fields: [
+            FieldDefinition(key: "item", label: "Item",
+                            type: .link, required: true, linkedDocType: "Item"),
+            FieldDefinition(key: "description", label: "Description",
+                            type: .text, required: false),
+            FieldDefinition(key: "qty", label: "Quantity",
+                            type: .decimal, required: true, defaultValue: .double(1)),
+            FieldDefinition(key: "uom", label: "UOM",
+                            type: .link, required: false, linkedDocType: "UOM"),
+            FieldDefinition(key: "rate", label: "Rate",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "amount", label: "Amount",
+                            type: .currency, required: false,
+                            formulaExpression: "qty * rate"),
+            FieldDefinition(key: "warehouse", label: "Target Warehouse",
+                            type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "schedule_date", label: "Required By",
+                            type: .date, required: false)
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: [],
+        titleField: "item"
+    )
+
+    // MARK: - Parent DocTypes
+
+    /// Supplier — Wall 4 unlocked the link fields (`supplier_group`,
+    /// `default_currency`, `default_price_list`, `default_cost_center`).
+    /// Per-supplier address / contact rows live as `links` rows on the
+    /// shared Address / Contact DocTypes (Wall 5).
     static let supplier = DocType(
         id: "Supplier",
         name: "Supplier",
@@ -82,5 +121,115 @@ enum Buying {
         ])
     )
 
-    static let allDocTypes: [DocType] = [supplier]
+    private static let purchaseParentLayout: [FormLayoutSection] = [
+        FormLayoutSection(
+            key: "header",
+            title: "Header",
+            fieldKeys: ["supplier", "transaction_date", "currency", "price_list"]
+        ),
+        FormLayoutSection(
+            key: "items",
+            title: "Items",
+            fieldKeys: ["items"]
+        ),
+        FormLayoutSection(
+            key: "totals",
+            title: "Totals",
+            fieldKeys: ["total_qty", "grand_total"]
+        ),
+        FormLayoutSection(
+            key: "notes",
+            title: "Notes",
+            fieldKeys: ["notes"]
+        )
+    ]
+
+    private static let purchaseParentFields: [FieldDefinition] = [
+        FieldDefinition(key: "supplier", label: "Supplier",
+                        type: .link, required: true, linkedDocType: "Supplier"),
+        FieldDefinition(key: "transaction_date", label: "Date",
+                        type: .date, required: true),
+        FieldDefinition(key: "currency", label: "Currency",
+                        type: .link, required: true, linkedDocType: "Currency"),
+        FieldDefinition(key: "price_list", label: "Price List",
+                        type: .link, required: false, linkedDocType: "PriceList"),
+        FieldDefinition(key: "items", label: "Items",
+                        type: .table, required: true, childDocType: "PurchaseItem"),
+        FieldDefinition(key: "total_qty", label: "Total Qty",
+                        type: .decimal, required: false),
+        FieldDefinition(key: "grand_total", label: "Grand Total",
+                        type: .currency, required: false),
+        FieldDefinition(key: "notes", label: "Notes",
+                        type: .longText, required: false)
+    ]
+
+    /// Supplier Quotation — pre-purchase RFQ response.
+    static let supplierQuotation = DocType(
+        id: "SupplierQuotation",
+        name: "Supplier Quotation",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: purchaseParentFields,
+        permissions: [systemManagerPermission],
+        autoname: "naming_series:SQTN-PURC-.YYYY.-.####",
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["supplier"],
+        titleField: "supplier",
+        formLayout: FormLayout(sections: purchaseParentLayout)
+    )
+
+    /// Purchase Order — confirmed purchase, awaiting receipt.
+    static let purchaseOrder = DocType(
+        id: "PurchaseOrder",
+        name: "Purchase Order",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: purchaseParentFields,
+        permissions: [systemManagerPermission],
+        autoname: "naming_series:PO-.YYYY.-.####",
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["supplier"],
+        titleField: "supplier",
+        formLayout: FormLayout(sections: purchaseParentLayout)
+    )
+
+    /// Purchase Invoice — billable line items, accounts-payable trigger.
+    /// GL-entry derivation waits on Wall 7.
+    static let purchaseInvoice = DocType(
+        id: "PurchaseInvoice",
+        name: "Purchase Invoice",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: purchaseParentFields + [
+            FieldDefinition(key: "due_date", label: "Due Date",
+                            type: .date, required: false),
+            FieldDefinition(key: "outstanding_amount", label: "Outstanding",
+                            type: .currency, required: false)
+        ],
+        permissions: [systemManagerPermission],
+        autoname: "naming_series:PINV-.YYYY.-.####",
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["supplier"],
+        titleField: "supplier",
+        formLayout: FormLayout(sections: purchaseParentLayout + [
+            FormLayoutSection(
+                key: "billing",
+                title: "Billing",
+                fieldKeys: ["due_date", "outstanding_amount"]
+            )
+        ])
+    )
+
+    static let allDocTypes: [DocType] = [
+        // Child DocTypes first
+        purchaseItem,
+        // Parents
+        supplier, supplierQuotation, purchaseOrder, purchaseInvoice
+    ]
 }
