@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Wall 5 implemented — child tables; transactional DocTypes declarable end-to-end)_
+_Last updated: 2026-05-05 (Wall 6 implemented — submittables + workflows; transactional documents have real lifecycle)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -135,37 +135,40 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 
 ## ERP Coverage Grade
 
-**Hub is ~30% of a usable ERP.** Wall 5 (child tables) is shipped end-to-end
-on the Hub side. Every transactional DocType the masters layer
-references is now declarable as a Draft document with its line-item,
-debit/credit, or allocation rows — only the submit-time gate is
-missing, and that's what Wall 6 unblocks.
+**Hub is ~45% of a usable ERP.** Wall 6 (submittables + workflows) is
+shipped end-to-end. Every transactional DocType across Selling, Buying,
+Stock, and Accounting now has a real lifecycle: Draft → Submitted →
+post-submit application states → Cancelled. The Submit / Cancel /
+Amend buttons render in `HubDocTypeView` based on `DocType.isSubmittable`
+and the document's `docStatus`; available workflow transitions for the
+current state surface as additional buttons.
 
-What's declarable as of this revision:
+What's now lifecycle-complete:
 
-- **Address.links / Contact.links** — the multi-target `DynamicLink`
-  child rows, replacing Contact's single-target `company_name` link
-  with a full ERPNext-style links table.
-- **PriceList.items** — per-item `ItemPrice` child rows
-  (rate / UOM / min-qty / validity window).
-- **Item.uoms / Item.suppliers** — UOM-conversion + per-supplier
-  sourcing rows.
-- **Selling transactions** — Quotation, Sales Order, Sales Invoice,
-  each with a `SalesItem` line-items child.
-- **Buying transactions** — Supplier Quotation, Purchase Order,
-  Purchase Invoice, each with a `PurchaseItem` line-items child.
-- **Stock** — Stock Entry with per-row source/target warehouse +
-  valuation in `StockEntryDetail`. Stock-ledger derivation waits on
-  Wall 7.
-- **Accounting** — Chart-of-Accounts tree (`Account`) plus Journal
-  Entry (`JournalEntryAccount` debit/credit rows) and Payment Entry
-  (`PaymentEntryReference` allocation rows). GL-entry derivation
-  waits on Wall 7.
+- **Selling:** Quotation (Draft → Submitted → Ordered / Lost / Cancelled),
+  Sales Order (Draft → Submitted → Closed / Cancelled, with Re-open),
+  Sales Invoice (Draft → Submitted → Paid / Overdue / Cancelled, with
+  `outstanding_amount <= 0` guard on Mark-as-Paid).
+- **Buying:** Supplier Quotation, Purchase Order, Purchase Invoice —
+  symmetric flows.
+- **Stock:** Stock Entry (Draft → Submitted → Cancelled).
+- **Accounting:** Journal Entry (Draft → Submitted → Cancelled, with
+  `total_debit == total_credit` submit-time validation rule),
+  Payment Entry (Draft → Submitted → Reconciled / Cancelled).
 
-All transactional documents stay at `docStatus = 0` (Draft) until
-Wall 6 lands — at which point flipping `isSubmittable: true` on each
-parent DocType unlocks the existing Core submit/cancel/amend pipeline
-without further Hub schema work.
+Submit-time invariants enforced by Core's pipeline (ADR-013, ADR-022):
+optimistic concurrency, field immutability for non-`allowOnSubmit`
+fields, link-target existence, and the workflow-guard stage
+(role + condition gating per transition). Workflow transitions
+auto-persist into `workflow_transitions` (Phase A / ADR-038) and
+every save / submit / cancel / amend writes an `audit_log` row
+(Phase A / ADR-039).
+
+The remaining engine wall is **Wall 7 — derived ledgers**. Submit
+events from Stock Entry / Sales Invoice / Purchase Invoice / Payment
+Entry / Journal Entry need to derive Stock Ledger Entry / GL Entry
+rows; the on-submit hook is the existing Phase B automation rule
+(ADR-041) — only Hub-side declarations are left.
 
 ### What's done
 
@@ -208,45 +211,45 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | DynamicLink (child) | ✅ | Shared `(link_doctype, link_name, is_primary)` row used by Address.links and Contact.links. |
 | Opportunity | ❌ | Needs Wall 6 (workflow). |
 
-### Selling — Wall-5-complete
+### Selling — Wall-6-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Item | ✅ | All Wall-4 link fields + `uoms` (UOMConversionDetail) and `suppliers` (ItemSupplier) child tables. |
+| Item | ✅ | All Wall-4 link fields + `uoms` / `suppliers` child tables. |
 | Item Group | ✅ | Tree DocType in Setup. |
 | Price List | ✅ | Setup header + `items` (ItemPrice) child rows. |
-| Quotation | 🟡 | Customer + currency + price-list header + `items` (SalesItem) child. Draft-only until Wall 6. |
-| Sales Order | 🟡 | Same shape as Quotation + delivery_date. Draft-only until Wall 6. |
-| Sales Invoice | 🟡 | Same shape + due_date / outstanding. Draft-only until Wall 6; GL derivation waits on Wall 7. |
-| Delivery Note | ❌ | Symmetric to Sales Invoice; wait until W6/W7 lands and we can derive Stock Ledger entries. |
-| SalesItem (child) | ✅ | item / qty / rate / amount / uom / source-warehouse / delivery_date with `amount = qty * rate` formula. |
+| Quotation | ✅ | Submittable (`wf-quotation`: Draft → Submitted → Ordered / Lost / Cancelled). |
+| Sales Order | ✅ | Submittable (`wf-sales-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
+| Sales Invoice | ✅ | Submittable (`wf-sales-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). Mark-as-Paid is gated by `outstanding_amount <= 0`. GL derivation waits on Wall 7. |
+| Delivery Note | ❌ | Wait for Wall 7 to derive Stock Ledger entries. |
+| SalesItem (child) | ✅ | `amount = qty * rate` formula. |
 | UOMConversionDetail (child) | ✅ | Item.uoms row. |
 | ItemSupplier (child) | ✅ | Item.suppliers row. |
 
-### Buying — Wall-5-complete
+### Buying — Wall-6-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Supplier | ✅ | All Wall-4 link fields. Per-supplier address / contact rows live on the shared Address / Contact DocTypes. |
+| Supplier | ✅ | All Wall-4 link fields. |
 | Supplier Group | ✅ | Tree DocType in Setup. |
-| Supplier Quotation | 🟡 | supplier + currency + price-list header + `items` (PurchaseItem) child. Draft-only until Wall 6. |
-| Purchase Order | 🟡 | Same shape. Draft-only until Wall 6. |
-| Purchase Invoice | 🟡 | Same shape + due_date / outstanding. Draft-only until Wall 6; GL derivation waits on Wall 7. |
-| Purchase Receipt | ❌ | Wait until W6/W7 lands and we can derive Stock Ledger entries. |
-| PurchaseItem (child) | ✅ | item / qty / rate / amount / uom / target-warehouse / schedule_date with `amount = qty * rate` formula. |
+| Supplier Quotation | ✅ | Submittable (`wf-supplier-quotation`: Draft → Submitted → Ordered / Cancelled). |
+| Purchase Order | ✅ | Submittable (`wf-purchase-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
+| Purchase Invoice | ✅ | Submittable (`wf-purchase-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). GL derivation waits on Wall 7. |
+| Purchase Receipt | ❌ | Wait for Wall 7. |
+| PurchaseItem (child) | ✅ | `amount = qty * rate` formula. |
 
-### Stock — Wall-5-complete (transit layer ready)
+### Stock — Wall-6-complete (transit layer ready)
 
 | DocType | State | Notes |
 |---|---|---|
 | Warehouse | ✅ | Tree DocType in Setup. |
-| Stock Entry | 🟡 | Purpose + posting date + default warehouses + `items` (StockEntryDetail) child. Draft-only until Wall 6; Stock Ledger derivation waits on Wall 7. |
-| StockEntryDetail (child) | ✅ | item / qty / source + target warehouse / valuation_rate / amount with `amount = qty * valuation_rate` formula. |
+| Stock Entry | ✅ | Submittable (`wf-stock-entry`: Draft → Submitted → Cancelled). Stock Ledger derivation waits on Wall 7. |
+| StockEntryDetail (child) | ✅ | `amount = qty * valuation_rate` formula. |
 | Stock Ledger Entry | ❌ | W7 (derived ledger), append-only. |
 | Bin | ❌ | W7 (derived from Stock Ledger). |
-| Stock Reconciliation | ❌ | W6, W7. |
+| Stock Reconciliation | ❌ | W7. |
 
-### Accounting — Wall-5-complete (vouchers ready)
+### Accounting — Wall-6-complete (vouchers ready)
 
 | DocType | State | Notes |
 |---|---|---|
@@ -254,9 +257,9 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | Cost Center | ✅ | Tree DocType in Setup. |
 | Currency | ✅ | Flat master in Setup. |
 | Fiscal Year | ❌ | Trivial flat DocType; not yet needed. |
-| Journal Entry | 🟡 | Voucher type + posting date + `accounts` (JournalEntryAccount) child rows. Draft-only until Wall 6; total-debit-equals-total-credit guard waits on W6. GL derivation waits on Wall 7. |
-| JournalEntryAccount (child) | ✅ | account / party_type / party / debit / credit / cost_center / reference link. |
-| Payment Entry | 🟡 | Receive / Pay / Internal Transfer + paid-from / paid-to + `references` (PaymentEntryReference) allocations. Draft-only until Wall 6. |
+| Journal Entry | ✅ | Submittable (`wf-journal-entry`: Draft → Submitted → Cancelled). `total_debit == total_credit` enforced via ValidationRule on every save. GL derivation waits on Wall 7. |
+| JournalEntryAccount (child) | ✅ | account / party_type / party / debit / credit / cost_center / reference. |
+| Payment Entry | ✅ | Submittable (`wf-payment-entry`: Draft → Submitted → Reconciled / Cancelled). |
 | PaymentEntryReference (child) | ✅ | reference_doctype / reference_name / total / outstanding / allocated. |
 | GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry). |
 
@@ -314,43 +317,49 @@ for several cross-cutting concerns:
 
 ---
 
-## Next Step — Wall 6 (submittables + workflow)
+## Next Step — Wall 7 (derived ledgers)
 
-Walls 4 + 5 are shipped Hub-side. Every transactional DocType across
-Selling, Buying, Stock, and Accounting is declarable end-to-end with
-its child rows and links. The remaining gap is the *gate*: today
-those documents stay in Draft (`docStatus = 0`) forever, because no
-parent declares `isSubmittable: true` yet.
+Walls 4 + 5 + 6 are shipped Hub-side. Every transactional DocType has
+its real lifecycle. The remaining gap is the *side effect*: when a
+Sales Invoice / Purchase Invoice / Stock Entry / Journal Entry /
+Payment Entry is submitted, no GL Entry or Stock Ledger Entry rows
+get derived — financial and inventory positions are still in the
+parent documents only.
 
-**Wall 6 is purely a Hub flip + workflow declaration.** Core's
-submit/cancel/amend pipeline (ADR-013), workflow engine
-(`WorkflowEngine` + Phase A `WorkflowTransitionHistoryWriter`,
-ADR-038), and immutability guard for non-`allowOnSubmit` fields are
-all shipped. Hub work to land Wall 6:
+**Wall 7 is a Hub-side declaration plus one automation rule per
+derivation.** Core's automation runner (ADR-019) fires on
+`onSubmit` events and Phase B's `AutomationRule` (ADR-041) supports
+scheduled and document-event triggers; the on-submit hook is the
+canonical place. Hub work to land Wall 7:
 
-1. Set `isSubmittable: true` on every transactional parent
-   (Quotation, Sales Order, Sales Invoice, Supplier Quotation,
-   Purchase Order, Purchase Invoice, Stock Entry, Journal Entry,
-   Payment Entry).
-2. Mark balance-touching fields as `allowOnSubmit: false` (the
-   default), and editable-after-submit fields like `notes` /
-   `remarks` as `allowOnSubmit: true`.
-3. Declare `WorkflowDefinition`s in `Workflows/HubWorkflows.swift`
-   for state-driven flows (Quotation: Draft → Submitted → Lost /
-   Ordered; Sales Invoice: Draft → Submitted → Paid / Cancelled;
-   Stock Entry: Draft → Submitted; Journal Entry: Draft → Submitted).
-4. Wire `workflowId` on each parent DocType.
-5. (Optional) Add submit-time validation rules: Journal Entry's
-   total debit must equal total credit; Stock Entry items' totals
-   must reconcile; Sales Invoice / Purchase Invoice
-   outstanding_amount initial = grand_total.
+1. New `Stock/StockDocTypes.swift` additions: `StockLedgerEntry`
+   (append-only, non-submittable; signed qty per warehouse per item
+   per posting time).
+2. New `Accounting/AccountingDocTypes.swift` additions: `GLEntry`
+   (append-only; debit / credit / account / posting_date / voucher
+   reference).
+3. **Automation rules** in `Automation/HubAutomationRules.swift`:
+   - Stock Entry submit → fan out one StockLedgerEntry per items[]
+     row (out from source warehouse, in to target warehouse).
+   - Sales Invoice submit → write GL rows (Dr Debtors, Cr Income,
+     Cr Tax) per line.
+   - Purchase Invoice submit → write GL rows (Dr Expense / Inventory,
+     Cr Creditors).
+   - Payment Entry submit → write GL rows (Dr Cash, Cr Party).
+   - Journal Entry submit → write GL rows from each child account
+     row.
+4. Optional helper: a Hub-side `LedgerDerivation` action handler
+   registered alongside Core's built-in handlers, taking the
+   derivation specs from rule parameters so the rule declarations
+   stay declarative.
 
-After Wall 6, **Wall 7** (derived ledgers — `StockLedgerEntry` and
-`GLEntry`) becomes the next Core-side ask: an automation rule fires
-on submit and writes the derived rows. The infrastructure for
-post-submit automation rules exists (Phase B / ADR-041); only the
-ledger-DocType declarations and the auto-derive automation are
-left to wire.
+After Wall 7, every primary book of record (financial position,
+inventory position) is correct in real time. **Wall 9 — Hub
+reports + dashboards** then becomes the natural follow-up: Sales
+Register, Customer Aging, Stock Ledger View, Trial Balance, etc.
+all read directly off the now-populated GL Entry / Stock Ledger
+Entry tables, and `MercantisCoreUI.GenericReportView` (Phase D /
+ADR-049) renders them without per-report SwiftUI code.
 
 ### Verify each new DocType
 
@@ -460,24 +469,51 @@ the only pending Hub-side change; the line-item / debit-credit /
 allocation child rows already round-trip atomically through
 `engine.save(_:)`.
 
-#### Wall 6 — Submittable + workflow
+#### Wall 6 — Submittable + workflow ✅ resolved
 
-ERPNext distinguishes Draft (editable, no side effects) from Submitted
-(signed, immutable, downstream effects fire).
+Core's submit / cancel / amend pipeline (ADR-013), `WorkflowEngine` +
+`WorkflowTransitionHistoryWriter` (Phase A / ADR-038), and the
+ValidationPipeline's WorkflowGuardStage have all been in place.
+Wall 6 was the Hub-side flip plus minimal UI.
 
-Hub-side expectations:
-- DocType declares `isSubmittable: Bool` and optional `workflow: WorkflowDefinition`.
-- `WorkflowDefinition` expresses states + transitions + per-transition role gating.
-- `Document.status` reflects current workflow state.
-- `GenericFormView` shows state-aware action buttons: **Save** while Draft;
-  **Submit** when Draft completes; **Cancel** when Submitted; **Amend** when
-  Cancelled (clones to a new Draft with a derived ID).
-- Field-level: `readOnlyAfterSubmit: Bool` so fields freeze post-submit.
+Hub-side declarations shipped under Wall 6:
 
-DocTypes unlocked: every transactional DocType — **Sales Order**, **Sales
-Invoice**, **Purchase Order**, **Purchase Invoice**, **Stock Entry**,
-**Delivery Note**, **Purchase Receipt**, **Journal Entry**, **Payment Entry**,
-**Asset**, **Work Order**.
+- **`HubWorkflows.swift`** declares 9 `WorkflowDefinition`s, one per
+  transactional DocType, with `Submit` / `Cancel` transitions
+  mirroring the docStatus lifecycle plus post-submit application
+  states (Ordered / Lost / Closed / Paid / Overdue / Reconciled).
+  `Mark as Paid` carries `outstanding_amount <= 0` as its
+  `conditionExpression`.
+- **Every transactional parent DocType** (Quotation, Sales Order,
+  Sales Invoice, Supplier Quotation, Purchase Order, Purchase
+  Invoice, Stock Entry, Journal Entry, Payment Entry) flipped to
+  `isSubmittable: true`, `workflowId: "wf-..."`,
+  `syncPolicy.versionChecked + immutableAfterSubmit: true`.
+- `notes` / `remarks` / `user_remark` / `outstanding_amount` /
+  `due_date` / `delivery_date` / `references` (PaymentEntry) marked
+  `allowOnSubmit: true` so post-submit edits stay possible.
+- **JournalEntry** carries a `total_debit == total_credit`
+  `ValidationRule` enforced on every save (rejects unbalanced
+  vouchers before submit).
+- **`HubManifest.build()`** now passes `workflows: HubWorkflows.allWorkflows`
+  so `AppInstaller` persists every workflow into Core's `workflows`
+  table at install time.
+- **`mercantis_hubApp.swift`** constructs a `WorkflowEngine` via the
+  `init(database:)` convenience (Phase A) so every transition
+  auto-persists into `workflow_transitions`.
+- **`HubDocTypeView`** in `UI/RootView.swift`:
+  - Status badge (Draft / Submitted / Cancelled with workflow status
+    sub-label).
+  - **Save** button while Draft (Cmd-S).
+  - **Submit** button when Draft + persisted (Cmd-Return) — calls
+    `engine.submit(&doc)` then runs the workflow's Submit transition.
+  - **Cancel** button when Submitted — calls `engine.cancel(&doc)`
+    plus the workflow's Cancel transition.
+  - **Amend** button when Cancelled — calls `engine.amend(_:)`.
+  - Workflow transition buttons (`Mark as Paid`, `Mark as Lost`,
+    `Reconcile`, …) surface every transition currently available
+    from `Document.status` for the System Manager role, gated by
+    the workflow's `conditionExpression`.
 
 #### Wall 7 — Ledger / derived documents
 
@@ -566,11 +602,16 @@ Don't pre-populate all modules speculatively.
    all declared `isTree: true` with `parent_*` self-links.
    Chart-of-Accounts (`Account`) tree shipped with Wall 5.
 
-**Phase 2 — Submittables: minimal Selling + Buying**
+**Phase 2 — Submittables: minimal Selling + Buying — ✅ shipped**
 
-4. **Wall 6 lands in Core (submittable + workflow).** Then Hub adds
-   Quotation → Sales Order → Sales Invoice for Selling, and the symmetric
-   Supplier Quotation → Purchase Order → Purchase Invoice for Buying.
+4. ✅ **Wall 6 (submittable + workflow) shipped.** Quotation → Sales
+   Order → Sales Invoice flow live with `wf-quotation` /
+   `wf-sales-order` / `wf-sales-invoice` workflows; symmetric Supplier
+   Quotation → Purchase Order → Purchase Invoice flow with
+   `wf-supplier-quotation` / `wf-purchase-order` / `wf-purchase-invoice`.
+   Stock Entry, Journal Entry, Payment Entry submittable too. Submit
+   / Cancel / Amend buttons rendered by `HubDocTypeView` with workflow
+   transition buttons surfacing post-submit status moves.
 
 **Phase 3 — Stock and Accounting backbones**
 

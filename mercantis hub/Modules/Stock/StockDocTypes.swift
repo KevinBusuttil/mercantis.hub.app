@@ -51,7 +51,8 @@ enum Stock {
     // MARK: - Parent DocTypes
 
     /// Stock Entry — generic stock movement. `purpose` chooses receipt /
-    /// issue / transfer / repack semantics. Submit-time stock-ledger
+    /// issue / transfer / repack semantics. Wall 6 makes it submittable
+    /// with the `wf-stock-entry` workflow. Submit-time stock-ledger
     /// derivation waits on Wall 7.
     static let stockEntry = DocType(
         id: "StockEntry",
@@ -59,6 +60,7 @@ enum Stock {
         module: "Stock",
         appId: HubManifest.appID,
         isChildTable: false,
+        isSubmittable: true,
         fields: [
             FieldDefinition(key: "purpose", label: "Purpose",
                             type: .select, required: true,
@@ -78,11 +80,13 @@ enum Stock {
             FieldDefinition(key: "total_value", label: "Total Value",
                             type: .currency, required: false),
             FieldDefinition(key: "remarks", label: "Remarks",
-                            type: .longText, required: false)
+                            type: .longText, required: false,
+                            allowOnSubmit: true)
         ],
         permissions: [systemManagerPermission],
+        workflowId: "wf-stock-entry",
         autoname: "naming_series:STE-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: SyncPolicy(conflictResolution: .versionChecked, immutableAfterSubmit: true),
         indexes: [],
         searchFields: ["purpose"],
         titleField: "purpose",

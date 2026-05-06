@@ -144,53 +144,76 @@ enum Buying {
         )
     ]
 
-    private static let purchaseParentFields: [FieldDefinition] = [
-        FieldDefinition(key: "supplier", label: "Supplier",
-                        type: .link, required: true, linkedDocType: "Supplier"),
-        FieldDefinition(key: "transaction_date", label: "Date",
-                        type: .date, required: true),
-        FieldDefinition(key: "currency", label: "Currency",
-                        type: .link, required: true, linkedDocType: "Currency"),
-        FieldDefinition(key: "price_list", label: "Price List",
-                        type: .link, required: false, linkedDocType: "PriceList"),
-        FieldDefinition(key: "items", label: "Items",
-                        type: .table, required: true, childDocType: "PurchaseItem"),
-        FieldDefinition(key: "total_qty", label: "Total Qty",
-                        type: .decimal, required: false),
-        FieldDefinition(key: "grand_total", label: "Grand Total",
-                        type: .currency, required: false),
-        FieldDefinition(key: "notes", label: "Notes",
-                        type: .longText, required: false)
-    ]
+    private static let submittableSyncPolicy = SyncPolicy(
+        conflictResolution: .versionChecked,
+        immutableAfterSubmit: true
+    )
 
-    /// Supplier Quotation — pre-purchase RFQ response.
+    private static func purchaseParentFields(includeOutstanding: Bool = false) -> [FieldDefinition] {
+        var fields: [FieldDefinition] = [
+            FieldDefinition(key: "supplier", label: "Supplier",
+                            type: .link, required: true, linkedDocType: "Supplier"),
+            FieldDefinition(key: "transaction_date", label: "Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "currency", label: "Currency",
+                            type: .link, required: true, linkedDocType: "Currency"),
+            FieldDefinition(key: "price_list", label: "Price List",
+                            type: .link, required: false, linkedDocType: "PriceList"),
+            FieldDefinition(key: "items", label: "Items",
+                            type: .table, required: true, childDocType: "PurchaseItem"),
+            FieldDefinition(key: "total_qty", label: "Total Qty",
+                            type: .decimal, required: false),
+            FieldDefinition(key: "grand_total", label: "Grand Total",
+                            type: .currency, required: false),
+            FieldDefinition(key: "notes", label: "Notes",
+                            type: .longText, required: false,
+                            allowOnSubmit: true)
+        ]
+        if includeOutstanding {
+            fields.append(FieldDefinition(key: "due_date", label: "Due Date",
+                                          type: .date, required: false,
+                                          allowOnSubmit: true))
+            fields.append(FieldDefinition(key: "outstanding_amount", label: "Outstanding",
+                                          type: .currency, required: false,
+                                          allowOnSubmit: true))
+        }
+        return fields
+    }
+
+    /// Supplier Quotation — pre-purchase RFQ response. Wall 6 makes it
+    /// submittable with the `wf-supplier-quotation` workflow.
     static let supplierQuotation = DocType(
         id: "SupplierQuotation",
         name: "Supplier Quotation",
         module: "Buying",
         appId: HubManifest.appID,
         isChildTable: false,
-        fields: purchaseParentFields,
+        isSubmittable: true,
+        fields: purchaseParentFields(),
         permissions: [systemManagerPermission],
+        workflowId: "wf-supplier-quotation",
         autoname: "naming_series:SQTN-PURC-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["supplier"],
         titleField: "supplier",
         formLayout: FormLayout(sections: purchaseParentLayout)
     )
 
-    /// Purchase Order — confirmed purchase, awaiting receipt.
+    /// Purchase Order — confirmed purchase, awaiting receipt. Wall 6
+    /// makes it submittable with the `wf-purchase-order` workflow.
     static let purchaseOrder = DocType(
         id: "PurchaseOrder",
         name: "Purchase Order",
         module: "Buying",
         appId: HubManifest.appID,
         isChildTable: false,
-        fields: purchaseParentFields,
+        isSubmittable: true,
+        fields: purchaseParentFields(),
         permissions: [systemManagerPermission],
+        workflowId: "wf-purchase-order",
         autoname: "naming_series:PO-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["supplier"],
         titleField: "supplier",
@@ -198,6 +221,7 @@ enum Buying {
     )
 
     /// Purchase Invoice — billable line items, accounts-payable trigger.
+    /// Wall 6 makes it submittable with the `wf-purchase-invoice` workflow.
     /// GL-entry derivation waits on Wall 7.
     static let purchaseInvoice = DocType(
         id: "PurchaseInvoice",
@@ -205,15 +229,12 @@ enum Buying {
         module: "Buying",
         appId: HubManifest.appID,
         isChildTable: false,
-        fields: purchaseParentFields + [
-            FieldDefinition(key: "due_date", label: "Due Date",
-                            type: .date, required: false),
-            FieldDefinition(key: "outstanding_amount", label: "Outstanding",
-                            type: .currency, required: false)
-        ],
+        isSubmittable: true,
+        fields: purchaseParentFields(includeOutstanding: true),
         permissions: [systemManagerPermission],
+        workflowId: "wf-purchase-invoice",
         autoname: "naming_series:PINV-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: submittableSyncPolicy,
         indexes: [],
         searchFields: ["supplier"],
         titleField: "supplier",

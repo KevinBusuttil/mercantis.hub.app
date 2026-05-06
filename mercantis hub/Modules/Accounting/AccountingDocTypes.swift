@@ -122,14 +122,17 @@ enum Accounting {
 
     // MARK: - Parent DocTypes
 
-    /// Journal Entry — manual debit/credit posting set. Submit-time GL
-    /// derivation waits on Wall 7.
+    /// Journal Entry — manual debit/credit posting set. Wall 6 makes it
+    /// submittable with the `wf-journal-entry` workflow and adds a
+    /// total-debit-equals-total-credit submit-time validation rule.
+    /// GL-entry derivation waits on Wall 7.
     static let journalEntry = DocType(
         id: "JournalEntry",
         name: "Journal Entry",
         module: "Accounting",
         appId: HubManifest.appID,
         isChildTable: false,
+        isSubmittable: true,
         fields: [
             FieldDefinition(key: "voucher_type", label: "Voucher Type",
                             type: .select, required: true,
@@ -142,16 +145,27 @@ enum Accounting {
                             type: .link, required: false, linkedDocType: "Currency"),
             FieldDefinition(key: "accounts", label: "Accounts",
                             type: .table, required: true, childDocType: "JournalEntryAccount"),
-            FieldDefinition(key: "total_debit", label: "Total Debit",
-                            type: .currency, required: false),
+            FieldDefinition(
+                key: "total_debit", label: "Total Debit",
+                type: .currency, required: false,
+                validationRules: [
+                    ValidationRule(
+                        ruleType: "expression",
+                        expression: "total_debit == total_credit",
+                        message: "Total debit must equal total credit before submitting."
+                    )
+                ]
+            ),
             FieldDefinition(key: "total_credit", label: "Total Credit",
                             type: .currency, required: false),
             FieldDefinition(key: "user_remark", label: "User Remark",
-                            type: .longText, required: false)
+                            type: .longText, required: false,
+                            allowOnSubmit: true)
         ],
         permissions: [systemManagerPermission],
+        workflowId: "wf-journal-entry",
         autoname: "naming_series:JE-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: SyncPolicy(conflictResolution: .versionChecked, immutableAfterSubmit: true),
         indexes: [],
         searchFields: ["voucher_type"],
         titleField: "voucher_type",
@@ -182,13 +196,15 @@ enum Accounting {
 
     /// Payment Entry — receipt or payment voucher. Allocates one cash /
     /// bank movement to one or more invoices via the `references` child
-    /// table. Submit-time GL derivation waits on Wall 7.
+    /// table. Wall 6 makes it submittable with the `wf-payment-entry`
+    /// workflow. GL derivation waits on Wall 7.
     static let paymentEntry = DocType(
         id: "PaymentEntry",
         name: "Payment Entry",
         module: "Accounting",
         appId: HubManifest.appID,
         isChildTable: false,
+        isSubmittable: true,
         fields: [
             FieldDefinition(key: "payment_type", label: "Payment Type",
                             type: .select, required: true,
@@ -210,13 +226,16 @@ enum Accounting {
                             type: .currency, required: false),
             FieldDefinition(key: "references", label: "Allocations",
                             type: .table, required: false,
-                            childDocType: "PaymentEntryReference"),
+                            childDocType: "PaymentEntryReference",
+                            allowOnSubmit: true),
             FieldDefinition(key: "remarks", label: "Remarks",
-                            type: .longText, required: false)
+                            type: .longText, required: false,
+                            allowOnSubmit: true)
         ],
         permissions: [systemManagerPermission],
+        workflowId: "wf-payment-entry",
         autoname: "naming_series:PE-.YYYY.-.####",
-        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        syncPolicy: SyncPolicy(conflictResolution: .versionChecked, immutableAfterSubmit: true),
         indexes: [],
         searchFields: ["party"],
         titleField: "party",

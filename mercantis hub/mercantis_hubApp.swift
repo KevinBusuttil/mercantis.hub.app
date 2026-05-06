@@ -5,6 +5,7 @@ import MercantisCore
 struct mercantis_hubApp: App {
 
     let documentEngine: DocumentEngine
+    let workflowEngine: WorkflowEngine
 
     init() {
         let databaseURL = Self.makeDatabaseURL()
@@ -26,11 +27,16 @@ struct mercantis_hubApp: App {
             deviceId: Self.deviceId(),
             userId: "kevin"
         )
+        // Wall 6: Hub uses Core's WorkflowEngine for post-submit state
+        // transitions. The convenience init wires
+        // WorkflowTransitionHistoryWriter so every transition persists
+        // into `workflow_transitions` automatically (Phase A / ADR-038).
+        self.workflowEngine = WorkflowEngine(database: database)
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(engine: documentEngine)
+            RootView(engine: documentEngine, workflowEngine: workflowEngine)
         }
         .defaultSize(width: 1100, height: 720)
     }
