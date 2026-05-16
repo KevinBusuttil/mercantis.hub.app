@@ -269,12 +269,69 @@ enum Accounting {
         ])
     )
 
+    // MARK: - Derived ledger (Wall 7)
+
+    /// GL Entry — append-only general-ledger row derived from any
+    /// transactional document's submit. Sales Invoice / Purchase Invoice
+    /// produce one Dr + one Cr; Journal Entry produces one row per
+    /// `accounts[]` child; Payment Entry produces one Dr (paid_from) +
+    /// one Cr (paid_to).
+    ///
+    /// On submitted document cancellation, the derivation service writes
+    /// reversal rows with the debit / credit values swapped; original
+    /// rows stay in place for audit. IDs are deterministic
+    /// (`GL-<voucherId>-<leg>` with optional `-reversal` suffix) so
+    /// re-firing the derivation upserts in place.
+    static let glEntry = DocType(
+        id: "GLEntry",
+        name: "GL Entry",
+        module: "Accounting",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "account", label: "Account",
+                            type: .link, required: true, linkedDocType: "Account"),
+            FieldDefinition(key: "debit", label: "Debit",
+                            type: .currency, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "credit", label: "Credit",
+                            type: .currency, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "party_type", label: "Party Type",
+                            type: .select, required: false,
+                            options: ["", "Customer", "Supplier", "Employee"]),
+            FieldDefinition(key: "party", label: "Party",
+                            type: .text, required: false),
+            FieldDefinition(key: "cost_center", label: "Cost Center",
+                            type: .link, required: false, linkedDocType: "CostCenter"),
+            FieldDefinition(key: "voucher_type", label: "Voucher Type",
+                            type: .text, required: true),
+            FieldDefinition(key: "voucher_no", label: "Voucher No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "remarks", label: "Remarks",
+                            type: .longText, required: false),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "voucher_no", unique: false),
+            IndexDefinition(fieldKey: "account", unique: false),
+            IndexDefinition(fieldKey: "posting_date", unique: false)
+        ],
+        searchFields: ["voucher_no", "party"],
+        titleField: "voucher_no"
+    )
+
     static let allDocTypes: [DocType] = [
         // Master
         account,
         // Child DocTypes
         journalEntryAccount, paymentEntryReference,
         // Parents
-        journalEntry, paymentEntry
+        journalEntry, paymentEntry,
+        // Derived ledger
+        glEntry
     ]
 }

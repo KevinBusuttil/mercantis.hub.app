@@ -27,9 +27,9 @@ public enum HubManifest: Sendable {
             doctypes: allDocTypes,
             workflows: HubWorkflows.allWorkflows,
             permissions: [],
-            reports: [],
+            reports: HubReports.allReports,
             automationRules: [],
-            dashboards: [],
+            dashboards: HubDashboards.allDashboards,
             localizations: []
         )
     }

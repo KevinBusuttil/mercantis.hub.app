@@ -6,6 +6,12 @@ struct mercantis_hubApp: App {
 
     let documentEngine: DocumentEngine
     let workflowEngine: WorkflowEngine
+    /// Wall 7 — retained so its event subscriptions stay alive for the
+    /// lifetime of the app. Held via a strong reference at app scope.
+    let ledgerDerivation: LedgerDerivationService
+    /// Wall 9 — engines for report execution and dashboard resolution.
+    let reportEngine: ReportEngine
+    let dashboardEngine: DashboardEngine
 
     init() {
         let databaseURL = Self.makeDatabaseURL()
@@ -21,22 +27,60 @@ struct mercantis_hubApp: App {
         )
         try! installer.install(HubManifest.build())
 
-        self.documentEngine = DocumentEngine(
+        // One shared event bus: DocumentEngine publishes
+        // DocumentSubmittedEvent / DocumentCancelledEvent into it;
+        // LedgerDerivationService subscribes from the same instance.
+        let emitter = EventEmitter()
+
+        let documentEngine = DocumentEngine(
             database: database,
             registry: registry,
             deviceId: Self.deviceId(),
-            userId: "kevin"
+            userId: "kevin",
+            eventEmitter: emitter
         )
+        self.documentEngine = documentEngine
         // Wall 6: Hub uses Core's WorkflowEngine for post-submit state
         // transitions. The convenience init wires
         // WorkflowTransitionHistoryWriter so every transition persists
         // into `workflow_transitions` automatically (Phase A / ADR-038).
         self.workflowEngine = WorkflowEngine(database: database)
+        // Wall 7: LedgerDerivationService listens for transactional
+        // submit / cancel events and writes append-only Stock Ledger
+        // Entry / GL Entry rows with deterministic ids.
+        self.ledgerDerivation = LedgerDerivationService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Wall 9: ReportEngine + DashboardEngine. ReportEngine holds the
+        // registered ReportDefinitions for discovery / role filtering
+        // (the actual aggregation lives in HubReports). DashboardEngine
+        // resolves manifest-declared widget descriptors into typed
+        // result tiles.
+        let reportEngine = ReportEngine(documentEngine: documentEngine)
+        for report in HubReports.allReports {
+            reportEngine.register(report)
+        }
+        self.reportEngine = reportEngine
+
+        let dashboardEngine = DashboardEngine(
+            documentEngine: documentEngine,
+            reportEngine: reportEngine
+        )
+        for dashboard in HubDashboards.allDashboards {
+            dashboardEngine.register(dashboard)
+        }
+        self.dashboardEngine = dashboardEngine
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(engine: documentEngine, workflowEngine: workflowEngine)
+            RootView(
+                engine: documentEngine,
+                workflowEngine: workflowEngine,
+                reportEngine: reportEngine,
+                dashboardEngine: dashboardEngine
+            )
         }
         .defaultSize(width: 1100, height: 720)
     }

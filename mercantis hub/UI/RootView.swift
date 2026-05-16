@@ -5,6 +5,8 @@ import MercantisCoreUI
 struct RootView: View {
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
+    let reportEngine: ReportEngine
+    let dashboardEngine: DashboardEngine
 
     @State private var selection: HubMenuItem?
     @State private var collapsedGroups: Set<String> = []
@@ -81,10 +83,20 @@ struct RootView: View {
                     engine: engine,
                     workflowEngine: workflowEngine
                 )
-            case .report(_, let label):
-                reportPlaceholder(label: label)
-            case .dashboard(_, let label):
-                dashboardPlaceholder(label: label)
+            case .report(let id, let label):
+                HubReportContainerView(
+                    reportId: id,
+                    reportLabel: label,
+                    engine: engine
+                )
+            case .dashboard(let id, let label):
+                HubDashboardView(
+                    dashboardId: id,
+                    dashboardTitle: label,
+                    dashboardEngine: dashboardEngine
+                ) { selected in
+                    selection = selected
+                }
             case .none:
                 HubHomeView(engine: engine) { item in
                     selection = item
@@ -92,22 +104,6 @@ struct RootView: View {
             }
         }
         .navigationTitle(selection?.label ?? "Mercantis Hub")
-    }
-
-    private func reportPlaceholder(label: String) -> some View {
-        ContentUnavailableView(
-            label,
-            systemImage: "chart.bar.doc.horizontal",
-            description: Text("Hub-side report declarations are next on the Wall 9 list. The engine ships GenericReportView in MercantisCoreUI; only the Hub-side ReportDefinition wiring is left.")
-        )
-    }
-
-    private func dashboardPlaceholder(label: String) -> some View {
-        ContentUnavailableView(
-            label,
-            systemImage: "rectangle.grid.2x2",
-            description: Text("DashboardEngine resolves widget tiles into typed data; a SwiftUI consumer of DashboardResult lands with the upcoming MercantisCoreUI work.")
-        )
     }
 }
 

@@ -1,107 +1,349 @@
-// mercantis hub
-// Created by Kevin Busuttil on 12/04/2026.
-
 import Foundation
+import MercantisCore
 
-// Uses Core's ReportDefinition, ReportFilter — imported from MercantisCore when dependency is wired up.
-
-/// Stub namespace for all Hub report definitions.
+/// Hub-side report definitions and the per-report computation routines
+/// that produce `ReportResult`s.
 ///
-/// Reports are declarative `ReportDefinition` values (ADR-004) that specify the
-/// data source, filters, columns, and groupings. Core's reporting engine executes them;
-/// Hub only provides the configuration.
+/// Wall 9 registers five canonical reports with Core's `ReportEngine`:
+/// Sales Register, Purchase Register, Stock Ledger View, Customer Aging,
+/// Trial Balance. `ReportDefinition.allowedRoles` (Phase D / ADR-049)
+/// gates visibility per role; `MercantisCoreUI.GenericReportView` renders
+/// any `ReportResult` as a SwiftUI table.
 ///
-/// - ADR-004: Reports are declarative manifest data.
-/// - ADR-008: No dynamic code loading; all report configurations are statically declared.
+/// ### Why a Hub-side computer
+///
+/// Core's `ReportEngine.execute(report:)` is a flat list-and-format
+/// helper: one row per source document, no aggregation. Sales
+/// Register / Purchase Register / Stock Ledger View fit that shape
+/// natively. Customer Aging (sum-by-customer + age buckets) and
+/// Trial Balance (sum-by-account, grouped by root_type) do not — they
+/// need Hub-side aggregation. `HubReports.runResult(reportId:engine:)`
+/// dispatches to the right routine per id so the UI layer never needs
+/// to know which reports are flat vs aggregated.
 public enum HubReports: Sendable {
 
-    // MARK: - Sales Register
+    private static let financeRoles: [String] = ["System Manager", "Accounts Manager"]
+    private static let salesRoles: [String]   = ["System Manager", "Sales Manager", "Sales User"]
+    private static let buyingRoles: [String]  = ["System Manager", "Purchase Manager", "Purchase User"]
+    private static let stockRoles: [String]   = ["System Manager", "Stock Manager", "Stock User"]
 
-    /// A tabular listing of all Sales Invoices for a given period.
-    ///
-    /// Key filters: date range, customer, territory, item
-    /// Key columns: invoice no, date, customer, grand total, outstanding, status
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var salesRegister: Never {
-        fatalError("salesRegister is a stub — implement with Core's ReportDefinition.")
+    // MARK: - Definitions
+
+    public static let salesRegister = ReportDefinition(
+        id: "sales-register",
+        name: "Sales Register",
+        docType: "SalesInvoice",
+        columns: [
+            "id", "transaction_date", "customer", "currency",
+            "grand_total", "outstanding_amount", "status"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "customer", label: "Customer"),
+            ReportFilter(fieldKey: "status",   label: "Status"),
+        ],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    public static let purchaseRegister = ReportDefinition(
+        id: "purchase-register",
+        name: "Purchase Register",
+        docType: "PurchaseInvoice",
+        columns: [
+            "id", "transaction_date", "supplier", "currency",
+            "grand_total", "outstanding_amount", "status"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "supplier", label: "Supplier"),
+            ReportFilter(fieldKey: "status",   label: "Status"),
+        ],
+        allowedRoles: financeRoles + buyingRoles
+    )
+
+    public static let stockLedgerView = ReportDefinition(
+        id: "stock-ledger-view",
+        name: "Stock Ledger View",
+        docType: "StockLedgerEntry",
+        columns: [
+            "posting_date", "voucher_no", "item", "warehouse",
+            "qty_change", "valuation_rate", "amount", "is_reversal"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "item",      label: "Item"),
+            ReportFilter(fieldKey: "warehouse", label: "Warehouse"),
+        ],
+        allowedRoles: financeRoles + stockRoles
+    )
+
+    /// Customer Aging — outstanding receivables bucketed by age.
+    /// The `columns` here describe the **output** shape produced by
+    /// `runResult`, not the underlying SalesInvoice columns.
+    public static let customerAging = ReportDefinition(
+        id: "customer-aging",
+        name: "Customer Aging",
+        docType: "SalesInvoice",
+        columns: [
+            "customer",
+            "0-30 days", "31-60 days", "61-90 days", "90+ days",
+            "Outstanding"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "customer", label: "Customer"),
+        ],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    /// Trial Balance — GL Entry rolled up per Account, sorted by root_type.
+    public static let trialBalance = ReportDefinition(
+        id: "trial-balance",
+        name: "Trial Balance",
+        docType: "GLEntry",
+        columns: ["Root Type", "Account", "Debit", "Credit", "Closing Balance"],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
+    public static let allReports: [ReportDefinition] = [
+        salesRegister, purchaseRegister,
+        stockLedgerView,
+        customerAging, trialBalance,
+    ]
+
+    public static func report(forId id: String) -> ReportDefinition? {
+        allReports.first { $0.id == id }
     }
 
-    // MARK: - Purchase Register
+    // MARK: - Computation
 
-    /// A tabular listing of all Purchase Invoices for a given period.
-    ///
-    /// Key filters: date range, supplier, item
-    /// Key columns: invoice no, date, supplier, grand total, outstanding, status
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var purchaseRegister: Never {
-        fatalError("purchaseRegister is a stub — implement with Core's ReportDefinition.")
+    /// Build a `ReportResult` for the given Hub report id. Returns `nil`
+    /// when the id is unknown so the caller can fall back to a placeholder
+    /// or empty state.
+    public static func runResult(
+        reportId: String,
+        engine: DocumentEngine,
+        filters: [String: FieldValue] = [:]
+    ) throws -> ReportResult? {
+        guard let report = report(forId: reportId) else { return nil }
+        switch reportId {
+        case "sales-register", "purchase-register":
+            return try runFlatList(report: report, engine: engine, filters: filters)
+        case "stock-ledger-view":
+            return try runStockLedger(report: report, engine: engine, filters: filters)
+        case "customer-aging":
+            return try runCustomerAging(engine: engine, filters: filters)
+        case "trial-balance":
+            return try runTrialBalance(engine: engine)
+        default:
+            return nil
+        }
     }
 
-    // MARK: - Stock Balance
+    // MARK: - Flat list runners
 
-    /// Current on-hand stock balance per item and warehouse.
-    ///
-    /// Key filters: item, item group, warehouse, date
-    /// Key columns: item code, item name, warehouse, opening qty, in qty, out qty, balance qty, valuation rate, balance value
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var stockBalance: Never {
-        fatalError("stockBalance is a stub — implement with Core's ReportDefinition.")
+    private static func runFlatList(
+        report: ReportDefinition,
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let documents = try engine.list(
+            docType: report.docType,
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [ListSort(fieldKey: "createdAt", direction: .descending)],
+            applyRowAccess: false
+        )
+        let rows: [[String?]] = documents.map { doc in
+            report.columns.map { col in
+                format(value: lookup(key: col, in: doc))
+            }
+        }
+        return ReportResult(columns: report.columns, rows: rows)
+    }
+
+    private static func runStockLedger(
+        report: ReportDefinition,
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let documents = try engine.list(
+            docType: report.docType,
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [
+                ListSort(fieldKey: "posting_date", direction: .descending),
+                ListSort(fieldKey: "createdAt",   direction: .descending),
+            ],
+            applyRowAccess: false
+        )
+        let rows: [[String?]] = documents.map { doc in
+            report.columns.map { col in
+                format(value: lookup(key: col, in: doc))
+            }
+        }
+        return ReportResult(columns: report.columns, rows: rows)
+    }
+
+    // MARK: - Customer Aging
+
+    private static func runCustomerAging(
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let invoices = try engine.list(
+            docType: "SalesInvoice",
+            filters: filters.isEmpty ? nil : filters,
+            applyRowAccess: false
+        )
+
+        struct Buckets {
+            var b0_30:  Double = 0
+            var b31_60: Double = 0
+            var b61_90: Double = 0
+            var b91:    Double = 0
+            var total:  Double { b0_30 + b31_60 + b61_90 + b91 }
+        }
+
+        let today = Date()
+        var perCustomer: [String: Buckets] = [:]
+
+        for invoice in invoices {
+            guard invoice.docStatus == 1 else { continue }
+            let outstanding = asDouble(invoice.fields["outstanding_amount"]) ?? 0
+            guard outstanding > 0 else { continue }
+            let customer = asString(invoice.fields["customer"]) ?? "(unknown)"
+            let dueDate  = asDate(invoice.fields["due_date"])
+                ?? asDate(invoice.fields["transaction_date"])
+                ?? today
+            let days = max(0, Int(today.timeIntervalSince(dueDate) / 86400))
+
+            var bucket = perCustomer[customer] ?? Buckets()
+            switch days {
+            case ...30:    bucket.b0_30  += outstanding
+            case 31...60:  bucket.b31_60 += outstanding
+            case 61...90:  bucket.b61_90 += outstanding
+            default:       bucket.b91    += outstanding
+            }
+            perCustomer[customer] = bucket
+        }
+
+        let ordered = perCustomer
+            .sorted { $0.value.total > $1.value.total }
+        let rows: [[String?]] = ordered.map { (customer, b) in
+            [
+                customer,
+                formatCurrency(b.b0_30),
+                formatCurrency(b.b31_60),
+                formatCurrency(b.b61_90),
+                formatCurrency(b.b91),
+                formatCurrency(b.total),
+            ]
+        }
+        return ReportResult(columns: customerAging.columns, rows: rows)
     }
 
     // MARK: - Trial Balance
 
-    /// The double-entry trial balance for a given fiscal period.
-    ///
-    /// Key filters: fiscal year, from/to date, cost centre, finance book
-    /// Key columns: account, opening debit/credit, period debit/credit, closing debit/credit
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var trialBalance: Never {
-        fatalError("trialBalance is a stub — implement with Core's ReportDefinition.")
+    private static func runTrialBalance(engine: DocumentEngine) throws -> ReportResult {
+        // 1. Sum debit / credit per account across every GL Entry. Reversal
+        //    rows already carry swapped debit / credit so they net out
+        //    automatically — we don't filter them out, the math is correct.
+        let entries = try engine.list(docType: "GLEntry", applyRowAccess: false)
+        struct Totals { var debit: Double = 0; var credit: Double = 0 }
+        var perAccount: [String: Totals] = [:]
+        for entry in entries {
+            guard let account = asString(entry.fields["account"]) else { continue }
+            let debit  = asDouble(entry.fields["debit"])  ?? 0
+            let credit = asDouble(entry.fields["credit"]) ?? 0
+            var totals = perAccount[account] ?? Totals()
+            totals.debit  += debit
+            totals.credit += credit
+            perAccount[account] = totals
+        }
+
+        // 2. Look up each Account to find its root_type so we can group.
+        let accounts = try engine.list(docType: "Account", applyRowAccess: false)
+        let rootTypeByAccount: [String: String] = Dictionary(
+            uniqueKeysWithValues: accounts.map { ($0.id, asString($0.fields["root_type"]) ?? "Unclassified") }
+        )
+
+        // 3. Walk accounts in a stable order: by root_type then by name.
+        let rootOrder = ["Asset", "Liability", "Equity", "Income", "Expense", "Unclassified"]
+        let sortedAccounts = perAccount.keys.sorted { lhs, rhs in
+            let lRoot = rootTypeByAccount[lhs] ?? "Unclassified"
+            let rRoot = rootTypeByAccount[rhs] ?? "Unclassified"
+            let lIdx = rootOrder.firstIndex(of: lRoot) ?? rootOrder.count
+            let rIdx = rootOrder.firstIndex(of: rRoot) ?? rootOrder.count
+            if lIdx != rIdx { return lIdx < rIdx }
+            return lhs < rhs
+        }
+
+        var rows: [[String?]] = []
+        var currentRoot: String? = nil
+        for account in sortedAccounts {
+            let totals = perAccount[account] ?? Totals()
+            let root = rootTypeByAccount[account] ?? "Unclassified"
+            let closing = totals.debit - totals.credit
+            let groupHeader = currentRoot == root ? "" : root
+            currentRoot = root
+            rows.append([
+                groupHeader,
+                account,
+                formatCurrency(totals.debit),
+                formatCurrency(totals.credit),
+                formatCurrency(closing)
+            ])
+        }
+        return ReportResult(columns: trialBalance.columns, rows: rows)
     }
 
-    // MARK: - Profit & Loss
+    // MARK: - Cell helpers
 
-    /// Income statement showing revenue, cost of goods sold, and operating expenses.
-    ///
-    /// Key filters: fiscal year, from/to date, cost centre, finance book
-    /// Key columns: account, amount (current period), amount (previous period), % change
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var profitAndLoss: Never {
-        fatalError("profitAndLoss is a stub — implement with Core's ReportDefinition.")
+    private static func lookup(key: String, in document: Document) -> FieldValue? {
+        if let v = document.fields[key] { return v }
+        switch key {
+        case "id":        return .string(document.id)
+        case "status":    return .string(document.status)
+        case "docStatus": return .int(document.docStatus)
+        default:          return nil
+        }
     }
 
-    // MARK: - Accounts Receivable
-
-    /// Ageing of outstanding customer receivables.
-    ///
-    /// Key filters: date, customer, payment terms
-    /// Key columns: customer, invoice no, due date, invoiced amount, paid amount, outstanding, ageing bucket
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var accountsReceivable: Never {
-        fatalError("accountsReceivable is a stub — implement with Core's ReportDefinition.")
+    private static func format(value: FieldValue?) -> String? {
+        guard let value else { return nil }
+        switch value {
+        case .string(let s): return s
+        case .int(let i):    return String(i)
+        case .double(let d): return formatCurrency(d)
+        case .bool(let b):   return b ? "Yes" : "No"
+        case .null:          return nil
+        case .date(let d), .dateTime(let d):
+            let f = DateFormatter()
+            f.dateStyle = .medium
+            f.timeStyle = .none
+            return f.string(from: d)
+        case .data:          return nil
+        case .array(let xs): return "\(xs.count) items"
+        }
     }
 
-    // MARK: - Accounts Payable
-
-    /// Ageing of outstanding supplier payables.
-    ///
-    /// Key filters: date, supplier, payment terms
-    /// Key columns: supplier, invoice no, due date, invoiced amount, paid amount, outstanding, ageing bucket
-    ///
-    /// - TODO: Implement using `ReportDefinition` + `ReportFilter` from MercantisCore.
-    public static var accountsPayable: Never {
-        fatalError("accountsPayable is a stub — implement with Core's ReportDefinition.")
+    private static func formatCurrency(_ d: Double) -> String {
+        String(format: "%.2f", d)
     }
 
-    // MARK: - All Reports
+    private static func asDouble(_ v: FieldValue?) -> Double? {
+        switch v {
+        case .double(let d): return d
+        case .int(let i):    return Double(i)
+        default:             return nil
+        }
+    }
 
-    /// All report definitions — will be wired into `HubManifest.build()`.
-    /// - TODO: Replace with an array of `ReportDefinition` values from MercantisCore.
-    public static let allReports: [Any] = []
+    private static func asString(_ v: FieldValue?) -> String? {
+        if case .string(let s) = v { return s }
+        return nil
+    }
+
+    private static func asDate(_ v: FieldValue?) -> Date? {
+        switch v {
+        case .date(let d), .dateTime(let d): return d
+        default: return nil
+        }
+    }
 }

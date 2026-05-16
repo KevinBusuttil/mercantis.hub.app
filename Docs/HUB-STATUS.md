@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Wall 6 implemented — submittables + workflows; transactional documents have real lifecycle)_
+_Last updated: 2026-05-05 (Wall 9 implemented — reports + dashboards; Hub has end-to-end visibility on the transactional + ledger layer)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -135,40 +135,61 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 
 ## ERP Coverage Grade
 
-**Hub is ~45% of a usable ERP.** Wall 6 (submittables + workflows) is
-shipped end-to-end. Every transactional DocType across Selling, Buying,
-Stock, and Accounting now has a real lifecycle: Draft → Submitted →
-post-submit application states → Cancelled. The Submit / Cancel /
-Amend buttons render in `HubDocTypeView` based on `DocType.isSubmittable`
-and the document's `docStatus`; available workflow transitions for the
-current state surface as additional buttons.
+**Hub is ~75% of a usable ERP.** Wall 9 (reports + dashboards) is
+shipped end-to-end. Every primary book of record (transactional
+documents, workflow transitions, audit log, Stock Ledger Entry, GL
+Entry) now has a Hub-side surface that renders through
+`MercantisCoreUI.GenericReportView`. Five canonical reports and three
+dashboards ship in the manifest:
 
-What's now lifecycle-complete:
+| Report | Shape | Source |
+|---|---|---|
+| Sales Register | flat list | Sales Invoices |
+| Purchase Register | flat list | Purchase Invoices |
+| Stock Ledger View | flat list | Stock Ledger Entry |
+| Customer Aging | grouped + bucketed | Sales Invoice outstanding aged 0-30 / 31-60 / 61-90 / 90+ |
+| Trial Balance | summed + grouped | GL Entry totals per Account, grouped by `root_type` (Asset → Liability → Equity → Income → Expense) |
 
-- **Selling:** Quotation (Draft → Submitted → Ordered / Lost / Cancelled),
-  Sales Order (Draft → Submitted → Closed / Cancelled, with Re-open),
-  Sales Invoice (Draft → Submitted → Paid / Overdue / Cancelled, with
-  `outstanding_amount <= 0` guard on Mark-as-Paid).
-- **Buying:** Supplier Quotation, Purchase Order, Purchase Invoice —
-  symmetric flows.
-- **Stock:** Stock Entry (Draft → Submitted → Cancelled).
-- **Accounting:** Journal Entry (Draft → Submitted → Cancelled, with
-  `total_debit == total_credit` submit-time validation rule),
-  Payment Entry (Draft → Submitted → Reconciled / Cancelled).
+| Dashboard | Tiles |
+|---|---|
+| Sales Overview | Customer count, Submitted SO count, Outstanding SI count, Recent Quotations list, shortcuts |
+| Inventory Overview | Item / Warehouse / Submitted Stock Entry counts, Recent Stock Movements list, shortcuts |
+| Accounting Overview | Account / Journal Entry / Payment Entry counts, Recent GL Entries list, shortcuts |
 
-Submit-time invariants enforced by Core's pipeline (ADR-013, ADR-022):
-optimistic concurrency, field immutability for non-`allowOnSubmit`
-fields, link-target existence, and the workflow-guard stage
-(role + condition gating per transition). Workflow transitions
-auto-persist into `workflow_transitions` (Phase A / ADR-038) and
-every save / submit / cancel / amend writes an `audit_log` row
-(Phase A / ADR-039).
+Architecture:
+- `Reports/HubReports.swift` declares the five `ReportDefinition`s
+  with proper `allowedRoles` (Phase D / ADR-049) and provides
+  `runResult(reportId:engine:filters:)` that dispatches to per-id
+  computation. Flat reports delegate to a generic list-and-format
+  routine; Customer Aging and Trial Balance run Hub-side
+  aggregation (sum-per-customer + age buckets / sum-per-account
+  grouped by `root_type`).
+- `Dashboards/HubDashboards.swift` declares the three
+  `DashboardDefinition`s consumed by Core's `DashboardEngine`
+  (Phase C / ADR-045). Widget parameters use the `where.<field>__<op>`
+  syntax (e.g. `where.outstanding_amount__gt=0`) so predicates
+  resolve through the Phase A `ListFilter` plumbing.
+- `UI/Reports/HubReportContainerView.swift` runs the report on
+  appear and hands the result to `GenericReportView` with refresh
+  + error states. `UI/Dashboards/HubDashboardView.swift` consumes
+  `DashboardResult` and renders each tile case (count / list /
+  chart / shortcut / error) in a SwiftUI grid; shortcut tiles
+  route back into the sidebar selection.
+- `mercantis_hubApp.swift` constructs `ReportEngine` +
+  `DashboardEngine` at startup and registers every Hub report and
+  dashboard.
+- `Manifest/HubManifest.swift` passes both into `AppManifest` so
+  the manifest declaration is complete.
+- Per-module navigation gained Reports and Dashboards groups —
+  Selling / Buying / Stock / Accounting each list their relevant
+  reports + dashboards.
 
-The remaining engine wall is **Wall 7 — derived ledgers**. Submit
-events from Stock Entry / Sales Invoice / Purchase Invoice / Payment
-Entry / Journal Entry need to derive Stock Ledger Entry / GL Entry
-rows; the on-submit hook is the existing Phase B automation rule
-(ADR-041) — only Hub-side declarations are left.
+What's left is no longer wall-shaped: it's incremental DocType
+breadth (Delivery Note, Purchase Receipt, Opportunity, HR /
+Manufacturing / Projects / Assets modules) plus polish items
+(real Bin running-balance aggregate, permission templates,
+localizations). None of that needs a Core capability that doesn't
+already exist.
 
 ### What's done
 
@@ -220,7 +241,7 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | Price List | ✅ | Setup header + `items` (ItemPrice) child rows. |
 | Quotation | ✅ | Submittable (`wf-quotation`: Draft → Submitted → Ordered / Lost / Cancelled). |
 | Sales Order | ✅ | Submittable (`wf-sales-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
-| Sales Invoice | ✅ | Submittable (`wf-sales-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). Mark-as-Paid is gated by `outstanding_amount <= 0`. GL derivation waits on Wall 7. |
+| Sales Invoice | ✅ | Submittable (`wf-sales-invoice`). Carries `debit_to` / `income_account` / `cost_center` posting fields; submit derives Dr / Cr GL entries via `LedgerDerivationService`. Mark-as-Paid gated by `outstanding_amount <= 0`. |
 | Delivery Note | ❌ | Wait for Wall 7 to derive Stock Ledger entries. |
 | SalesItem (child) | ✅ | `amount = qty * rate` formula. |
 | UOMConversionDetail (child) | ✅ | Item.uoms row. |
@@ -234,34 +255,34 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | Supplier Group | ✅ | Tree DocType in Setup. |
 | Supplier Quotation | ✅ | Submittable (`wf-supplier-quotation`: Draft → Submitted → Ordered / Cancelled). |
 | Purchase Order | ✅ | Submittable (`wf-purchase-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
-| Purchase Invoice | ✅ | Submittable (`wf-purchase-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). GL derivation waits on Wall 7. |
+| Purchase Invoice | ✅ | Submittable (`wf-purchase-invoice`). Carries `credit_to` / `expense_account` / `cost_center` posting fields; submit derives Dr / Cr GL entries via `LedgerDerivationService`. |
 | Purchase Receipt | ❌ | Wait for Wall 7. |
 | PurchaseItem (child) | ✅ | `amount = qty * rate` formula. |
 
-### Stock — Wall-6-complete (transit layer ready)
+### Stock — Wall-7-complete
 
 | DocType | State | Notes |
 |---|---|---|
 | Warehouse | ✅ | Tree DocType in Setup. |
-| Stock Entry | ✅ | Submittable (`wf-stock-entry`: Draft → Submitted → Cancelled). Stock Ledger derivation waits on Wall 7. |
+| Stock Entry | ✅ | Submittable (`wf-stock-entry`). Submits derive Stock Ledger Entry rows; cancel writes reversal rows. |
 | StockEntryDetail (child) | ✅ | `amount = qty * valuation_rate` formula. |
-| Stock Ledger Entry | ❌ | W7 (derived ledger), append-only. |
-| Bin | ❌ | W7 (derived from Stock Ledger). |
-| Stock Reconciliation | ❌ | W7. |
+| Stock Ledger Entry | ✅ | Append-only ledger derived by `LedgerDerivationService`. Deterministic ids (`SLE-<sourceId>-<rowIndex>-<side>`). |
+| Bin | ❌ | Per-warehouse-per-item running balance; trivial to derive by aggregating Stock Ledger Entry. Pending. |
+| Stock Reconciliation | ❌ | Future — needs the Bin aggregate first. |
 
-### Accounting — Wall-6-complete (vouchers ready)
+### Accounting — Wall-7-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Account | ✅ | Tree DocType: parent_account self-link, is_group, account_type, root_type, currency. |
+| Account | ✅ | Tree DocType. |
 | Cost Center | ✅ | Tree DocType in Setup. |
 | Currency | ✅ | Flat master in Setup. |
 | Fiscal Year | ❌ | Trivial flat DocType; not yet needed. |
-| Journal Entry | ✅ | Submittable (`wf-journal-entry`: Draft → Submitted → Cancelled). `total_debit == total_credit` enforced via ValidationRule on every save. GL derivation waits on Wall 7. |
+| Journal Entry | ✅ | Submittable + `total_debit == total_credit` ValidationRule. Submit derives one GL Entry per `accounts[]` row; cancel writes reversals. |
 | JournalEntryAccount (child) | ✅ | account / party_type / party / debit / credit / cost_center / reference. |
-| Payment Entry | ✅ | Submittable (`wf-payment-entry`: Draft → Submitted → Reconciled / Cancelled). |
+| Payment Entry | ✅ | Submittable. Submit derives Dr `paid_to` + Cr `paid_from` GL entries with party stamped from the parent. |
 | PaymentEntryReference (child) | ✅ | reference_doctype / reference_name / total / outstanding / allocated. |
-| GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry). |
+| GL Entry | ✅ | Append-only ledger derived by `LedgerDerivationService` from Journal Entry / Payment Entry / Sales Invoice / Purchase Invoice submits. Deterministic ids; reversal rows on cancel. |
 
 ### HR — not started
 
@@ -309,57 +330,45 @@ for several cross-cutting concerns:
 |---|---|---|
 | Workflow definitions | ❌ | None declared. Every transactional DocType (Sales Invoice, PO, Stock Entry, Journal Entry) needs Draft → Submitted → Cancelled. Blocked on Wall 6. |
 | Permission rules | ❌ | Manifest passes `permissions: []`. Roles like Accounts Manager, Sales User, Stock Manager, Purchase User need to be defined and bound to DocTypes. Not blocked on Core. |
-| Reports | ❌ | None declared. Trial Balance, Customer Aging, Stock Ledger View, Sales Register all need Wall 9 (report engine + renderer). |
+| Reports | ✅ | Five reports declared in `HubReports`: Sales Register, Purchase Register, Stock Ledger View (flat); Customer Aging, Trial Balance (Hub-side aggregation). Rendered via `GenericReportView`. |
 | Automation rules | ❌ | None declared. "On Sales Invoice submit, create GL entries" is the canonical use case — needs Wall 7. |
-| Dashboards | 🟡 | `Dashboards/HubDashboards.swift` declares some, but Core has no `DashboardView` (Core gap §3.10 in Core's STATUS.md). |
+| Dashboards | ✅ | Three dashboards declared in `HubDashboards`: Sales / Inventory / Accounting Overviews. Core's `DashboardEngine` resolves widget descriptors; Hub's `HubDashboardView` renders the typed result tiles in a SwiftUI grid. |
 | Localizations | ❌ | `localizations: []`. English-only today. |
 | Multi-company | ❌ | `Document.company` is currently the constant `"Default Company"` (Wall 2 below). |
 
 ---
 
-## Next Step — Wall 7 (derived ledgers)
+## Next Steps — incremental breadth
 
-Walls 4 + 5 + 6 are shipped Hub-side. Every transactional DocType has
-its real lifecycle. The remaining gap is the *side effect*: when a
-Sales Invoice / Purchase Invoice / Stock Entry / Journal Entry /
-Payment Entry is submitted, no GL Entry or Stock Ledger Entry rows
-get derived — financial and inventory positions are still in the
-parent documents only.
+Walls 4 + 5 + 6 + 7 + 9 are shipped Hub-side. The remaining work is no
+longer wall-shaped — it's per-module breadth or polish:
 
-**Wall 7 is a Hub-side declaration plus one automation rule per
-derivation.** Core's automation runner (ADR-019) fires on
-`onSubmit` events and Phase B's `AutomationRule` (ADR-041) supports
-scheduled and document-event triggers; the on-submit hook is the
-canonical place. Hub work to land Wall 7:
+- **Permissions templates.** `HubPermissions.swift` is still
+  stubs. Define real `PermissionRule` rows for System Manager /
+  Sales Manager / Sales User / Purchase Manager / Stock Manager /
+  Accounts Manager, then bind them per-DocType. Wires through to
+  Core's `PermissionEngine` (already shipped, ADR-011 / ADR-037).
+- **Delivery Note + Purchase Receipt.** Mirror Sales Invoice /
+  Purchase Invoice with a Stock Entry derivation on submit
+  (writes `StockLedgerEntry` rows). Pure schema work; no Core
+  changes.
+- **Bin (running balance).** Aggregate `StockLedgerEntry` per
+  `(item, warehouse)` for an O(1) on-hand lookup. Implement as
+  an `onSubmit` automation on Stock Entry (or pull from the
+  ledger lazily). Inventory-Overview dashboard then gains a real
+  "low-stock" widget.
+- **Opportunity, Sales Person.** CRM breadth — needs Wall 6 (done)
+  for status workflows. Tiny.
+- **HR / Manufacturing / Projects / Assets modules.** Each is a
+  separate increment: Employee + Department (tree) + Leave
+  Application / Attendance, then BOM + Work Order, then Project +
+  Task + Timesheet, then Asset + Asset Maintenance. None of these
+  needs a new Core capability.
+- **Localizations.** `Localizations/HubLocalizations.swift`
+  declares strings; `AppManifest.localizations` is currently
+  empty. Pure declaration work.
 
-1. New `Stock/StockDocTypes.swift` additions: `StockLedgerEntry`
-   (append-only, non-submittable; signed qty per warehouse per item
-   per posting time).
-2. New `Accounting/AccountingDocTypes.swift` additions: `GLEntry`
-   (append-only; debit / credit / account / posting_date / voucher
-   reference).
-3. **Automation rules** in `Automation/HubAutomationRules.swift`:
-   - Stock Entry submit → fan out one StockLedgerEntry per items[]
-     row (out from source warehouse, in to target warehouse).
-   - Sales Invoice submit → write GL rows (Dr Debtors, Cr Income,
-     Cr Tax) per line.
-   - Purchase Invoice submit → write GL rows (Dr Expense / Inventory,
-     Cr Creditors).
-   - Payment Entry submit → write GL rows (Dr Cash, Cr Party).
-   - Journal Entry submit → write GL rows from each child account
-     row.
-4. Optional helper: a Hub-side `LedgerDerivation` action handler
-   registered alongside Core's built-in handlers, taking the
-   derivation specs from rule parameters so the rule declarations
-   stay declarative.
-
-After Wall 7, every primary book of record (financial position,
-inventory position) is correct in real time. **Wall 9 — Hub
-reports + dashboards** then becomes the natural follow-up: Sales
-Register, Customer Aging, Stock Ledger View, Trial Balance, etc.
-all read directly off the now-populated GL Entry / Stock Ledger
-Entry tables, and `MercantisCoreUI.GenericReportView` (Phase D /
-ADR-049) renders them without per-report SwiftUI code.
+None of these are blocking the engine; pick by ERP-coverage priority.
 
 ### Verify each new DocType
 
@@ -515,18 +524,59 @@ Hub-side declarations shipped under Wall 6:
     from `Document.status` for the System Manager role, gated by
     the workflow's `conditionExpression`.
 
-#### Wall 7 — Ledger / derived documents
+#### Wall 7 — Ledger / derived documents ✅ resolved
 
-Stock Ledger Entry and GL Entry are append-only ledgers populated
-automatically when source documents are submitted.
+Architectural pick: Core's `AutomationActionHandler` contract mutates
+the current document only, so cross-DocType writes live outside it.
+The natural seam is the typed event bus (ADR-020):
+`LedgerDerivationService` subscribes to `DocumentSubmittedEvent` /
+`DocumentCancelledEvent` on the shared `EventEmitter`, routes by
+`docType`, and writes derived rows via `DocumentEngine.save(_:)`.
 
-Hub-side expectations:
-- Mechanism for declaring "when source DocType X is submitted, create N entries
-  in target DocType Y based on rule R".
-- Engine enforces ledger immutability.
-- `engine.list` over a ledger returns rows in source-time order.
+Hub-side declarations shipped under Wall 7:
 
-DocTypes unlocked: **Stock Ledger Entry**, **GL Entry**, **Bin**.
+- **`Stock/StockDocTypes.swift`** — `StockLedgerEntry` append-only
+  ledger (item / warehouse / posting / voucher / signed qty_change /
+  valuation_rate / amount / is_reversal). Indexed on voucher_no /
+  item / warehouse.
+- **`Accounting/AccountingDocTypes.swift`** — `GLEntry` append-only
+  ledger (account / posting_date / debit / credit / party /
+  cost_center / voucher / is_reversal). Indexed on voucher_no /
+  account / posting_date.
+- **`Selling/SellingDocTypes.swift`** — Sales Invoice gained
+  `debit_to` (Account, required), `income_account` (Account,
+  required), `cost_center` (Account, optional) posting fields.
+- **`Buying/BuyingDocTypes.swift`** — Purchase Invoice gained
+  `credit_to`, `expense_account`, `cost_center` symmetric to the
+  Sales side.
+- **`LedgerDerivation/LedgerDerivationService.swift`** *(new)* —
+  subscribes to submitted / cancelled events, dispatches to one
+  routine per source DocType:
+  - StockEntry submit → one SLE per items row per warehouse leg.
+  - JournalEntry submit → one GL row per `accounts[]` child.
+  - PaymentEntry submit → Dr `paid_to` + Cr `paid_from`.
+  - SalesInvoice submit → Dr `debit_to` (Customer) + Cr `income_account`.
+  - PurchaseInvoice submit → Cr `credit_to` (Supplier) + Dr `expense_account`.
+- **`mercantis_hubApp.swift`** — single shared `EventEmitter`
+  threaded through `DocumentEngine` and `LedgerDerivationService`;
+  the service is retained at app scope so its subscriptions stay
+  alive.
+
+Idempotency: every derived row uses a deterministic id
+(`SLE-<sourceId>-<rowIndex>-<side>` / `GL-<sourceId>-<leg>`, with
+`-reversal` suffix on cancellation). The writers fetch-first and
+skip if the row already exists, so re-firing the derivation is a
+no-op rather than a duplicate.
+
+Reversal on cancel: writes reversal rows with debit / credit /
+qty values swapped (and `is_reversal: true`). Original rows stay
+in place; the net of the pair is zero. Audit-friendly and
+matches ERPNext semantics.
+
+Re-entrancy: the service only handles its 5 source DocTypes;
+`StockLedgerEntry` / `GLEntry` saves fire `DocumentSavedEvent` but
+the service subscribes only to `DocumentSubmittedEvent` /
+`DocumentCancelledEvent`, so no recursion is possible.
 
 #### Wall 8 — Tree DocTypes
 
@@ -542,18 +592,48 @@ Hub-side expectations:
 DocTypes unlocked: **Account**, **Cost Center**, **Item Group**, **Territory**,
 **Customer Group**, **Supplier Group**, **Department**, **Project Task** (sub-tasks).
 
-#### Wall 9 — Report engine + renderer
+#### Wall 9 — Report engine + renderer ✅ resolved
 
-Hub-side expectations:
-- `ReportDefinition` declares: source DocType, columns, filters, groupBy,
-  sortBy, optional join via a W4 link field.
-- `engine.runReport(id:filters:)` returns typed rows.
-- A new `GenericReportView` in `MercantisCoreUI` renders rows in a SwiftUI
-  `Table` with column sort + filter chips.
+Core's `ReportEngine` + `ReportDefinition.allowedRoles` (Phase D / ADR-049)
+and `MercantisCoreUI.GenericReportView` (Phase D / ADR-049) have all been
+in place. `DashboardEngine` (Phase C / ADR-045) handles widget
+resolution.
 
-Unlocks Hub's sidebar **Reports** entries. Specific reports to ship once W9
-lands: **Sales Register**, **Customer Aging**, **Stock Ledger View** (needs W7),
-**Trial Balance** (needs W7 + W8).
+Hub-side declarations shipped under Wall 9:
+
+- **`Reports/HubReports.swift`** — five `ReportDefinition`s
+  (Sales Register, Purchase Register, Stock Ledger View, Customer
+  Aging, Trial Balance) plus `runResult(reportId:engine:filters:)`
+  that dispatches per id. Flat reports go through a shared
+  list-and-format routine; Customer Aging and Trial Balance run
+  Hub-side aggregation. Every definition carries `allowedRoles`.
+- **`Dashboards/HubDashboards.swift`** — three `DashboardDefinition`s
+  (Sales / Inventory / Accounting Overview). Widget parameters
+  reuse Phase A `ListFilter` predicates via the
+  `where.<field>__<op>=<value>` mini-grammar.
+- **`UI/Reports/HubReportContainerView.swift`** — loads
+  `HubReports.runResult(...)` on appear and hands the result to
+  `GenericReportView`. Refresh button + error-state placeholder.
+- **`UI/Dashboards/HubDashboardView.swift`** — consumes
+  `DashboardResult`, renders count / list / chart / shortcut /
+  error tiles in a SwiftUI grid. Shortcut tiles route back into
+  the sidebar selection callback.
+- **`mercantis_hubApp.swift`** — constructs `ReportEngine` +
+  `DashboardEngine` at startup, registers every Hub report and
+  dashboard.
+- **`Manifest/HubManifest.swift`** — passes
+  `HubReports.allReports` and `HubDashboards.allDashboards` into
+  `AppManifest` so the manifest declaration is complete.
+- **Per-module navigation** — Selling / Buying / Stock / Accounting
+  gained Reports and Dashboards menu groups exposing the relevant
+  items.
+
+Customer Aging aggregates outstanding-amount per Customer into
+0-30 / 31-60 / 61-90 / 90+ day buckets using `due_date`
+(falling back to `transaction_date`) versus today. Trial Balance
+sums debit / credit per Account from GL Entry and orders rows
+Asset → Liability → Equity → Income → Expense, with the
+root-type header repeated only on group boundaries.
 
 ---
 
@@ -613,19 +693,31 @@ Don't pre-populate all modules speculatively.
    / Cancel / Amend buttons rendered by `HubDocTypeView` with workflow
    transition buttons surfacing post-submit status moves.
 
-**Phase 3 — Stock and Accounting backbones**
+**Phase 3 — Stock and Accounting backbones — ✅ shipped**
 
-5. **Wall 7 lands in Core (derived ledgers).** Then Hub adds Stock Entry,
-   Delivery Note, Purchase Receipt → Stock Ledger Entry derivation; and
-   Sales Invoice, Purchase Invoice, Payment Entry, Journal Entry → GL
-   Entry derivation.
+5. ✅ **Wall 7 (derived ledgers) shipped.** `LedgerDerivationService`
+   subscribes to `DocumentSubmittedEvent` / `DocumentCancelledEvent`
+   on a shared `EventEmitter` and writes append-only `StockLedgerEntry`
+   rows from Stock Entry submits and `GLEntry` rows from Journal Entry
+   / Payment Entry / Sales Invoice / Purchase Invoice submits.
+   Cancellation writes reversal rows with debit/credit/qty swapped.
+   Deterministic ids make re-firing idempotent. Delivery Note /
+   Purchase Receipt are still pending; their derivations are
+   structurally identical to Stock Entry's so the wait is on
+   declaring those parents.
 
-**Phase 4 — Reports and dashboards**
+**Phase 4 — Reports and dashboards — ✅ shipped**
 
-6. **Wall 9 lands in Core (report engine renderer).** Then Hub declares
-   Sales Register, Customer Aging, Stock Ledger View, Trial Balance.
-7. **Core ships `GenericDashboardView`.** Then Hub's `HubDashboards.swift`
-   declarations actually render.
+6. ✅ **Wall 9 (Hub reports + dashboards) shipped.** Five
+   `ReportDefinition`s in `HubReports` (Sales Register, Purchase
+   Register, Stock Ledger View, Customer Aging, Trial Balance) with
+   per-id `runResult` dispatch and Hub-side aggregation for the
+   non-flat reports. Three `DashboardDefinition`s in
+   `HubDashboards` (Sales / Inventory / Accounting Overview).
+   `HubReportContainerView` and `HubDashboardView` consume the
+   results; `mercantis_hubApp` constructs ReportEngine +
+   DashboardEngine and registers everything at startup. Per-module
+   navigation gained Reports and Dashboards groups.
 
 **Phase 5 — Production breadth**
 

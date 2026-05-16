@@ -294,8 +294,9 @@ enum Selling {
 
     /// Sales Invoice — billable line items, accounts-receivable trigger.
     /// Wall 6 makes it submittable with the `wf-sales-invoice` workflow
-    /// (Draft → Submitted → Paid / Overdue / Cancelled). GL-entry
-    /// derivation waits on Wall 7.
+    /// (Draft → Submitted → Paid / Overdue / Cancelled). Wall 7
+    /// auto-derives GL entries from `debit_to` (Dr) and `income_account`
+    /// (Cr) on submit.
     static let salesInvoice = DocType(
         id: "SalesInvoice",
         name: "Sales Invoice",
@@ -303,7 +304,14 @@ enum Selling {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: salesParentFields(includeDelivery: false, includeOutstanding: true),
+        fields: salesParentFields(includeDelivery: false, includeOutstanding: true) + [
+            FieldDefinition(key: "debit_to", label: "Debit To (Receivable)",
+                            type: .link, required: true, linkedDocType: "Account"),
+            FieldDefinition(key: "income_account", label: "Income Account",
+                            type: .link, required: true, linkedDocType: "Account"),
+            FieldDefinition(key: "cost_center", label: "Cost Center",
+                            type: .link, required: false, linkedDocType: "CostCenter")
+        ],
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-invoice",
         autoname: "naming_series:SINV-.YYYY.-.####",
@@ -316,6 +324,12 @@ enum Selling {
                 key: "billing",
                 title: "Billing",
                 fieldKeys: ["due_date", "outstanding_amount"]
+            ),
+            FormLayoutSection(
+                key: "posting",
+                title: "Posting",
+                helpText: "Accounts used when GL entries are derived on submit.",
+                fieldKeys: ["debit_to", "income_account", "cost_center"]
             )
         ])
     )
