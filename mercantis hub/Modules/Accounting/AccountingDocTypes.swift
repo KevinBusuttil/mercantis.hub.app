@@ -324,6 +324,191 @@ enum Accounting {
         titleField: "voucher_no"
     )
 
+    // MARK: - Subledger transaction tables (Phase 5.7 — AX synthesis)
+
+    /// Customer subledger row. Append-only. One row per invoice / payment
+    /// / credit note / settlement / write-off that affects a Customer's
+    /// balance. Drives Customer Statement reports without joining
+    /// SalesInvoice + PaymentEntry + PaymentEntryReference.
+    ///
+    /// `amount` is signed: positive = the customer owes us
+    /// (Invoice / Interest / Fee), negative = the customer's debt is
+    /// being reduced (Payment / CreditNote / WriteOff). Outstanding for a
+    /// customer = sum of amount across their rows.
+    static let custTrans = DocType(
+        id: "CustTrans",
+        name: "Customer Transaction",
+        module: "Accounting",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "trans_type", label: "Trans Type",
+                            type: .select, required: true,
+                            options: ["Invoice", "Payment", "CreditNote",
+                                      "Settlement", "WriteOff", "Adjustment",
+                                      "Interest", "Fee"]),
+            FieldDefinition(key: "customer", label: "Customer",
+                            type: .link, required: true, linkedDocType: "Customer"),
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "due_date", label: "Due Date",
+                            type: .date, required: false),
+            FieldDefinition(key: "amount", label: "Amount",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "currency", label: "Currency",
+                            type: .link, required: false, linkedDocType: "Currency"),
+            FieldDefinition(key: "voucher_type", label: "Voucher Type",
+                            type: .text, required: true),
+            FieldDefinition(key: "voucher_no", label: "Voucher No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "customer", unique: false),
+            IndexDefinition(fieldKey: "voucher_no", unique: false),
+            IndexDefinition(fieldKey: "posting_date", unique: false)
+        ],
+        searchFields: ["voucher_no", "customer"],
+        titleField: "voucher_no"
+    )
+
+    /// Supplier subledger row. Symmetric to CustTrans.
+    /// `amount` is signed: positive = we owe the supplier
+    /// (Invoice / Interest), negative = our debt is reduced
+    /// (Payment / CreditNote).
+    static let vendTrans = DocType(
+        id: "VendTrans",
+        name: "Supplier Transaction",
+        module: "Accounting",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "trans_type", label: "Trans Type",
+                            type: .select, required: true,
+                            options: ["Invoice", "Payment", "CreditNote",
+                                      "Settlement", "WriteOff", "Adjustment",
+                                      "Interest", "Fee"]),
+            FieldDefinition(key: "supplier", label: "Supplier",
+                            type: .link, required: true, linkedDocType: "Supplier"),
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "due_date", label: "Due Date",
+                            type: .date, required: false),
+            FieldDefinition(key: "amount", label: "Amount",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "currency", label: "Currency",
+                            type: .link, required: false, linkedDocType: "Currency"),
+            FieldDefinition(key: "voucher_type", label: "Voucher Type",
+                            type: .text, required: true),
+            FieldDefinition(key: "voucher_no", label: "Voucher No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "supplier", unique: false),
+            IndexDefinition(fieldKey: "voucher_no", unique: false),
+            IndexDefinition(fieldKey: "posting_date", unique: false)
+        ],
+        searchFields: ["voucher_no", "supplier"],
+        titleField: "voucher_no"
+    )
+
+    /// Tax subledger row. Declared in Phase 5.7 so the architecture is
+    /// complete; the derivation that writes to it lands in Phase 5.9
+    /// (Tax + WHT) once the Tax master DocType exists.
+    static let taxTrans = DocType(
+        id: "TaxTrans",
+        name: "Tax Transaction",
+        module: "Accounting",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "tax_type", label: "Tax Type",
+                            type: .select, required: true,
+                            options: ["VAT", "SalesTax", "WHT", "ExciseDuty"]),
+            FieldDefinition(key: "tax", label: "Tax",
+                            type: .text, required: false),
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "base_amount", label: "Taxable Base",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "tax_amount", label: "Tax Amount",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "rate", label: "Rate (%)",
+                            type: .decimal, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "party_type", label: "Party Type",
+                            type: .select, required: false,
+                            options: ["", "Customer", "Supplier"]),
+            FieldDefinition(key: "party", label: "Party",
+                            type: .text, required: false),
+            FieldDefinition(key: "voucher_type", label: "Voucher Type",
+                            type: .text, required: true),
+            FieldDefinition(key: "voucher_no", label: "Voucher No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "voucher_no", unique: false),
+            IndexDefinition(fieldKey: "posting_date", unique: false),
+            IndexDefinition(fieldKey: "tax_type", unique: false)
+        ],
+        searchFields: ["voucher_no"],
+        titleField: "voucher_no"
+    )
+
+    /// Explicit settlement row linking a Payment Entry to one specific
+    /// Invoice. Promoted to a first-class DocType in Phase 5.7 because
+    /// customer statement / supplier ledger reports walk this table
+    /// directly. PaymentEntry.references stays as the UI input shape;
+    /// the LedgerDerivationService writes one Settlement per reference
+    /// on submit.
+    static let settlement = DocType(
+        id: "Settlement",
+        name: "Settlement",
+        module: "Accounting",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "payment_voucher_type", label: "Payment DocType",
+                            type: .text, required: true),
+            FieldDefinition(key: "payment_voucher_no", label: "Payment No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "invoice_voucher_type", label: "Invoice DocType",
+                            type: .text, required: true),
+            FieldDefinition(key: "invoice_voucher_no", label: "Invoice No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "party_type", label: "Party Type",
+                            type: .select, required: true,
+                            options: ["Customer", "Supplier"]),
+            FieldDefinition(key: "party", label: "Party",
+                            type: .text, required: true),
+            FieldDefinition(key: "allocated_amount", label: "Allocated Amount",
+                            type: .currency, required: true, defaultValue: .double(0)),
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "payment_voucher_no", unique: false),
+            IndexDefinition(fieldKey: "invoice_voucher_no", unique: false),
+            IndexDefinition(fieldKey: "party", unique: false)
+        ],
+        searchFields: ["payment_voucher_no", "invoice_voucher_no", "party"],
+        titleField: "invoice_voucher_no"
+    )
+
     static let allDocTypes: [DocType] = [
         // Master
         account,
@@ -332,6 +517,8 @@ enum Accounting {
         // Parents
         journalEntry, paymentEntry,
         // Derived ledger
-        glEntry
+        glEntry,
+        // Subledger transaction tables (Phase 5.7)
+        custTrans, vendTrans, taxTrans, settlement
     ]
 }

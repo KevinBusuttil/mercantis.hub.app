@@ -102,10 +102,43 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles
     )
 
+    /// Customer Statement — Phase 5.7. CustTrans rows for a chosen
+    /// customer in posting-date order with a running outstanding
+    /// balance. The "Customer" filter is required at run time.
+    public static let customerStatement = ReportDefinition(
+        id: "customer-statement",
+        name: "Customer Statement",
+        docType: "CustTrans",
+        columns: [
+            "posting_date", "voucher_no", "trans_type",
+            "amount", "running_balance"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "customer", label: "Customer"),
+        ],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    /// Supplier Ledger — Phase 5.7. Symmetric to Customer Statement.
+    public static let supplierLedger = ReportDefinition(
+        id: "supplier-ledger",
+        name: "Supplier Ledger",
+        docType: "VendTrans",
+        columns: [
+            "posting_date", "voucher_no", "trans_type",
+            "amount", "running_balance"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "supplier", label: "Supplier"),
+        ],
+        allowedRoles: financeRoles + buyingRoles
+    )
+
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView,
         customerAging, trialBalance,
+        customerStatement, supplierLedger,
     ]
 
     public static func report(forId id: String) -> ReportDefinition? {
@@ -132,6 +165,22 @@ public enum HubReports: Sendable {
             return try runCustomerAging(engine: engine, filters: filters)
         case "trial-balance":
             return try runTrialBalance(engine: engine)
+        case "customer-statement":
+            return try runSubledgerStatement(
+                report: customerStatement,
+                docType: "CustTrans",
+                partyField: "customer",
+                filters: filters,
+                engine: engine
+            )
+        case "supplier-ledger":
+            return try runSubledgerStatement(
+                report: supplierLedger,
+                docType: "VendTrans",
+                partyField: "supplier",
+                filters: filters,
+                engine: engine
+            )
         default:
             return nil
         }
@@ -236,6 +285,51 @@ public enum HubReports: Sendable {
             ]
         }
         return ReportResult(columns: customerAging.columns, rows: rows)
+    }
+
+    // MARK: - Customer Statement / Supplier Ledger (Phase 5.7)
+
+    /// Render a subledger statement (CustTrans or VendTrans) for one
+    /// party, in posting-date order, with a running balance column. The
+    /// `partyField` filter ("customer" or "supplier") is required —
+    /// statements without it would be unbounded and meaningless.
+    private static func runSubledgerStatement(
+        report: ReportDefinition,
+        docType: String,
+        partyField: String,
+        filters: [String: FieldValue],
+        engine: DocumentEngine
+    ) throws -> ReportResult {
+        // Require the party filter; if missing, return an empty result
+        // so the UI can prompt the user instead of dumping every row.
+        guard filters[partyField] != nil else {
+            return ReportResult(columns: report.columns, rows: [])
+        }
+
+        let rows = try engine.list(
+            docType: docType,
+            filters: filters,
+            sortBy: [
+                ListSort(fieldKey: "posting_date", direction: .ascending),
+                ListSort(fieldKey: "createdAt",   direction: .ascending),
+            ],
+            applyRowAccess: false
+        )
+
+        var output: [[String?]] = []
+        var running: Double = 0
+        for trans in rows {
+            let amount = asDouble(trans.fields["amount"]) ?? 0
+            running += amount
+            output.append([
+                format(value: trans.fields["posting_date"]),
+                format(value: trans.fields["voucher_no"]),
+                format(value: trans.fields["trans_type"]),
+                formatCurrency(amount),
+                formatCurrency(running),
+            ])
+        }
+        return ReportResult(columns: report.columns, rows: output)
     }
 
     // MARK: - Trial Balance

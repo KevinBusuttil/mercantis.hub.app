@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Wall 9 implemented — reports + dashboards; Hub has end-to-end visibility on the transactional + ledger layer)_
+_Last updated: 2026-05-05 (Phase 5.7 implemented — AX-style subledger transaction tables for customer / supplier / inventory / tax drill-down)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -149,20 +149,25 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 
 ## ERP Coverage Grade
 
-**Hub is ~75% of a usable ERP.** Wall 9 (reports + dashboards) is
-shipped end-to-end. Every primary book of record (transactional
-documents, workflow transitions, audit log, Stock Ledger Entry, GL
-Entry) now has a Hub-side surface that renders through
-`MercantisCoreUI.GenericReportView`. Five canonical reports and three
-dashboards ship in the manifest:
+**Hub is ~80% of a usable ERP.** Phase 5.7 (AX-style subledger
+transaction tables) lands the customer / supplier / inventory drill-
+down architecture on top of the wall-shipped foundation. The
+`LedgerDerivationService` now writes one subledger row per
+transactional voucher submit alongside the existing GL row, so
+customer statements / supplier ledgers are one-table queries instead
+of multi-join report logic.
+
+Seven canonical reports and three dashboards ship in the manifest:
 
 | Report | Shape | Source |
 |---|---|---|
 | Sales Register | flat list | Sales Invoices |
 | Purchase Register | flat list | Purchase Invoices |
-| Stock Ledger View | flat list | Stock Ledger Entry |
+| Stock Ledger View | flat list | Stock Ledger Entry (InventTrans-shaped: now carries `trans_type`) |
 | Customer Aging | grouped + bucketed | Sales Invoice outstanding aged 0-30 / 31-60 / 61-90 / 90+ |
-| Trial Balance | summed + grouped | GL Entry totals per Account, grouped by `root_type` (Asset → Liability → Equity → Income → Expense) |
+| Trial Balance | summed + grouped | GL Entry totals per Account, grouped by `root_type` |
+| **Customer Statement** *(Phase 5.7)* | per-party, posting-date order, running balance | CustTrans rows |
+| **Supplier Ledger** *(Phase 5.7)* | per-party, posting-date order, running balance | VendTrans rows |
 
 | Dashboard | Tiles |
 |---|---|
@@ -352,16 +357,79 @@ for several cross-cutting concerns:
 
 ---
 
+## Phase 5.7 architecture — subledger transaction tables
+
+Per the AX synthesis in
+[`HUB-PRODUCT-STRATEGY.md`](HUB-PRODUCT-STRATEGY.md) §3.1.
+
+**New append-only DocTypes** (`isSubmittable: false`):
+
+| DocType | Purpose | TransType values |
+|---|---|---|
+| `CustTrans` | Customer subledger (signed `amount`: + = customer owes us) | Invoice / Payment / CreditNote / Settlement / WriteOff / Adjustment / Interest / Fee |
+| `VendTrans` | Supplier subledger (signed `amount`: + = we owe supplier) | same set |
+| `TaxTrans` | Tax subledger — declared, derivation no-op until Phase 5.9 lands the Tax master | VAT / SalesTax / WHT / ExciseDuty |
+| `Settlement` | Explicit `Payment → Invoice` linking row with allocated amount | n/a |
+
+**Augmented**: `StockLedgerEntry` now carries an explicit `trans_type`
+enum (Receipt / Issue / Transfer / Adjustment / Counting / Reservation
+/ Production) — the InventTrans shape from AX. The full DocType rename
+to `InventTrans` is deferred to a later cleanup; the shape is the same.
+
+**Derivation extensions** (`LedgerDerivationService`):
+
+- **SalesInvoice submit** → existing GL rows + CustTrans Invoice row
+  (positive `amount = grand_total`).
+- **PurchaseInvoice submit** → existing GL rows + VendTrans Invoice
+  row (positive amount).
+- **PaymentEntry submit (Receive)** → existing GL rows + CustTrans
+  Payment row (negative amount) + Settlement row per
+  `references[]` allocation + decrement of the referenced invoice's
+  `outstanding_amount`.
+- **PaymentEntry submit (Pay)** → existing GL rows + VendTrans
+  Payment row (negative amount) + Settlement rows + outstanding
+  decrement on the matched Purchase Invoices.
+- **JournalEntry submit** → existing GL rows + Cust/VendTrans
+  Adjustment row per party-tagged child (signs determined by
+  net `debit - credit` per row).
+- **StockEntry submit** → existing SLE rows now stamped with
+  `trans_type` derived from the Stock Entry's `purpose`
+  (Material Receipt → Receipt, etc.).
+
+**Cancellation**: every derivation runs symmetrically on
+`DocumentCancelledEvent`, writing reversal rows (signs flipped,
+`is_reversal: true`). Settlement reversals also reverse the
+invoice `outstanding_amount` adjustment.
+
+**Idempotency**: every subledger row uses a deterministic id
+(`CT-<voucherId>`, `VT-<voucherId>`, `STL-<paymentId>-<refIdx>`),
+fetch-first guard skips if the row already exists. Re-firing a
+derivation is a no-op rather than a duplicate or a concurrency
+conflict.
+
+**Wall 6 integration**: Sales Invoice / Purchase Invoice
+`outstanding_amount` was already marked `allowOnSubmit: true` for
+exactly this reason. The settlement derivation now decrements it
+automatically, so the Mark-as-Paid workflow transition
+(`outstanding_amount <= 0` gate) fires when the invoice is fully
+paid — no manual edits required.
+
+---
+
 ## Next Steps — incremental breadth
 
-Walls 4 + 5 + 6 + 7 + 9 are shipped Hub-side. The remaining work is no
-longer wall-shaped — it's per-module breadth or polish. The detailed
+Walls 4 + 5 + 6 + 7 + 9 + Phase 5.7 are shipped Hub-side. The
+remaining work is per-module breadth or polish. The detailed
 sequenced plan lives in [`POST-WALL-ROADMAP.md`](POST-WALL-ROADMAP.md);
 the headline:
 
 - **Phase 5 — Cross-cutting completeness.** Permission templates,
   multi-company (Wall 2), ItemPrice lookup wired into transactions,
   Bin running-balance aggregate, Settings DocType, localizations.
+- **Phase 5.8 / 5.9 — AX synthesis continued.** Posting profiles
+  (eliminates per-document `debit_to` / `income_account` boilerplate)
+  then Tax + WHT (TaxTrans starts getting written; VAT Return + WHT
+  Certificate reports).
 - **Phase 6 — Module breadth.** Delivery Note + Purchase Receipt,
   Opportunity + Sales Person, the HR / Manufacturing / Projects /
   Assets modules.

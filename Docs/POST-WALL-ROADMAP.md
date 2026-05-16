@@ -106,19 +106,27 @@ shipping them now would tighten every later increment.
 
 **Why now**: cheap, and unblocks any internationalization conversation with a non-English-speaking customer.
 
-### 5.7 Subledger transaction tables (AX-inspired)
+### 5.7 Subledger transaction tables (AX-inspired) — ✅ shipped
 
-**Effort**: M
-**Depends on**: 5.1, 5.2
-**Touches**: `Modules/Accounting/CustTrans.swift`, `Modules/Accounting/VendTrans.swift`, `Modules/Accounting/TaxTrans.swift`, `Modules/Stock/InventTrans.swift` (rename + augment StockLedgerEntry with TransType enum), `LedgerDerivation/LedgerDerivationService.swift`, `Reports/HubReports.swift` (adds Customer Statement, Supplier Ledger, Stock Movement reports)
-**Acceptance**:
-- Submitting any Sales Invoice writes one `CustTrans` row (TransType: Invoice) + GL rows.
-- Submitting a Payment Entry receipt writes `CustTrans` Payment + Settlement row + GL rows; the invoice's `outstanding_amount` decreases live.
-- A "Customer Statement" report renders for a chosen customer: every CustTrans row in date order with running outstanding.
-- All subledger DocTypes are append-only, isSubmittable: false; reversal rows on parent cancel.
-- Deterministic IDs make re-firing idempotent.
+Phase 5.7 landed CustTrans / VendTrans / TaxTrans / Settlement as
+new append-only DocTypes and augmented StockLedgerEntry with the
+InventTrans-style `trans_type` enum. `LedgerDerivationService` was
+extended so every transactional submit writes the corresponding
+subledger row alongside the existing GL row. PaymentEntry's
+settlement leg now decrements the matched invoice's
+`outstanding_amount`, so Wall 6's Mark-as-Paid workflow gate
+fires automatically when an invoice is fully paid.
 
-**Why now**: per `HUB-PRODUCT-STRATEGY.md` §3.1, this is the largest single quality-of-life win for an accountant. Customer statements without 5-table joins.
+New reports: **Customer Statement** + **Supplier Ledger** — both
+party-filtered, posting-date ordered, with a running balance
+column.
+
+The full `StockLedgerEntry → InventTrans` rename is deferred
+(the `trans_type` field is the AX shape we needed; the rename is
+cosmetic cleanup).
+
+TaxTrans is declared but its derivation is a no-op until
+**Phase 5.9 (Tax + WHT)** lands the Tax master DocType.
 
 ### 5.8 Posting profiles (AX-inspired)
 
