@@ -203,6 +203,7 @@ Do not ship bare `Text("not yet implemented")` strings. `ContentUnavailableView`
 ## Cross-references
 
 - [`Docs/HUB-STATUS.md`](HUB-STATUS.md) — Hub implementation status, ERP module coverage, and known Core walls.
+- [`Docs/HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md) — Commercial packaging strategy, subscription tiers, business presets, and App Store design.
 - Core UX direction: [`mercantis.core.app/Docs/UX-DIRECTION.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/UX-DIRECTION.md)
 - Core implementation status: [`mercantis.core.app/Docs/STATUS.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/STATUS.md)
 - Core architecture: [`mercantis.core.app/ARCHITECTURE.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/ARCHITECTURE.md)
