@@ -341,34 +341,22 @@ for several cross-cutting concerns:
 ## Next Steps — incremental breadth
 
 Walls 4 + 5 + 6 + 7 + 9 are shipped Hub-side. The remaining work is no
-longer wall-shaped — it's per-module breadth or polish:
+longer wall-shaped — it's per-module breadth or polish. The detailed
+sequenced plan lives in [`POST-WALL-ROADMAP.md`](POST-WALL-ROADMAP.md);
+the headline:
 
-- **Permissions templates.** `HubPermissions.swift` is still
-  stubs. Define real `PermissionRule` rows for System Manager /
-  Sales Manager / Sales User / Purchase Manager / Stock Manager /
-  Accounts Manager, then bind them per-DocType. Wires through to
-  Core's `PermissionEngine` (already shipped, ADR-011 / ADR-037).
-- **Delivery Note + Purchase Receipt.** Mirror Sales Invoice /
-  Purchase Invoice with a Stock Entry derivation on submit
-  (writes `StockLedgerEntry` rows). Pure schema work; no Core
-  changes.
-- **Bin (running balance).** Aggregate `StockLedgerEntry` per
-  `(item, warehouse)` for an O(1) on-hand lookup. Implement as
-  an `onSubmit` automation on Stock Entry (or pull from the
-  ledger lazily). Inventory-Overview dashboard then gains a real
-  "low-stock" widget.
-- **Opportunity, Sales Person.** CRM breadth — needs Wall 6 (done)
-  for status workflows. Tiny.
-- **HR / Manufacturing / Projects / Assets modules.** Each is a
-  separate increment: Employee + Department (tree) + Leave
-  Application / Attendance, then BOM + Work Order, then Project +
-  Task + Timesheet, then Asset + Asset Maintenance. None of these
-  needs a new Core capability.
-- **Localizations.** `Localizations/HubLocalizations.swift`
-  declares strings; `AppManifest.localizations` is currently
-  empty. Pure declaration work.
+- **Phase 5 — Cross-cutting completeness.** Permission templates,
+  multi-company (Wall 2), ItemPrice lookup wired into transactions,
+  Bin running-balance aggregate, Settings DocType, localizations.
+- **Phase 6 — Module breadth.** Delivery Note + Purchase Receipt,
+  Opportunity + Sales Person, the HR / Manufacturing / Projects /
+  Assets modules.
+- **Phase 7 — Polish + production prep.** Print formats, attachment
+  UI, a real CloudKit-backed `CloudAdapter`, global search, chart
+  widgets, scheduled sync-queue pruning.
 
-None of these are blocking the engine; pick by ERP-coverage priority.
+None of these need a Core capability that doesn't already exist; the
+wall-driven phase is over.
 
 ### Verify each new DocType
 
