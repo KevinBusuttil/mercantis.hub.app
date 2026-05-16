@@ -1,3 +1,5 @@
+import MercantisCore
+
 extension Selling {
     static let module = HubModule(
         id: "selling",

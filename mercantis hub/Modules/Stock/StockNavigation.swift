@@ -1,3 +1,5 @@
+import MercantisCore
+
 extension Stock {
     static let module = HubModule(
         id: "stock",
