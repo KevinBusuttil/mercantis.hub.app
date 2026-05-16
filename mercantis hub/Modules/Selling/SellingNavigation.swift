@@ -11,6 +11,14 @@ extension Selling {
                 .docType(Selling.quotation),
                 .docType(Selling.salesOrder),
                 .docType(Selling.salesInvoice)
+            ]),
+            HubMenuGroup(label: "Reports", items: [
+                .report(id: HubReports.salesRegister.id, label: HubReports.salesRegister.name),
+                .report(id: HubReports.customerAging.id, label: HubReports.customerAging.name)
+            ]),
+            HubMenuGroup(label: "Dashboards", items: [
+                .dashboard(id: HubDashboards.salesOverview.id,
+                           label: HubDashboards.salesOverview.name)
             ])
         ]
     )

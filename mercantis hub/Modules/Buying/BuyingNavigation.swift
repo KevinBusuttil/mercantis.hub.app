@@ -11,6 +11,10 @@ extension Buying {
                 .docType(Buying.supplierQuotation),
                 .docType(Buying.purchaseOrder),
                 .docType(Buying.purchaseInvoice)
+            ]),
+            HubMenuGroup(label: "Reports", items: [
+                .report(id: HubReports.purchaseRegister.id,
+                        label: HubReports.purchaseRegister.name)
             ])
         ]
     )

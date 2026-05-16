@@ -13,6 +13,14 @@ extension Accounting {
             ]),
             HubMenuGroup(label: "Ledger", items: [
                 .docType(Accounting.glEntry)
+            ]),
+            HubMenuGroup(label: "Reports", items: [
+                .report(id: HubReports.trialBalance.id,
+                        label: HubReports.trialBalance.name)
+            ]),
+            HubMenuGroup(label: "Dashboards", items: [
+                .dashboard(id: HubDashboards.accountingOverview.id,
+                           label: HubDashboards.accountingOverview.name)
             ])
         ]
     )
