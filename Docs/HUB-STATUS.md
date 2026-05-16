@@ -4,6 +4,20 @@ _Last updated: 2026-05-05 (Wall 9 implemented — reports + dashboards; Hub has 
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
+Related planning docs in this folder:
+
+- [`HUB-PRODUCT-STRATEGY.md`](HUB-PRODUCT-STRATEGY.md) — strategic
+  direction: combining the best of ERPNext and Dynamics AX 2012 R3
+  (subledger trans tables, posting profiles, VAT + WHT) for the
+  micro / small business target.
+- [`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md) —
+  tier structure, pricing model, distribution, support model,
+  trial / upgrade paths, App Store + GDPR posture.
+- [`POST-WALL-ROADMAP.md`](POST-WALL-ROADMAP.md) — sequenced Phase
+  5 / 6 / 7 implementation plan.
+- [`HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md) — product evolution
+  beyond the form-only DocType screens.
+
 > **Core Phases A + B + C + D are all in (2026-05-05).** Fourteen
 > engine-level capabilities shipped in four stacked revisions on
 > `mercantis.core.app` branch `claude/review-next-steps-IFyi2`. The Core

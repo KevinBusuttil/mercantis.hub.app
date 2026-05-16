@@ -8,8 +8,10 @@ architectural moves are done; what remains is per-module breadth and
 production polish. Each item is sized (S / M / L), has explicit
 dependencies, and lists the files it would touch.
 
-See [`HUB-STATUS.md`](HUB-STATUS.md) for the per-DocType scorecard and the
-historical wall sequencing.
+Related docs:
+- [`HUB-STATUS.md`](HUB-STATUS.md) — per-DocType scorecard + historical wall sequencing.
+- [`HUB-PRODUCT-STRATEGY.md`](HUB-PRODUCT-STRATEGY.md) — strategic direction (ERPNext + AX synthesis). Phase 5.7 / 5.8 / 5.9 below come from §3 of that doc.
+- [`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md) — tier mapping for the work items below.
 
 ---
 
@@ -103,6 +105,47 @@ shipping them now would tighten every later increment.
 - Adding a second locale is a one-file change after this.
 
 **Why now**: cheap, and unblocks any internationalization conversation with a non-English-speaking customer.
+
+### 5.7 Subledger transaction tables (AX-inspired)
+
+**Effort**: M
+**Depends on**: 5.1, 5.2
+**Touches**: `Modules/Accounting/CustTrans.swift`, `Modules/Accounting/VendTrans.swift`, `Modules/Accounting/TaxTrans.swift`, `Modules/Stock/InventTrans.swift` (rename + augment StockLedgerEntry with TransType enum), `LedgerDerivation/LedgerDerivationService.swift`, `Reports/HubReports.swift` (adds Customer Statement, Supplier Ledger, Stock Movement reports)
+**Acceptance**:
+- Submitting any Sales Invoice writes one `CustTrans` row (TransType: Invoice) + GL rows.
+- Submitting a Payment Entry receipt writes `CustTrans` Payment + Settlement row + GL rows; the invoice's `outstanding_amount` decreases live.
+- A "Customer Statement" report renders for a chosen customer: every CustTrans row in date order with running outstanding.
+- All subledger DocTypes are append-only, isSubmittable: false; reversal rows on parent cancel.
+- Deterministic IDs make re-firing idempotent.
+
+**Why now**: per `HUB-PRODUCT-STRATEGY.md` §3.1, this is the largest single quality-of-life win for an accountant. Customer statements without 5-table joins.
+
+### 5.8 Posting profiles (AX-inspired)
+
+**Effort**: M
+**Depends on**: 5.7
+**Touches**: `Modules/Setup/CustomerPostingProfile.swift`, `Modules/Setup/SupplierPostingProfile.swift`, `LedgerDerivation/LedgerDerivationService.swift`, Sales / Purchase Invoice `debit_to` / `income_account` / etc. become optional override fields
+**Acceptance**:
+- A `CustomerPostingProfile` for the Default customer group means new Sales Invoices submit without the user setting `debit_to` or `income_account`.
+- Setting explicit values on a specific invoice still overrides for that document.
+- An invoice with no resolvable profile + no override throws a clear "configure posting profile for customer group X" error on submit.
+- Resolve order: explicit field → group profile → HubSettings.
+
+**Why now**: removes per-document boilerplate that every invoice carries today (`debit_to`, `income_account`, `cost_center`). Set once per Customer Group.
+
+### 5.9 Tax + Withholding Tax (AX-inspired)
+
+**Effort**: M
+**Depends on**: 5.7
+**Touches**: `Modules/Setup/Tax.swift`, `SalesItem.tax` / `PurchaseItem.tax` link fields, `Supplier.wht_applicable` + `Supplier.wht_rate`, `LedgerDerivation/LedgerDerivationService.swift`, `Reports/HubReports.swift` (VATReturn, WHTCertificate)
+**Acceptance**:
+- Sales Invoice line tagged "VAT 18%" writes Cr Income + Cr Tax Output + TaxTrans row on submit.
+- Purchase Invoice line tagged with input VAT writes Dr Expense + Dr Tax Input + TaxTrans row.
+- Paying a WHT-applicable supplier writes Cr Bank (Invoice − WHT amount) + Cr WHT Payable + Dr Payable, plus a WHT TaxTrans row.
+- "VAT Return" report for a date range groups TaxTrans rows by tax.
+- "WHT Certificate" report for a supplier lists every WHT TaxTrans row over a period.
+
+**Why now**: real tax handling is the table-stakes feature for any small business that files VAT. WHT specifically is universal for service businesses and consultants.
 
 ---
 
@@ -265,20 +308,36 @@ Items that aren't blocking any module but are blocking *deployment*.
 
 ## Recommended sequencing
 
-A pragmatic order that compounds value at each step:
+Updated to fold in the AX-inspired Phase 5.7 / 5.8 / 5.9 items. The
+order compounds value at each step and aligns with the commercial-
+tier boundaries in `HUB-COMMERCIAL-PACKAGING.md`.
 
-1. **5.1 Permissions** — every later DocType needs roles bound; do it once.
-2. **5.2 Multi-company** — closes the `Document.company: ""` lie; needed before any real customer rollout.
-3. **5.3 ItemPrice lookup** — single biggest UX win for the daily-use flow.
-4. **5.4 Bin aggregate** — turns Stock Ledger from "audit only" into "live inventory".
-5. **6.1 Delivery Note + Purchase Receipt** — completes the Selling / Buying transactional surface.
-6. **7.1 Print formats** — first customer-facing artefact; unblocks pilot deployments.
-7. **6.3 Opportunity + Sales Person** — closes CRM.
-8. **5.6 Localizations** + **5.5 Settings DocType** — small-effort cleanup before opening up to non-English customers.
-9. **6.4 HR module** — common second-largest ERP need after Sales / Stock.
-10. **7.3 CloudKit adapter** — required before multi-device customer rollout.
-11. **6.5 Manufacturing**, **6.6 Projects**, **6.7 Assets** — pick by customer demand.
-12. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**, **7.6 Prune scheduler** — quality-of-life polish; slot wherever they fit between the above.
+**Tier 1 — Core completion (Mercantis Hub Core)**
+
+1. **5.1 Permissions** — every later DocType needs roles bound.
+2. **5.2 Multi-company** — closes the `Document.company: ""` lie.
+3. **5.3 ItemPrice lookup** — biggest UX win for the daily flow.
+4. **5.4 Bin aggregate** — live inventory positions.
+5. **5.5 Settings DocType** + **5.6 Localizations** — small-effort cleanup.
+
+**Tier 2 — Accounting Pro upgrade (AX synthesis)**
+
+6. **5.7 Subledger transaction tables** — CustTrans / VendTrans / InventTrans / TaxTrans + drill-down reports.
+7. **5.8 Posting profiles** — remove per-document account boilerplate.
+8. **5.9 Tax + WHT** — proper VAT + WHT handling; VAT Return + WHT Certificate reports.
+9. **6.1 Delivery Note + Purchase Receipt** — completes transactional surface; unlocks three-way matching.
+10. **7.1 Print formats** — customer-facing artefacts (with VAT lines now). Pilot deployments become possible.
+11. **6.3 Opportunity + Sales Person** — closes CRM.
+
+**Tier 3 — Operations Plus**
+
+12. **6.4 HR module** — Department / Employee / Leave / Attendance / Payroll.
+13. **7.3 CloudKit adapter** — multi-device sync.
+14. **6.5 Manufacturing**, **6.6 Projects**, **6.7 Assets** — pick by customer demand.
+
+**Polish — anywhere**
+
+15. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**, **7.6 Prune scheduler** — slot wherever they fit.
 
 ---
 
