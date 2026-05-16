@@ -10,6 +10,9 @@ extension Accounting {
             HubMenuGroup(label: "Vouchers", items: [
                 .docType(Accounting.journalEntry),
                 .docType(Accounting.paymentEntry)
+            ]),
+            HubMenuGroup(label: "Ledger", items: [
+                .docType(Accounting.glEntry)
             ])
         ]
     )

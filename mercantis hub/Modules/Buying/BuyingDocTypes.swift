@@ -222,7 +222,8 @@ enum Buying {
 
     /// Purchase Invoice — billable line items, accounts-payable trigger.
     /// Wall 6 makes it submittable with the `wf-purchase-invoice` workflow.
-    /// GL-entry derivation waits on Wall 7.
+    /// Wall 7 auto-derives GL entries from `credit_to` (Cr) and
+    /// `expense_account` (Dr) on submit.
     static let purchaseInvoice = DocType(
         id: "PurchaseInvoice",
         name: "Purchase Invoice",
@@ -230,7 +231,14 @@ enum Buying {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: purchaseParentFields(includeOutstanding: true),
+        fields: purchaseParentFields(includeOutstanding: true) + [
+            FieldDefinition(key: "credit_to", label: "Credit To (Payable)",
+                            type: .link, required: true, linkedDocType: "Account"),
+            FieldDefinition(key: "expense_account", label: "Expense Account",
+                            type: .link, required: true, linkedDocType: "Account"),
+            FieldDefinition(key: "cost_center", label: "Cost Center",
+                            type: .link, required: false, linkedDocType: "CostCenter")
+        ],
         permissions: [systemManagerPermission],
         workflowId: "wf-purchase-invoice",
         autoname: "naming_series:PINV-.YYYY.-.####",
@@ -243,6 +251,12 @@ enum Buying {
                 key: "billing",
                 title: "Billing",
                 fieldKeys: ["due_date", "outstanding_amount"]
+            ),
+            FormLayoutSection(
+                key: "posting",
+                title: "Posting",
+                helpText: "Accounts used when GL entries are derived on submit.",
+                fieldKeys: ["credit_to", "expense_account", "cost_center"]
             )
         ])
     )

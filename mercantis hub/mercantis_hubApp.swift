@@ -6,6 +6,9 @@ struct mercantis_hubApp: App {
 
     let documentEngine: DocumentEngine
     let workflowEngine: WorkflowEngine
+    /// Wall 7 — retained so its event subscriptions stay alive for the
+    /// lifetime of the app. Held via a strong reference at app scope.
+    let ledgerDerivation: LedgerDerivationService
 
     init() {
         let databaseURL = Self.makeDatabaseURL()
@@ -21,17 +24,31 @@ struct mercantis_hubApp: App {
         )
         try! installer.install(HubManifest.build())
 
-        self.documentEngine = DocumentEngine(
+        // One shared event bus: DocumentEngine publishes
+        // DocumentSubmittedEvent / DocumentCancelledEvent into it;
+        // LedgerDerivationService subscribes from the same instance.
+        let emitter = EventEmitter()
+
+        let documentEngine = DocumentEngine(
             database: database,
             registry: registry,
             deviceId: Self.deviceId(),
-            userId: "kevin"
+            userId: "kevin",
+            eventEmitter: emitter
         )
+        self.documentEngine = documentEngine
         // Wall 6: Hub uses Core's WorkflowEngine for post-submit state
         // transitions. The convenience init wires
         // WorkflowTransitionHistoryWriter so every transition persists
         // into `workflow_transitions` automatically (Phase A / ADR-038).
         self.workflowEngine = WorkflowEngine(database: database)
+        // Wall 7: LedgerDerivationService listens for transactional
+        // submit / cancel events and writes append-only Stock Ledger
+        // Entry / GL Entry rows with deterministic ids.
+        self.ledgerDerivation = LedgerDerivationService(
+            engine: documentEngine,
+            emitter: emitter
+        )
     }
 
     var body: some Scene {

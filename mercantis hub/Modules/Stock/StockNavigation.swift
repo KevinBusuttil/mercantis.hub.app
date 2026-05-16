@@ -6,6 +6,9 @@ extension Stock {
         groups: [
             HubMenuGroup(label: "Movements", items: [
                 .docType(Stock.stockEntry)
+            ]),
+            HubMenuGroup(label: "Ledger", items: [
+                .docType(Stock.stockLedgerEntry)
             ])
         ]
     )

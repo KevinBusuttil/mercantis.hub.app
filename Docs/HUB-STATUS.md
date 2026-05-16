@@ -1,6 +1,6 @@
 # Hub on Core — Status & ERP Coverage
 
-_Last updated: 2026-05-05 (Wall 6 implemented — submittables + workflows; transactional documents have real lifecycle)_
+_Last updated: 2026-05-05 (Wall 7 implemented — derived ledgers; financial + inventory position correct in real time)_
 
 This document combines the two former companion docs (`HUB-ON-CORE-PROGRESS.md` and `ERP-READINESS.md`) into a single reference. It covers Hub's incremental adoption of Mercantis Core's public API surface **and** a brutally honest ERP module-coverage scorecard. ADRs are tracked separately in the Core repo's `Docs/ADR/` folder.
 
@@ -135,40 +135,41 @@ sqlite3 "$DB" "SELECT * FROM schema_versions;"
 
 ## ERP Coverage Grade
 
-**Hub is ~45% of a usable ERP.** Wall 6 (submittables + workflows) is
-shipped end-to-end. Every transactional DocType across Selling, Buying,
-Stock, and Accounting now has a real lifecycle: Draft → Submitted →
-post-submit application states → Cancelled. The Submit / Cancel /
-Amend buttons render in `HubDocTypeView` based on `DocType.isSubmittable`
-and the document's `docStatus`; available workflow transitions for the
-current state surface as additional buttons.
+**Hub is ~60% of a usable ERP.** Wall 7 (derived ledgers) is shipped
+end-to-end. Every submitted transactional voucher now writes append-only
+Stock Ledger Entry / GL Entry rows in real time, and every cancellation
+writes reversal rows so the trail is auditable.
 
-What's now lifecycle-complete:
+The new `Hub/LedgerDerivation/LedgerDerivationService.swift` subscribes to
+Core's `DocumentSubmittedEvent` / `DocumentCancelledEvent` on the shared
+`EventEmitter` (ADR-020), routes by `docType`, and writes:
 
-- **Selling:** Quotation (Draft → Submitted → Ordered / Lost / Cancelled),
-  Sales Order (Draft → Submitted → Closed / Cancelled, with Re-open),
-  Sales Invoice (Draft → Submitted → Paid / Overdue / Cancelled, with
-  `outstanding_amount <= 0` guard on Mark-as-Paid).
-- **Buying:** Supplier Quotation, Purchase Order, Purchase Invoice —
-  symmetric flows.
-- **Stock:** Stock Entry (Draft → Submitted → Cancelled).
-- **Accounting:** Journal Entry (Draft → Submitted → Cancelled, with
-  `total_debit == total_credit` submit-time validation rule),
-  Payment Entry (Draft → Submitted → Reconciled / Cancelled).
+- **StockEntry submit** → one `StockLedgerEntry` per items row per
+  warehouse leg (source out / target in) with signed `qty_change`.
+- **JournalEntry submit** → one `GLEntry` per `accounts[]` child row.
+- **PaymentEntry submit** → Dr `paid_to` + Cr `paid_from` for
+  `paid_amount`, with party stamped from the parent.
+- **SalesInvoice submit** → Dr `debit_to` (Customer party) + Cr
+  `income_account` for `grand_total`.
+- **PurchaseInvoice submit** → Cr `credit_to` (Supplier party) + Dr
+  `expense_account` for `grand_total`.
 
-Submit-time invariants enforced by Core's pipeline (ADR-013, ADR-022):
-optimistic concurrency, field immutability for non-`allowOnSubmit`
-fields, link-target existence, and the workflow-guard stage
-(role + condition gating per transition). Workflow transitions
-auto-persist into `workflow_transitions` (Phase A / ADR-038) and
-every save / submit / cancel / amend writes an `audit_log` row
-(Phase A / ADR-039).
+Idempotency: every derived row carries a deterministic id
+(`SLE-<voucherId>-<rowIndex>-<side>` / `GL-<voucherId>-<leg>`, with
+`-reversal` suffix on cancellation). The writers fetch-first and skip
+if the row already exists, so re-firing the derivation against the
+same voucher is a no-op rather than a duplicate.
 
-The remaining engine wall is **Wall 7 — derived ledgers**. Submit
-events from Stock Entry / Sales Invoice / Purchase Invoice / Payment
-Entry / Journal Entry need to derive Stock Ledger Entry / GL Entry
-rows; the on-submit hook is the existing Phase B automation rule
-(ADR-041) — only Hub-side declarations are left.
+Sales Invoice / Purchase Invoice gained the account fields needed for
+double-entry posting: `debit_to` + `income_account` + optional
+`cost_center` on SI; `credit_to` + `expense_account` + optional
+`cost_center` on PI. All are required on save so the user wires the
+Chart of Accounts before submitting.
+
+The remaining ERP wall on the Hub side is **Wall 9 — Hub reports +
+dashboards** consuming the now-populated GL Entry / Stock Ledger Entry
+tables via `MercantisCoreUI.GenericReportView` (Phase D / ADR-049).
+Wall 8 (tree DocTypes) was shipped at the master level back in Wall 4.
 
 ### What's done
 
@@ -220,7 +221,7 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | Price List | ✅ | Setup header + `items` (ItemPrice) child rows. |
 | Quotation | ✅ | Submittable (`wf-quotation`: Draft → Submitted → Ordered / Lost / Cancelled). |
 | Sales Order | ✅ | Submittable (`wf-sales-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
-| Sales Invoice | ✅ | Submittable (`wf-sales-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). Mark-as-Paid is gated by `outstanding_amount <= 0`. GL derivation waits on Wall 7. |
+| Sales Invoice | ✅ | Submittable (`wf-sales-invoice`). Carries `debit_to` / `income_account` / `cost_center` posting fields; submit derives Dr / Cr GL entries via `LedgerDerivationService`. Mark-as-Paid gated by `outstanding_amount <= 0`. |
 | Delivery Note | ❌ | Wait for Wall 7 to derive Stock Ledger entries. |
 | SalesItem (child) | ✅ | `amount = qty * rate` formula. |
 | UOMConversionDetail (child) | ✅ | Item.uoms row. |
@@ -234,34 +235,34 @@ Legend: ✅ shipped · 🟡 declared but incomplete · ❌ not started
 | Supplier Group | ✅ | Tree DocType in Setup. |
 | Supplier Quotation | ✅ | Submittable (`wf-supplier-quotation`: Draft → Submitted → Ordered / Cancelled). |
 | Purchase Order | ✅ | Submittable (`wf-purchase-order`: Draft → Submitted → Closed / Cancelled, with Re-open). |
-| Purchase Invoice | ✅ | Submittable (`wf-purchase-invoice`: Draft → Submitted → Paid / Overdue / Cancelled). GL derivation waits on Wall 7. |
+| Purchase Invoice | ✅ | Submittable (`wf-purchase-invoice`). Carries `credit_to` / `expense_account` / `cost_center` posting fields; submit derives Dr / Cr GL entries via `LedgerDerivationService`. |
 | Purchase Receipt | ❌ | Wait for Wall 7. |
 | PurchaseItem (child) | ✅ | `amount = qty * rate` formula. |
 
-### Stock — Wall-6-complete (transit layer ready)
+### Stock — Wall-7-complete
 
 | DocType | State | Notes |
 |---|---|---|
 | Warehouse | ✅ | Tree DocType in Setup. |
-| Stock Entry | ✅ | Submittable (`wf-stock-entry`: Draft → Submitted → Cancelled). Stock Ledger derivation waits on Wall 7. |
+| Stock Entry | ✅ | Submittable (`wf-stock-entry`). Submits derive Stock Ledger Entry rows; cancel writes reversal rows. |
 | StockEntryDetail (child) | ✅ | `amount = qty * valuation_rate` formula. |
-| Stock Ledger Entry | ❌ | W7 (derived ledger), append-only. |
-| Bin | ❌ | W7 (derived from Stock Ledger). |
-| Stock Reconciliation | ❌ | W7. |
+| Stock Ledger Entry | ✅ | Append-only ledger derived by `LedgerDerivationService`. Deterministic ids (`SLE-<sourceId>-<rowIndex>-<side>`). |
+| Bin | ❌ | Per-warehouse-per-item running balance; trivial to derive by aggregating Stock Ledger Entry. Pending. |
+| Stock Reconciliation | ❌ | Future — needs the Bin aggregate first. |
 
-### Accounting — Wall-6-complete (vouchers ready)
+### Accounting — Wall-7-complete
 
 | DocType | State | Notes |
 |---|---|---|
-| Account | ✅ | Tree DocType: parent_account self-link, is_group, account_type, root_type, currency. |
+| Account | ✅ | Tree DocType. |
 | Cost Center | ✅ | Tree DocType in Setup. |
 | Currency | ✅ | Flat master in Setup. |
 | Fiscal Year | ❌ | Trivial flat DocType; not yet needed. |
-| Journal Entry | ✅ | Submittable (`wf-journal-entry`: Draft → Submitted → Cancelled). `total_debit == total_credit` enforced via ValidationRule on every save. GL derivation waits on Wall 7. |
+| Journal Entry | ✅ | Submittable + `total_debit == total_credit` ValidationRule. Submit derives one GL Entry per `accounts[]` row; cancel writes reversals. |
 | JournalEntryAccount (child) | ✅ | account / party_type / party / debit / credit / cost_center / reference. |
-| Payment Entry | ✅ | Submittable (`wf-payment-entry`: Draft → Submitted → Reconciled / Cancelled). |
+| Payment Entry | ✅ | Submittable. Submit derives Dr `paid_to` + Cr `paid_from` GL entries with party stamped from the parent. |
 | PaymentEntryReference (child) | ✅ | reference_doctype / reference_name / total / outstanding / allocated. |
-| GL Entry | ❌ | W7 (derived from Journal Entry, Sales Invoice, Purchase Invoice, Payment Entry). |
+| GL Entry | ✅ | Append-only ledger derived by `LedgerDerivationService` from Journal Entry / Payment Entry / Sales Invoice / Purchase Invoice submits. Deterministic ids; reversal rows on cancel. |
 
 ### HR — not started
 
@@ -317,49 +318,46 @@ for several cross-cutting concerns:
 
 ---
 
-## Next Step — Wall 7 (derived ledgers)
+## Next Step — Wall 9 (Hub reports + dashboards)
 
-Walls 4 + 5 + 6 are shipped Hub-side. Every transactional DocType has
-its real lifecycle. The remaining gap is the *side effect*: when a
-Sales Invoice / Purchase Invoice / Stock Entry / Journal Entry /
-Payment Entry is submitted, no GL Entry or Stock Ledger Entry rows
-get derived — financial and inventory positions are still in the
-parent documents only.
+Walls 4 + 5 + 6 + 7 are shipped Hub-side. The masters layer is
+declared, transactional documents have real lifecycle, and every
+submit derives the right financial / inventory ledger rows. The
+remaining gap is *visibility*: GL Entry and Stock Ledger Entry now
+hold the ground truth, but Hub still has no `ReportDefinition`s or
+populated dashboard widgets that surface it.
 
-**Wall 7 is a Hub-side declaration plus one automation rule per
-derivation.** Core's automation runner (ADR-019) fires on
-`onSubmit` events and Phase B's `AutomationRule` (ADR-041) supports
-scheduled and document-event triggers; the on-submit hook is the
-canonical place. Hub work to land Wall 7:
+**Wall 9 is a Hub-side declaration job.** Core's `ReportEngine`,
+`DashboardEngine`, and `MercantisCoreUI.GenericReportView` (Phase D /
+ADR-049) are in place. Hub work to land Wall 9:
 
-1. New `Stock/StockDocTypes.swift` additions: `StockLedgerEntry`
-   (append-only, non-submittable; signed qty per warehouse per item
-   per posting time).
-2. New `Accounting/AccountingDocTypes.swift` additions: `GLEntry`
-   (append-only; debit / credit / account / posting_date / voucher
-   reference).
-3. **Automation rules** in `Automation/HubAutomationRules.swift`:
-   - Stock Entry submit → fan out one StockLedgerEntry per items[]
-     row (out from source warehouse, in to target warehouse).
-   - Sales Invoice submit → write GL rows (Dr Debtors, Cr Income,
-     Cr Tax) per line.
-   - Purchase Invoice submit → write GL rows (Dr Expense / Inventory,
-     Cr Creditors).
-   - Payment Entry submit → write GL rows (Dr Cash, Cr Party).
-   - Journal Entry submit → write GL rows from each child account
-     row.
-4. Optional helper: a Hub-side `LedgerDerivation` action handler
-   registered alongside Core's built-in handlers, taking the
-   derivation specs from rule parameters so the rule declarations
-   stay declarative.
+1. `Reports/HubReports.swift` — declare the canonical four reports:
+   - **Sales Register** — list of Sales Invoices with totals.
+   - **Customer Aging** — outstanding-amount buckets per Customer.
+   - **Stock Ledger View** — paged Stock Ledger Entry by item /
+     warehouse / date.
+   - **Trial Balance** — GL Entry summed by Account, grouped by
+     root_type.
+   Each carries `allowedRoles` so role-filtered visibility comes
+   for free (Phase D / ADR-049).
+2. `Dashboards/HubDashboards.swift` already declares the widget
+   shape; `DashboardEngine.resolve(...)` (Phase C / ADR-045)
+   resolves them into typed `DashboardResult` tiles. Wire
+   `Dashboards.allDashboards` into `HubManifest.build()`.
+3. `RootView` — replace the `ContentUnavailableView` placeholders
+   for `.report` / `.dashboard` sidebar items with
+   `MercantisCoreUI.GenericReportView` (already shipped) and a new
+   `HubDashboardView` consuming `DashboardResult` (small SwiftUI
+   wrapper).
+4. `mercantis_hubApp.swift` — construct `ReportEngine` and
+   `DashboardEngine`, register reports + dashboards at startup.
 
-After Wall 7, every primary book of record (financial position,
-inventory position) is correct in real time. **Wall 9 — Hub
-reports + dashboards** then becomes the natural follow-up: Sales
-Register, Customer Aging, Stock Ledger View, Trial Balance, etc.
-all read directly off the now-populated GL Entry / Stock Ledger
-Entry tables, and `MercantisCoreUI.GenericReportView` (Phase D /
-ADR-049) renders them without per-report SwiftUI code.
+After Wall 9, Hub has end-to-end visibility on top of the
+end-to-end transactional layer. The remaining cross-cutting items
+(Permissions, Localizations, real Bin aggregate, Delivery Note /
+Purchase Receipt, Opportunity / HR / Manufacturing / Projects /
+Assets modules) are incremental DocType breadth, not architectural
+work.
 
 ### Verify each new DocType
 
@@ -515,18 +513,59 @@ Hub-side declarations shipped under Wall 6:
     from `Document.status` for the System Manager role, gated by
     the workflow's `conditionExpression`.
 
-#### Wall 7 — Ledger / derived documents
+#### Wall 7 — Ledger / derived documents ✅ resolved
 
-Stock Ledger Entry and GL Entry are append-only ledgers populated
-automatically when source documents are submitted.
+Architectural pick: Core's `AutomationActionHandler` contract mutates
+the current document only, so cross-DocType writes live outside it.
+The natural seam is the typed event bus (ADR-020):
+`LedgerDerivationService` subscribes to `DocumentSubmittedEvent` /
+`DocumentCancelledEvent` on the shared `EventEmitter`, routes by
+`docType`, and writes derived rows via `DocumentEngine.save(_:)`.
 
-Hub-side expectations:
-- Mechanism for declaring "when source DocType X is submitted, create N entries
-  in target DocType Y based on rule R".
-- Engine enforces ledger immutability.
-- `engine.list` over a ledger returns rows in source-time order.
+Hub-side declarations shipped under Wall 7:
 
-DocTypes unlocked: **Stock Ledger Entry**, **GL Entry**, **Bin**.
+- **`Stock/StockDocTypes.swift`** — `StockLedgerEntry` append-only
+  ledger (item / warehouse / posting / voucher / signed qty_change /
+  valuation_rate / amount / is_reversal). Indexed on voucher_no /
+  item / warehouse.
+- **`Accounting/AccountingDocTypes.swift`** — `GLEntry` append-only
+  ledger (account / posting_date / debit / credit / party /
+  cost_center / voucher / is_reversal). Indexed on voucher_no /
+  account / posting_date.
+- **`Selling/SellingDocTypes.swift`** — Sales Invoice gained
+  `debit_to` (Account, required), `income_account` (Account,
+  required), `cost_center` (Account, optional) posting fields.
+- **`Buying/BuyingDocTypes.swift`** — Purchase Invoice gained
+  `credit_to`, `expense_account`, `cost_center` symmetric to the
+  Sales side.
+- **`LedgerDerivation/LedgerDerivationService.swift`** *(new)* —
+  subscribes to submitted / cancelled events, dispatches to one
+  routine per source DocType:
+  - StockEntry submit → one SLE per items row per warehouse leg.
+  - JournalEntry submit → one GL row per `accounts[]` child.
+  - PaymentEntry submit → Dr `paid_to` + Cr `paid_from`.
+  - SalesInvoice submit → Dr `debit_to` (Customer) + Cr `income_account`.
+  - PurchaseInvoice submit → Cr `credit_to` (Supplier) + Dr `expense_account`.
+- **`mercantis_hubApp.swift`** — single shared `EventEmitter`
+  threaded through `DocumentEngine` and `LedgerDerivationService`;
+  the service is retained at app scope so its subscriptions stay
+  alive.
+
+Idempotency: every derived row uses a deterministic id
+(`SLE-<sourceId>-<rowIndex>-<side>` / `GL-<sourceId>-<leg>`, with
+`-reversal` suffix on cancellation). The writers fetch-first and
+skip if the row already exists, so re-firing the derivation is a
+no-op rather than a duplicate.
+
+Reversal on cancel: writes reversal rows with debit / credit /
+qty values swapped (and `is_reversal: true`). Original rows stay
+in place; the net of the pair is zero. Audit-friendly and
+matches ERPNext semantics.
+
+Re-entrancy: the service only handles its 5 source DocTypes;
+`StockLedgerEntry` / `GLEntry` saves fire `DocumentSavedEvent` but
+the service subscribes only to `DocumentSubmittedEvent` /
+`DocumentCancelledEvent`, so no recursion is possible.
 
 #### Wall 8 — Tree DocTypes
 
@@ -613,19 +652,26 @@ Don't pre-populate all modules speculatively.
    / Cancel / Amend buttons rendered by `HubDocTypeView` with workflow
    transition buttons surfacing post-submit status moves.
 
-**Phase 3 — Stock and Accounting backbones**
+**Phase 3 — Stock and Accounting backbones — ✅ shipped**
 
-5. **Wall 7 lands in Core (derived ledgers).** Then Hub adds Stock Entry,
-   Delivery Note, Purchase Receipt → Stock Ledger Entry derivation; and
-   Sales Invoice, Purchase Invoice, Payment Entry, Journal Entry → GL
-   Entry derivation.
+5. ✅ **Wall 7 (derived ledgers) shipped.** `LedgerDerivationService`
+   subscribes to `DocumentSubmittedEvent` / `DocumentCancelledEvent`
+   on a shared `EventEmitter` and writes append-only `StockLedgerEntry`
+   rows from Stock Entry submits and `GLEntry` rows from Journal Entry
+   / Payment Entry / Sales Invoice / Purchase Invoice submits.
+   Cancellation writes reversal rows with debit/credit/qty swapped.
+   Deterministic ids make re-firing idempotent. Delivery Note /
+   Purchase Receipt are still pending; their derivations are
+   structurally identical to Stock Entry's so the wait is on
+   declaring those parents.
 
 **Phase 4 — Reports and dashboards**
 
-6. **Wall 9 lands in Core (report engine renderer).** Then Hub declares
-   Sales Register, Customer Aging, Stock Ledger View, Trial Balance.
-7. **Core ships `GenericDashboardView`.** Then Hub's `HubDashboards.swift`
-   declarations actually render.
+6. **Wall 9 (Hub reports + dashboards) is next.** Core's
+   `ReportEngine` + `ReportDefinition.allowedRoles` (ADR-049),
+   `GenericReportView`, and `DashboardEngine` (ADR-045) are all
+   shipped. Hub declares Sales Register, Customer Aging, Stock
+   Ledger View, Trial Balance + wires dashboards.
 
 **Phase 5 — Production breadth**
 

@@ -122,6 +122,60 @@ enum Stock {
 
     static let allDocTypes: [DocType] = [
         stockEntryDetail,
-        stockEntry
+        stockEntry,
+        stockLedgerEntry
     ]
+
+    // MARK: - Derived ledger (Wall 7)
+
+    /// Stock Ledger Entry — append-only inventory movement record derived
+    /// from Stock Entry submit. Each Stock Entry row produces one SLE per
+    /// side (one for source warehouse, one for target warehouse) with a
+    /// signed `qty_change`. On Stock Entry cancel, reversal rows with
+    /// negated `qty_change` are written; original rows stay in place so
+    /// the trail is auditable.
+    ///
+    /// IDs are deterministic: `SLE-<stockEntryId>-<rowIndex>-<side>` (with
+    /// `-reversal` suffix for cancellations) so re-firing the derivation
+    /// upserts in place instead of duplicating.
+    static let stockLedgerEntry = DocType(
+        id: "StockLedgerEntry",
+        name: "Stock Ledger Entry",
+        module: "Stock",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "item", label: "Item",
+                            type: .link, required: true, linkedDocType: "Item"),
+            FieldDefinition(key: "warehouse", label: "Warehouse",
+                            type: .link, required: true, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "posting_date", label: "Posting Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "posting_time", label: "Posting Time",
+                            type: .datetime, required: false),
+            FieldDefinition(key: "voucher_type", label: "Voucher Type",
+                            type: .text, required: true),
+            FieldDefinition(key: "voucher_no", label: "Voucher No",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "qty_change", label: "Qty Change",
+                            type: .decimal, required: true,
+                            defaultValue: .double(0)),
+            FieldDefinition(key: "valuation_rate", label: "Valuation Rate",
+                            type: .currency, required: false),
+            FieldDefinition(key: "amount", label: "Amount",
+                            type: .currency, required: false,
+                            formulaExpression: "qty_change * valuation_rate"),
+            FieldDefinition(key: "is_reversal", label: "Reversal",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "voucher_no", unique: false),
+            IndexDefinition(fieldKey: "item", unique: false),
+            IndexDefinition(fieldKey: "warehouse", unique: false)
+        ],
+        searchFields: ["voucher_no", "item"],
+        titleField: "voucher_no"
+    )
 }
