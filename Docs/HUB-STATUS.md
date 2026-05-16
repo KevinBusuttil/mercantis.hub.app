@@ -794,3 +794,4 @@ Core's companion UX direction: [`mercantis.core.app/Docs/UX-DIRECTION.md`](https
 - Core-side: [`ADR/`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/ADR/)
   — architecture decision records.
 - [`Docs/HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md) — Hub ERP UX direction, product strategy, and phased UX roadmap.
+- [`Docs/HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md) — Commercial packaging strategy, subscription tiers, business presets, and App Store design.

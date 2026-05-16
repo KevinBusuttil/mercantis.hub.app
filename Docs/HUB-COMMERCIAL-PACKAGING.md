@@ -1,400 +1,398 @@
-# Hub — Commercial Packaging
+# Mercantis Hub — Commercial Packaging Strategy
 
-_Last updated: 2026-05-05_
-
-This is the planning artifact for how Mercantis Hub goes to market.
-It maps the decision space — tiers, pricing model, activation,
-distribution, support — and recommends a default path. Choices marked
-**TBD** are explicit product-owner calls that haven't been made yet.
-
-The technical scope this packaging applies to is in
-[`HUB-PRODUCT-STRATEGY.md`](HUB-PRODUCT-STRATEGY.md); the per-DocType
-state lives in [`HUB-STATUS.md`](HUB-STATUS.md); the implementation
-order is in [`POST-WALL-ROADMAP.md`](POST-WALL-ROADMAP.md).
+_Last updated: 2026-05-16_
 
 ---
 
-## 1. Positioning recap
+## 1. Purpose
 
-Mercantis Hub targets **micro and small businesses** (1–25 employees)
-that have outgrown spreadsheets but are below the budget / operational
-scale of Dynamics 365 / SAP Business One / NetSuite. The product
-identity per `HUB-PRODUCT-STRATEGY.md` §7:
+This document defines how Mercantis Hub should be commercially packaged, priced, and positioned for micro and small businesses.
 
-> Subledger drill-down + WHT + offline-correctness + Mac-native UI,
-> all in one artifact.
+It covers the subscription-tier model, App Store strategy, business preset system, and the design rules that govern how capability is bundled and sold.
 
-The packaging has to answer **why a small business pays for Hub
-instead of using QuickBooks or ERPNext free**.
-
-Honest answers:
-
-- **vs ERPNext**: native macOS / iPadOS app, offline-first, no Python
-  server to host, no docker, no learning curve for a non-IT operator.
-- **vs QuickBooks**: real subledger drill-down + WHT support + stock
-  + manufacturing reach + one-time-purchase tier (no perpetual
-  subscription dependency), data stays on the user's device.
-- **vs spreadsheets**: actual lifecycle (Submit / Cancel / Amend),
-  actual audit log, real reports that an accountant can sign off on.
-
-The Accounting Pro tier (subledgers + tax + posting profiles) is what
-operationalises that positioning.
+**This is a product and commercial strategy document. It is not an immediate implementation task.** It exists to align future App Store setup, marketing, onboarding design, and Hub feature gating with a coherent commercial model before those decisions are made inconsistently across the codebase or storefront.
 
 ---
 
-## 2. Tier structure
+## 2. Product Family Model
 
-The technical strategy doc sketched three tiers. This section commits
-to a default shape while leaving the boundary-line numbers open.
+Mercantis Hub is the first-party ERP/business application built on Mercantis Core. Core owns the reusable platform runtime: the metadata engine, document engine, workflow engine, generic UI, sync, permissions, reporting foundation, and related infrastructure. Hub owns the ERP/business domain model, DocTypes, workflows, reports, dashboards, navigation composition, and the business-specific product experience.
 
-### Tier 1 — Mercantis Hub Core
-
-**Audience**: 1-person businesses, freelancers, side projects, light-
-usage shops with no external accountant.
-
-**Functional scope** (everything currently shipped + cross-cutting
-completeness, no subledger drill-down):
-
-- CRM: Customer / Contact / Address / Lead (Walls 4 + 5 shipped).
-- Selling: Item / Quotation / Sales Order / Sales Invoice
-  (Walls 4 + 5 + 6 + 7 shipped).
-- Buying: Supplier / Supplier Quotation / Purchase Order / Purchase
-  Invoice.
-- Stock: Warehouse / Stock Entry / Stock Ledger Entry / Bin
-  (Phase 5.4).
-- Accounting: Chart of Accounts / Journal Entry / Payment Entry / GL
-  Entry (Wall 7 shipped).
-- Setup: Currency / UOM / Brand / Cost Center / Customer Group /
-  Supplier Group / Item Group / Territory / Warehouse / Price List /
-  Item Price.
-- Reports: Sales Register, Purchase Register, Stock Ledger View,
-  Customer Aging, Trial Balance (Wall 9 shipped).
-- Dashboards: Sales / Inventory / Accounting Overview (Wall 9 shipped).
-- Permissions templates (Phase 5.1).
-- Multi-company (Phase 5.2) — **one** company per install in this tier.
-- ItemPrice lookup (Phase 5.3).
-- Settings DocType (Phase 5.5).
-- Localizations (Phase 5.6).
-
-**Out of scope at this tier**: subledger drill-down, posting profiles,
-explicit tax tables (still post Cr Tax via a generic "Tax Output"
-account if the user wires it manually), HR, Manufacturing, Projects,
-Assets, multi-device sync.
-
-### Tier 2 — Mercantis Hub Accounting Pro
-
-**Audience**: small businesses that file VAT returns, deal with an
-external accountant, have a non-trivial supplier ledger.
-
-**Adds**:
-
-- Subledger transaction tables: CustTrans, VendTrans, InventTrans
-  (rename + TransType enum), TaxTrans (Phase 5.7).
-- Posting profiles: CustomerPostingProfile, SupplierPostingProfile
-  (Phase 5.8).
-- Tax + Withholding Tax: Tax DocType, line-level tax tagging, VAT
-  Return + WHT Certificate reports (Phase 5.9).
-- Delivery Note + Purchase Receipt (Phase 6.1).
-- Print formats with VAT lines (Phase 7.1).
-- Three-way matching (PO → Receipt → Invoice).
-- Multi-company **unlimited** (a deployment can operate any number of
-  legal entities from one install).
-- Customer Statement / Supplier Ledger reports drop in for free off
-  the new subledger tables.
-
-**Audience signal**: this tier is what an external accountant looks
-at and recognises as "a proper system."
-
-### Tier 3 — Mercantis Hub Operations Plus
-
-**Audience**: 5–25 employee businesses with multi-device workflows
-(shop floor + office), payroll, project billing, or asset depreciation.
-
-**Adds**:
-
-- HR module (Department / Employee / Leave Application / Attendance /
-  Salary Structure / Payroll Entry — Phase 6.4).
-- Manufacturing module (BOM / Work Order / Production Plan —
-  Phase 6.5).
-- Projects module (Project / Task / Timesheet — Phase 6.6).
-- Assets module (Asset / Asset Category / Asset Maintenance / monthly
-  depreciation derivation — Phase 6.7).
-- CloudKit-backed CloudAdapter (Phase 7.3) — multi-device sync via
-  iCloud.
-- Global search (Phase 7.4).
-- Chart widgets in dashboards (Phase 7.5).
-
-**Per-module pricing** is an option here — a customer who only needs
-Manufacturing shouldn't have to pay for HR. **TBD**: tier-pack vs
-per-module-pack.
-
-### Why this boundary
-
-The single biggest commercial-value boundary is between Core and
-Accounting Pro. The features in the gap (subledgers + VAT + WHT +
-posting profiles) are **invisible** to a freelancer using Hub as a
-better spreadsheet, but they are the **first thing** an external
-accountant asks for when a small business hands over its books.
-
-That's the natural upsell moment: "when your accountant joins the
-conversation, upgrade to Pro."
-
----
-
-## 3. Pricing model
-
-### Decisions framework
-
-Three orthogonal axes:
-
-| Axis | Options |
+| Layer | Meaning |
 |---|---|
-| **Charge basis** | Per-device, per-user, per-company, per-installation |
-| **Cadence** | One-time, annual, monthly subscription |
-| **Tier ladder** | Three-tier ladder, modular packs, mixed |
+| Product | Mercantis Hub |
+| App Store app | One app called **Mercantis Hub** |
+| Subscription group | **Mercantis Hub Plans** |
+| Subscription tier | Essential / Stock / Trade / Complete |
+| Business preset | Retail / Distribution / Warehouse / Service / Finance / Light Manufacturing |
+| Module | Internal functional area such as CRM, Selling, Buying, Stock, Accounting |
+| Core | Technical runtime/platform (Mercantis Core) |
 
-### Recommended default
+### Product family overview
 
-**Per-installation, annual, three-tier ladder.**
+- **Product family:** Mercantis Hub
+- **App Store app:** Mercantis Hub (one app)
+- **Internal platform:** Mercantis Core
+- **Business presets:** Retail, Distribution, Warehouse, Service, Light Manufacturing, Finance
+- **Capability tiers:** Essential, Stock, Trade, Complete
+- **Future specialist capabilities:** Manufacturing, Field Sales, Multi-Company, Advanced Reports
 
-- **Per-installation** rather than per-user keeps activation simple
-  (no auth backend), respects ADR-010 (no server), and matches the
-  typical 1–25 employee deployment shape (one device, occasional
-  multi-device via CloudKit).
-- **Annual** rather than one-time gives a sustainable revenue base
-  for an OS-vendor-paced update cycle (every macOS / iOS major
-  release requires a Hub release).
-- **Three-tier** matches the technical scope split. Modular packs
-  inside Tier 3 are optional.
-
-### Indicative prices (TBD)
-
-Three reference points to inform the actual numbers:
-
-- **QuickBooks Online Simple Start**: ~$30/month/business = ~$360/yr.
-- **ERPNext Cloud Hosted**: ~$10/month/user = $120-$300/yr for a small team.
-- **One-time desktop accounting (e.g. AccountEdge)**: $250-$500 once.
-
-Plausible Hub pricing:
-
-| Tier | Annual (per-installation) | Justification |
-|---|---|---|
-| **Core** | **Free** *or* **€49/yr** | Free maximises adoption; €49 monetises hobby users. **TBD.** |
-| **Accounting Pro** | **€199/yr** | Below QuickBooks; above ERPNext free; matches the "accountant joined the conversation" upgrade. |
-| **Operations Plus** | **€399/yr** *or* **€199 + €99/module** | Single-tier price is simpler; per-module respects asymmetric customer needs. **TBD.** |
-
-### Free-tier consideration
-
-The most consequential **TBD**:
-
-**Option A** — Core is free, Pro / Plus are paid. Pros: maximises
-adoption, gives accountants a way to recommend Hub before customers
-pay. Cons: monetisation depends entirely on conversion, support load
-for free users.
-
-**Option B** — Core is paid (€49–€99), Pro / Plus are higher tiers.
-Pros: every user pays something; lower support volume; clearer signal
-that Hub is a commercial product. Cons: harder organic growth, App
-Store discovery suffers.
-
-**Option C** — Hybrid: Core is free for ≤ 100 documents / month, paid
-above. The freemium SaaS pattern adapted to a per-installation app.
-Pros: free trial built in; conversion pressure built in. Cons: feels
-gating; document-count limit is hard to explain.
-
-**Recommended default**: Option A (Core free) for the first 12 months
-to prove adoption, then revisit if conversion is below 2–3%.
-
-### Activation mechanism
-
-| Mechanism | Pros | Cons |
-|---|---|---|
-| **Mac App Store IAP** | Built-in payment, App Store discovery, no piracy risk worth worrying about | Apple takes 15–30%, App Store Review can block updates, restricts distribution to App Store-using customers |
-| **Direct download + license key** | Higher margin (no Apple cut), free to update on our schedule, can sell through resellers | Need a license-key generator and validator (small but non-zero infra), no App Store discovery |
-| **Both** | Discovery + margin headroom | Two activation paths to maintain |
-
-**Recommended default**: Mac App Store for Core (free) and the entry-
-price Pro tier (lower margin matters less); direct license for the
-higher-margin Operations Plus tier where the App Store cut is more
-painful.
-
-ADR-008 (no executable plugins) + ADR-010 (no server) already align
-with App Store sandboxing. No structural blockers.
+Tier and preset are orthogonal. A customer chooses a tier (what depth of capability they need) and a preset (how the app is configured for their type of business). They are not the same thing and must not be conflated in App Store design.
 
 ---
 
-## 4. Distribution
+## 3. One App, Multiple Configurations
 
-### Channels
+Mercantis Hub must be distributed as **one App Store app**, not a collection of separate apps.
 
-| Channel | Audience | Status |
+The following would be the wrong model:
+
+- Mercantis Hub Distribution
+- Mercantis Hub Finance
+- Mercantis Hub Warehouse
+- Mercantis Hub Retail
+
+Those names may appear in marketing copy or onboarding flows, but commercially and technically the product is one app: **Mercantis Hub**.
+
+The correct model is:
+
+> `Mercantis Hub + subscription tier + business preset`
+
+### Configuration examples
+
+| Customer profile | Tier | Preset |
 |---|---|---|
-| **Mac App Store** | Mac-using small businesses, organic discovery via App Store search | Default channel, **TBD** for activation |
-| **Direct download (mercantis.app)** | Customers who want to bypass App Store, accountants reselling | Required for license-key path |
-| **Accountant resellers** | Bookkeepers who recommend Hub to their micro-business clients | Long-tail growth channel; **TBD** for reseller pricing |
-| **Localized resellers** (Malta-first?) | Country-specific distribution where local VAT/WHT compliance is the key value | **TBD**; depends on whether we ship per-jurisdiction tax DocType packs |
+| Small importer/wholesaler | Trade | Distribution |
+| Stock-heavy business | Stock | Warehouse |
+| Retail shop | Complete | Retail |
+| Sole trader / service business | Essential | Service |
+| Accountant-driven SME | Complete | Finance |
 
-### Jurisdiction packs
+For example:
 
-VAT / WHT rates differ per jurisdiction. The technical strategy
-already supports this via the `Tax.jurisdiction` field. The packaging
-question:
+- `Mercantis Hub — Trade tier — Distribution preset`
+- `Mercantis Hub — Stock tier — Warehouse preset`
+- `Mercantis Hub — Complete tier — Retail preset`
+- `Mercantis Hub — Essential tier — Service preset`
 
-- **Single SKU**, tax rates are configured by each customer. Simplest.
-- **Per-jurisdiction SKU** (e.g. "Hub MT", "Hub IT", "Hub UK") that
-  ships pre-configured tax rates + standard chart of accounts +
-  localized strings. Higher value, harder to maintain.
-
-**Recommended default**: single SKU + a "Malta starter pack" (or
-whichever first market) shipped as an opt-in setup wizard that imports
-a Tax catalog + standard CoA + localized strings on first run. Same
-binary; jurisdiction-specific *data*.
+The shared Hub data model and single company/workspace database underpin all configurations. A preset does not fork the data model or create a separate database.
 
 ---
 
-## 5. Trial / evaluation
+## 4. Subscription Group Strategy
 
-- **Mac App Store**: Core is free → in-app upgrade to Pro / Plus. No
-  separate trial mechanism needed.
-- **Direct download**: 30-day full-feature trial after which Pro / Plus
-  features lock back to Core. Document deletion is **not** part of the
-  trial expiry — the data the customer entered stays accessible at the
-  Core tier even after Pro features lock.
+Apple's App Store groups related subscription products into a **subscription group**. Within a group, a user can normally hold only one active subscription at a time. This is the correct structure for capability tiers — a customer should have one active Hub plan.
 
-The lock-down has to be designed carefully. A submitted Sales Invoice
-on Pro has subledger rows + WHT rows; after lock-down the user should
-still be able to *view* those rows (audit trail integrity per ADR-039)
-but not *create* new ones at the Core tier. The simplest implementation:
-the LedgerDerivationService skips the subledger / tax routines when
-the active tier is Core.
+### Recommended group
 
----
+**Group name:** `Mercantis Hub Plans`
 
-## 6. Upgrade / downgrade paths
+**Subscription products inside the group:**
 
-| Move | What happens |
+| Product | Billing |
 |---|---|
-| **Core → Pro** | Subledger derivation routines start firing on new submits. Historical Core-era invoices have no CustTrans / VendTrans / TaxTrans rows — that's OK; subledger reports begin from the upgrade date. **Optionally** offer a "backfill subledgers" maintenance action that walks every submitted invoice and runs derivation idempotently. |
-| **Pro → Operations Plus** | HR / Manufacturing / Projects / Assets modules unlock; navigation gains the new sidebar entries; no schema migration needed because the DocTypes were always declared but the modules were gated. |
-| **Operations Plus → Pro** | HR / Manufacturing / Projects / Assets modules lock; existing documents stay viewable in a read-only mode; nothing is deleted. Same audit-trail-integrity principle. |
-| **Pro → Core** | Subledger / tax features lock. Historical CustTrans / VendTrans / TaxTrans rows stay queryable for audit; no new ones get written. Customer Statement / Supplier Ledger / VAT Return reports stay accessible read-only. |
+| Essential Monthly | Monthly |
+| Essential Annual | Annual |
+| Stock Monthly | Monthly |
+| Stock Annual | Annual |
+| Trade Monthly | Monthly |
+| Trade Annual | Annual |
+| Complete Monthly | Monthly |
+| Complete Annual | Annual |
 
-**Principle**: a downgrade never destroys data. The lower tier hides
-capability but preserves the trail. This matches how the Adobe / Sketch
-ecosystem handles license lapse — your old files open, you just can't
-edit with the pro features.
+The user holds **one active plan** at a time. Upgrading or downgrading moves them between tier products within the same group.
 
----
+### What not to do
 
-## 7. Support model
+Do **not** create separate subscription groups for Distribution, Warehouse, Finance, Retail, or other business presets. That would force customers to purchase multiple overlapping subscriptions and create support and data nightmares.
 
-### Self-service
+Do **not** create subscription products like:
+- `Mercantis Hub Distribution`
+- `Mercantis Hub Finance + Warehouse`
+- `Mercantis Hub Retail Pro`
 
-- In-app **Help** menu → opens this Docs/ folder shipped with the app
-  binary (no internet required for documentation).
-- Each empty-state (`ContentUnavailableView`) carries a one-line "what
-  this is" plus a deeper link into Help.
-- **TBD**: a knowledge-base site (mercantis.app/docs) for SEO + linkable
-  customer-support answers.
-
-### Direct support
-
-| Tier | Support shape |
-|---|---|
-| Core | Community (GitHub Discussions / forum) only |
-| Accounting Pro | Email support, response within 2 business days |
-| Operations Plus | Email support within 1 business day + scheduled monthly office-hours call |
-
-**TBD**: do we offer onboarding services (paid consulting for chart-of-
-accounts setup, jurisdiction tax configuration, payroll structure) as
-an add-on?
+Business presets are **in-app configurations**, not App Store subscription products.
 
 ---
 
-## 8. Compliance + legal
+## 5. Capability Tiers
 
-### App Store Review
+Tiering is based on **capability depth and operational sophistication**, not on artificially withholding documents that small businesses need every day.
 
-- ADR-008 (no downloaded executable plugins) means we pass the
-  no-arbitrary-code-execution check.
-- ADR-010 (no server component) means no "where does the data go" anxiety
-  during Review.
-- ADR-018 (CloudAdapter as protocol boundary) means CloudKit sync uses
-  Apple's own framework — no third-party cloud SDKs in the binary.
+Sales Orders and Purchase Orders are included from the **lowest paid tier**. Many micro businesses use these as normal daily workflow documents — removing them from Essential would cripple the app for the very customers it targets.
 
-These are existing decisions that happen to align cleanly with App
-Store requirements. No retrofit needed.
-
-### Data protection (GDPR, etc.)
-
-- Hub data lives on the customer's device.
-- CloudKit sync, when enabled, stores in the customer's own iCloud
-  Private Database — not on a Mercantis-owned server.
-- Mercantis as a vendor sees no customer data unless the customer
-  voluntarily submits a support transcript.
-
-This is the cleanest GDPR posture available: we are not a Data
-Controller or Processor for customer business data.
-
-### Accounting / audit certifications
-
-Some jurisdictions (Malta, Italy, etc.) certify accounting software
-for use in regulated tax filings. Whether to pursue certification per-
-jurisdiction is **TBD**; it's a per-market investment that may be worth
-it for jurisdictions where the certification doubles as marketing
-("the only certified accounting app on Mac for Maltese VAT").
-
----
-
-## 9. Update cadence
-
-- **Quarterly minor releases** (new DocTypes, new reports, polish).
-- **Annual major releases** aligned to macOS / iOS major version (Hub
-  major versions track Apple's, e.g. Hub 26 ships against macOS 26).
-- **Patch releases** as needed for bugs and tax-rate updates that
-  matter to operating customers.
-
-Annual subscription customers receive every release for the term.
-One-time-purchase customers (if we ever sell that way) receive minor +
-patch releases for the major version they bought; major upgrades are a
-separate purchase. **TBD**: do we sell one-time at all, or annual-only?
+| Functionality | Essential | Stock | Trade | Complete |
+|---|:---:|:---:|:---:|:---:|
+| Company setup | ✅ | ✅ | ✅ | ✅ |
+| Customers | ✅ | ✅ | ✅ | ✅ |
+| Suppliers | ✅ | ✅ | ✅ | ✅ |
+| Items | ✅ | ✅ | ✅ | ✅ |
+| UOM | ✅ | ✅ | ✅ | ✅ |
+| Price Lists | ✅ | ✅ | ✅ | ✅ |
+| Quotations | ✅ | ✅ | ✅ | ✅ |
+| Sales Orders | ✅ | ✅ | ✅ | ✅ |
+| Purchase Orders | ✅ | ✅ | ✅ | ✅ |
+| Sales Invoices | ✅ | ✅ | ✅ | ✅ |
+| Purchase Invoices | ✅ | ✅ | ✅ | ✅ |
+| Payments | ✅ | ✅ | ✅ | ✅ |
+| Basic VAT / tax | ✅ | ✅ | ✅ | ✅ |
+| Basic GL posting | ✅ | ✅ | ✅ | ✅ |
+| Basic customer/supplier balances | ✅ | ✅ | ✅ | ✅ |
+| Basic stock balance | ✅ | ✅ | ✅ | ✅ |
+| Stock Ledger Entry | — | ✅ | ✅ | ✅ |
+| Warehouse transfers | — | ✅ | ✅ | ✅ |
+| Stock counts | — | ✅ | ✅ | ✅ |
+| Stock reconciliation | — | ✅ | ✅ | ✅ |
+| Purchase Receipt | — | ✅ | ✅ | ✅ |
+| Delivery / Picking | — | ✅ | ✅ | ✅ |
+| Barcode workflows | — | ✅ | ✅ | ✅ |
+| Multi-warehouse | — | ✅ | ✅ | ✅ |
+| Stock reservation / allocation | — | — | ✅ | ✅ |
+| Picking / packing workflow | — | — | ✅ | ✅ |
+| Returns / credit notes / debit notes | — | — | ✅ | ✅ |
+| AR/AP aging | — | — | ✅ | ✅ |
+| Trial Balance | — | — | — | ✅ |
+| Profit & Loss | — | — | — | ✅ |
+| Balance Sheet | — | — | — | ✅ |
+| Advanced VAT reports | — | — | — | ✅ |
+| Dashboards | — | — | — | ✅ |
+| Advanced approvals | — | — | — | ✅ |
+| Batch / serial control | — | — | — | ✅ |
+| Multi-company | — | — | — | ✅ |
+| Manufacturing | — | — | — | ✅ |
 
 ---
 
-## 10. Decision checklist
+## 6. Tier Descriptions
 
-When the time comes to finalise packaging, these are the calls in
-order of urgency:
+### Essential
 
-1. **Free vs paid Core tier.** Most consequential single decision.
-2. **Annual vs one-time** at each tier.
-3. **App Store vs direct download** distribution mix.
-4. **Tier 3 single-price vs modular** packs.
-5. **Per-jurisdiction starter packs** (Malta-first, then?).
-6. **Onboarding services** as a paid add-on.
-7. **Accounting certification** per-jurisdiction.
-8. **Pricing levels** — the actual numbers in §3.
+**For micro businesses that need normal business documents and basic control.**
 
-Items 1, 2, and 3 are the path-defining choices. Items 4–8 can be
-deferred until adoption signal arrives.
+Essential is for the smallest businesses: sole traders, small service firms, and micro-retailers who need to issue quotes, take orders, raise invoices, pay suppliers, and track what they owe and are owed. It is not a crippled free tier — it is a complete starter business system.
+
+Includes:
+
+- Customers, suppliers, items
+- Quotations, Sales Orders, Purchase Orders
+- Sales Invoices, Purchase Invoices, Payments
+- Basic VAT/tax
+- Basic GL posting
+- Basic customer/supplier balances
+- Simple stock balance
+
+> **Important:** Do not remove Sales Orders or Purchase Orders from Essential. Many small businesses treat them as normal daily documents — they are not an advanced feature. Removing them would force customers who need them into a higher tier for no substantive reason.
+
+What Essential does **not** include:
+
+- Deep warehouse management (stock ledger, transfers, counts)
+- Barcode workflows
+- Batch/serial tracking
+- Advanced finance reports (Trial Balance, P&L, Balance Sheet)
+- Manufacturing
+- Multi-company
 
 ---
 
-## 11. Open questions for the product owner
+### Stock
 
-These don't have a default — they need a decision:
+**For businesses where stock accuracy matters.**
 
-- Are we targeting Malta first, or a broader EU / English-speaking
-  market from day one?
-- Do we sell directly through accountants who advise small businesses,
-  or do we go customer-direct via App Store?
-- Is "Mercantis Hub" the user-facing product name, or do we want a
-  cleaner consumer-friendly name for Core (e.g. "Mercantis Books") and
-  reserve "Hub" for the Pro / Plus tiers?
-- Do we accept the App Store 15-30% cut on Core if we make it free,
-  on the theory that App Store discovery is the cheapest acquisition
-  channel?
-- Is there an existing accountant network we'd partner with (Maltese
-  bookkeeper association, etc.) for early reseller relationships?
+Stock is for businesses that need to know exactly what they have, where it is, and how it moves — but do not yet need the full trading and distribution sophistication of Trade.
 
-Pin answers to these before the first paid release.
+Includes everything in Essential, plus:
+
+- Stock Ledger Entry (real-time inventory position)
+- Warehouses and multi-warehouse
+- Warehouse transfers
+- Stock counts and stock reconciliation
+- Purchase Receipt
+- Basic Delivery and Picking
+- Barcode item lookup
+- Stock movement history
+
+Stock does **not** include advanced stock reservation/allocation, sophisticated picking/packing workflows, or returns management. Those come with Trade.
+
+---
+
+### Trade
+
+**For wholesalers, importers, distributors, and stock-based traders.**
+
+Trade is the flagship tier. It is designed for small businesses that buy, hold, and sell physical stock across a supply chain. The full order-to-delivery and procure-to-pay flow is supported.
+
+Includes everything in Stock, plus:
+
+- Stronger sales and purchasing workflow (full quote-to-cash, procure-to-pay)
+- Stock reservation and allocation
+- Picking/packing workflow
+- Returns, credit notes, debit notes
+- Customer/supplier aging (AR/AP)
+- Stronger operational and warehouse reports
+
+Trade is the natural home for distributors, importers, wholesalers, and stock-based SMEs. It should be the most commercially prominent plan.
+
+---
+
+### Complete
+
+**For small businesses using Mercantis Hub as their full operational and financial system.**
+
+Complete is for businesses that need not just trading capability but a full accounting and financial reporting picture — together with advanced operational controls.
+
+Includes everything in Trade, plus:
+
+- Advanced finance (full accounting reports)
+- Trial Balance, Profit & Loss, Balance Sheet
+- Advanced VAT/tax reports
+- Dashboards
+- Advanced approvals
+- Batch/serial tracking
+- Multi-company
+- Advanced audit and reversal controls
+- Future manufacturing capabilities (BOMs, Work Orders, Production Plans)
+
+---
+
+## 7. Business Presets
+
+Business presets are **not App Store subscription products**. They are in-app configurations that adapt Mercantis Hub's navigation, terminology, setup checklist, reports, dashboards, and workflow emphasis to a specific type of business.
+
+A customer does not buy a preset. They choose a tier (what capabilities they need), and then choose a preset (how they want the app configured for their business type).
+
+| Preset | Best for | Changes the app by |
+|---|---|---|
+| Retail | Shops and small retailers | Retail-focused navigation, item/barcode focus, quick sales, stock, purchasing, VAT |
+| Distribution | Wholesalers, importers, distributors | Sales orders, purchase orders, receiving, picking, delivery, invoicing |
+| Warehouse | Stock-heavy businesses | Stock counts, transfers, receiving, picking, movement history |
+| Service | Service and repair businesses | Customers, quotations, jobs, invoicing, payments |
+| Finance | Accounting-focused businesses | Invoices, payments, VAT, GL, customer/supplier balances, finance reports |
+| Light Manufacturing | Small assemblers/manufacturers | BOMs, work orders, material issue, finished goods receipt |
+
+A preset controls:
+
+- **Navigation** — which modules and items appear in the sidebar
+- **Default dashboard** — the home screen and key metric tiles
+- **Terminology** — labels and field names adapted to the industry (e.g. "Job" vs "Sales Order")
+- **Setup checklist** — the first-run wizard steps relevant to this business type
+- **Visible reports** — which reports are surfaced by default
+- **Workflow emphasis** — which workflows are prominent
+- **Quick actions** — the top-level actions available from the home screen
+
+A preset does **not**:
+
+- Create a separate database
+- Create a separate company workspace
+- Represent a separate product or subscription
+- Prevent a business from accessing capabilities included in their tier
+
+A customer should be able to change their preset later without data loss.
+
+---
+
+## 8. Recommended Launch Packaging
+
+### Subscription tiers at launch
+
+- Essential
+- Stock
+- Trade *(flagship — most commercially prominent)*
+- Complete
+
+### Business presets at launch
+
+Initially:
+
+- Retail
+- Distribution
+- Warehouse
+- Finance
+
+Later (post-launch):
+
+- Service
+- Light Manufacturing
+
+### Flagship positioning
+
+`Trade` should be the flagship commercial plan. It aligns directly with the core Hub target customer: small distributors, importers, wholesalers, and stock-based SMEs who need a real operational system — not just invoicing, and not a full enterprise ERP.
+
+Marketing copy should lead with Trade and position Essential as the entry point and Complete as the advanced upgrade, rather than trying to position all four tiers equally.
+
+---
+
+## 9. Implementation Implications
+
+This section describes a conceptual model for how commercial configuration could be implemented in the future. **Do not implement this yet.** It exists to establish shared vocabulary and avoid architectural decisions that would foreclose the right model.
+
+The active commercial configuration determines what is visible, enabled, and licensed — not just the raw list of DocTypes in `HubManifest`. The current `HubManifest` may continue to aggregate all DocTypes, but a commercial configuration layer should gate what is surfaced to the user.
+
+```swift
+enum HubSubscriptionTier: String, Codable {
+    case essential
+    case stock
+    case trade
+    case complete
+}
+
+enum HubBusinessPreset: String, Codable {
+    case retail
+    case distribution
+    case warehouse
+    case service
+    case finance
+    case lightManufacturing
+}
+
+struct HubCommercialConfiguration: Codable {
+    let subscriptionTier: HubSubscriptionTier
+    let businessPreset: HubBusinessPreset
+    let enabledModules: Set<String>
+    let enabledDocTypes: Set<String>
+    let enabledReports: Set<String>
+    let enabledDashboards: Set<String>
+    let enabledWorkflows: Set<String>
+}
+```
+
+The `HubCommercialConfiguration` is resolved at runtime from the active App Store subscription and the customer's chosen preset. It determines which features of the installed Hub are unlocked for use.
+
+The underlying data model — tables, schema, DocType definitions — remains shared. There is no per-preset or per-tier database forking.
+
+---
+
+## 10. Design Rules
+
+These rules govern all future decisions about commercial packaging, tiering, and preset design.
+
+1. **Never create separate databases for different presets.** All configurations share one company workspace.
+2. **Never force customers to buy multiple overlapping subscriptions.** One tier covers everything the customer needs at that capability level.
+3. **Never make normal business documents premium-only if micro/small businesses need them daily.** Sales Orders and Purchase Orders belong in Essential.
+4. **Use tiering for depth, scale, automation, reporting, and advanced controls** — not for gating everyday workflow documents.
+5. **Keep customer-facing terminology simple.** Avoid enterprise ERP language such as "modular suite", "ledger engine", "DocType", or "workflow engine" in any customer-facing copy.
+6. **Keep internal modules separate from commercial packaging.** The CRM, Selling, Buying, Stock, and Accounting modules are internal implementation groupings. They must not map one-to-one to commercial tier names.
+7. **Allow a business to change preset later without data loss.** A preset is a view configuration, not a data migration.
+8. **Allow upgrade/downgrade of subscription tier without changing the underlying company data model.** Tier changes affect what is visible and enabled, not the schema.
+9. **Avoid enterprise ERP language in customer-facing copy.** The product should feel like a practical business tool, not a modular enterprise suite.
+10. **The product should feel like a complete business system at every tier,** not a minimal core with expensive add-ons bolted on.
+
+---
+
+## 11. Summary
+
+Mercantis Hub is one App Store app, one product family, and one shared data model.
+
+Customers subscribe to a **capability tier** — Essential, Stock, Trade, or Complete — and choose a **business preset** — Retail, Distribution, Warehouse, Service, Finance, or Light Manufacturing — that configures the in-app experience for their type of business.
+
+The lowest paid tier must support normal small-business documents including Sales Orders and Purchase Orders. Tiering exists to unlock operational depth, warehouse sophistication, advanced distribution flows, stronger finance, dashboards, multi-company, batch/serial, and manufacturing — not to gatekeep documents that every small business needs.
+
+The technical implementation is always one shared Hub data model and one shared company/workspace database, regardless of which tier or preset the customer has chosen.
+
+---
+
+## Cross-references
+
+- [`Docs/HUB-STATUS.md`](HUB-STATUS.md) — Hub implementation status, ERP module coverage, and known Core walls.
+- [`Docs/HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md) — Hub ERP UX direction, product strategy, and phased UX roadmap.
+- Core architecture: [`mercantis.core.app/ARCHITECTURE.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/ARCHITECTURE.md)
+- Core implementation status: [`mercantis.core.app/Docs/STATUS.md`](https://github.com/KevinBusuttil/mercantis.core.app/blob/main/Docs/STATUS.md)
