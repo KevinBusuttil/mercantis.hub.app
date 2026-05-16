@@ -129,15 +129,18 @@ enum Stock {
     // MARK: - Derived ledger (Wall 7)
 
     /// Stock Ledger Entry — append-only inventory movement record derived
-    /// from Stock Entry submit. Each Stock Entry row produces one SLE per
-    /// side (one for source warehouse, one for target warehouse) with a
-    /// signed `qty_change`. On Stock Entry cancel, reversal rows with
-    /// negated `qty_change` are written; original rows stay in place so
-    /// the trail is auditable.
+    /// from Stock Entry submit. Phase 5.7 augmented the row with an
+    /// explicit `trans_type` enum so reports can drill into Receipts vs
+    /// Issues vs Transfers without inferring from voucher_type. This is
+    /// the InventTrans shape from the AX synthesis (see
+    /// HUB-PRODUCT-STRATEGY.md §3.1); the full rename to `InventTrans`
+    /// is deferred to a later cleanup once we're confident there's no
+    /// data to migrate.
     ///
-    /// IDs are deterministic: `SLE-<stockEntryId>-<rowIndex>-<side>` (with
-    /// `-reversal` suffix for cancellations) so re-firing the derivation
-    /// upserts in place instead of duplicating.
+    /// Each Stock Entry row produces one SLE per side (one for source
+    /// warehouse, one for target warehouse) with a signed `qty_change`.
+    /// On Stock Entry cancel, reversal rows with negated `qty_change`
+    /// are written; original rows stay in place for audit.
     static let stockLedgerEntry = DocType(
         id: "StockLedgerEntry",
         name: "Stock Ledger Entry",
@@ -145,6 +148,12 @@ enum Stock {
         appId: HubManifest.appID,
         isChildTable: false,
         fields: [
+            FieldDefinition(key: "trans_type", label: "Trans Type",
+                            type: .select, required: false,
+                            defaultValue: .string("Issue"),
+                            options: ["Receipt", "Issue", "Transfer",
+                                      "Adjustment", "Counting",
+                                      "Reservation", "Production"]),
             FieldDefinition(key: "item", label: "Item",
                             type: .link, required: true, linkedDocType: "Item"),
             FieldDefinition(key: "warehouse", label: "Warehouse",
@@ -173,7 +182,8 @@ enum Stock {
         indexes: [
             IndexDefinition(fieldKey: "voucher_no", unique: false),
             IndexDefinition(fieldKey: "item", unique: false),
-            IndexDefinition(fieldKey: "warehouse", unique: false)
+            IndexDefinition(fieldKey: "warehouse", unique: false),
+            IndexDefinition(fieldKey: "trans_type", unique: false)
         ],
         searchFields: ["voucher_no", "item"],
         titleField: "voucher_no"

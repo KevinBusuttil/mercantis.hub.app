@@ -8,8 +8,10 @@ architectural moves are done; what remains is per-module breadth and
 production polish. Each item is sized (S / M / L), has explicit
 dependencies, and lists the files it would touch.
 
-See [`HUB-STATUS.md`](HUB-STATUS.md) for the per-DocType scorecard and the
-historical wall sequencing.
+Related docs:
+- [`HUB-STATUS.md`](HUB-STATUS.md) — per-DocType scorecard + historical wall sequencing.
+- [`HUB-PRODUCT-STRATEGY.md`](HUB-PRODUCT-STRATEGY.md) — strategic direction (ERPNext + AX synthesis). Phase 5.7 / 5.8 / 5.9 below come from §3 of that doc.
+- [`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md) — tier mapping for the work items below.
 
 ---
 
@@ -103,6 +105,55 @@ shipping them now would tighten every later increment.
 - Adding a second locale is a one-file change after this.
 
 **Why now**: cheap, and unblocks any internationalization conversation with a non-English-speaking customer.
+
+### 5.7 Subledger transaction tables (AX-inspired) — ✅ shipped
+
+Phase 5.7 landed CustTrans / VendTrans / TaxTrans / Settlement as
+new append-only DocTypes and augmented StockLedgerEntry with the
+InventTrans-style `trans_type` enum. `LedgerDerivationService` was
+extended so every transactional submit writes the corresponding
+subledger row alongside the existing GL row. PaymentEntry's
+settlement leg now decrements the matched invoice's
+`outstanding_amount`, so Wall 6's Mark-as-Paid workflow gate
+fires automatically when an invoice is fully paid.
+
+New reports: **Customer Statement** + **Supplier Ledger** — both
+party-filtered, posting-date ordered, with a running balance
+column.
+
+The full `StockLedgerEntry → InventTrans` rename is deferred
+(the `trans_type` field is the AX shape we needed; the rename is
+cosmetic cleanup).
+
+TaxTrans is declared but its derivation is a no-op until
+**Phase 5.9 (Tax + WHT)** lands the Tax master DocType.
+
+### 5.8 Posting profiles (AX-inspired)
+
+**Effort**: M
+**Depends on**: 5.7
+**Touches**: `Modules/Setup/CustomerPostingProfile.swift`, `Modules/Setup/SupplierPostingProfile.swift`, `LedgerDerivation/LedgerDerivationService.swift`, Sales / Purchase Invoice `debit_to` / `income_account` / etc. become optional override fields
+**Acceptance**:
+- A `CustomerPostingProfile` for the Default customer group means new Sales Invoices submit without the user setting `debit_to` or `income_account`.
+- Setting explicit values on a specific invoice still overrides for that document.
+- An invoice with no resolvable profile + no override throws a clear "configure posting profile for customer group X" error on submit.
+- Resolve order: explicit field → group profile → HubSettings.
+
+**Why now**: removes per-document boilerplate that every invoice carries today (`debit_to`, `income_account`, `cost_center`). Set once per Customer Group.
+
+### 5.9 Tax + Withholding Tax (AX-inspired)
+
+**Effort**: M
+**Depends on**: 5.7
+**Touches**: `Modules/Setup/Tax.swift`, `SalesItem.tax` / `PurchaseItem.tax` link fields, `Supplier.wht_applicable` + `Supplier.wht_rate`, `LedgerDerivation/LedgerDerivationService.swift`, `Reports/HubReports.swift` (VATReturn, WHTCertificate)
+**Acceptance**:
+- Sales Invoice line tagged "VAT 18%" writes Cr Income + Cr Tax Output + TaxTrans row on submit.
+- Purchase Invoice line tagged with input VAT writes Dr Expense + Dr Tax Input + TaxTrans row.
+- Paying a WHT-applicable supplier writes Cr Bank (Invoice − WHT amount) + Cr WHT Payable + Dr Payable, plus a WHT TaxTrans row.
+- "VAT Return" report for a date range groups TaxTrans rows by tax.
+- "WHT Certificate" report for a supplier lists every WHT TaxTrans row over a period.
+
+**Why now**: real tax handling is the table-stakes feature for any small business that files VAT. WHT specifically is universal for service businesses and consultants.
 
 ---
 
@@ -265,20 +316,70 @@ Items that aren't blocking any module but are blocking *deployment*.
 
 ## Recommended sequencing
 
-A pragmatic order that compounds value at each step:
+The implementation order aligns with the four commercial tiers
+defined in [`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md)
+(Essential / Stock / Trade / Complete). The subledger infrastructure
+from Phase 5.7 ✅ is **shared across all tiers** — the rows always
+get written; tiering controls which reports / screens are surfaced
+to the user.
 
-1. **5.1 Permissions** — every later DocType needs roles bound; do it once.
-2. **5.2 Multi-company** — closes the `Document.company: ""` lie; needed before any real customer rollout.
-3. **5.3 ItemPrice lookup** — single biggest UX win for the daily-use flow.
-4. **5.4 Bin aggregate** — turns Stock Ledger from "audit only" into "live inventory".
-5. **6.1 Delivery Note + Purchase Receipt** — completes the Selling / Buying transactional surface.
-6. **7.1 Print formats** — first customer-facing artefact; unblocks pilot deployments.
-7. **6.3 Opportunity + Sales Person** — closes CRM.
-8. **5.6 Localizations** + **5.5 Settings DocType** — small-effort cleanup before opening up to non-English customers.
-9. **6.4 HR module** — common second-largest ERP need after Sales / Stock.
-10. **7.3 CloudKit adapter** — required before multi-device customer rollout.
-11. **6.5 Manufacturing**, **6.6 Projects**, **6.7 Assets** — pick by customer demand.
-12. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**, **7.6 Prune scheduler** — quality-of-life polish; slot wherever they fit between the above.
+**Essential-tier completion** (the entry tier — Sales Orders and
+Purchase Orders are intentionally *not* gated up):
+
+1. **5.1 Permissions** — every later DocType needs roles bound.
+2. **5.2 Multi-company** — closes the `Document.company: ""` lie.
+   Multi-company unlock surfaces only at Complete, but the data
+   model needs to be company-aware from Essential onward to avoid
+   migration later.
+3. **5.3 ItemPrice lookup** — biggest UX win for the daily flow.
+4. **5.5 Settings DocType** + **5.6 Localizations** — small-effort cleanup.
+5. Basic Tax sketch (a minimal `Tax` DocType + per-line tax tagging,
+   subset of Phase 5.9 — Essential gets "basic VAT", the full VAT /
+   WHT reports come at Complete).
+
+**Stock-tier upgrade** (warehouse sophistication):
+
+6. **5.4 Bin aggregate** — live on-hand positions instead of
+   scanning the SLE.
+7. **6.1 Delivery Note + Purchase Receipt** — completes transactional
+   surface; structural prerequisite for stock reservation in Trade.
+8. Barcode workflow polish — wire `FieldType.barcode` into Item
+   lookup / Stock Entry scanning.
+
+**Trade-tier upgrade** (AX-style operational depth, the flagship):
+
+9. ✅ **5.7 Subledger transaction tables** (shipped) — CustTrans /
+   VendTrans / Settlement / InventTrans `trans_type`. Customer
+   Statement + Supplier Ledger reports written; surfaced via Trade
+   tier gate.
+10. **5.8 Posting profiles** — remove per-document account boilerplate.
+11. Stock reservation / allocation + picking/packing workflow.
+12. Returns / credit notes / debit notes.
+13. **7.1 Print formats** — customer-facing artefacts (Sales Invoice,
+    PO, Delivery Note). Trade is the natural moment to ship print.
+14. **6.3 Opportunity + Sales Person** — closes CRM. Optional at this
+    tier.
+
+**Complete-tier upgrade** (full accounting + advanced controls):
+
+15. **5.9 Tax + WHT** — VAT Return + WHT Certificate reports. TaxTrans
+    derivation that's currently a no-op in Phase 5.7 starts writing.
+16. Trial Balance polish + Profit & Loss + Balance Sheet reports
+    (Trial Balance already shipped at Wall 9; P&L + Balance Sheet
+    are new).
+17. **6.4 HR module** — Department / Employee / Leave / Attendance /
+    Payroll.
+18. **6.5 Manufacturing** — BOM / Work Order / Production Plan.
+19. **6.6 Projects** / **6.7 Assets** — pick by customer demand.
+20. Batch / serial tracking + advanced approvals.
+
+**Cross-tier infrastructure** (slot anywhere):
+
+21. **7.3 CloudKit adapter** — multi-device sync. Likely a Complete-
+    tier feature commercially.
+22. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**,
+    **7.6 Prune scheduler** — quality-of-life polish; surface in
+    appropriate tier.
 
 ---
 

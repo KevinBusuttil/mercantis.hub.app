@@ -16,7 +16,9 @@ extension Buying {
             ]),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.purchaseRegister.id,
-                        label: HubReports.purchaseRegister.name)
+                        label: HubReports.purchaseRegister.name),
+                .report(id: HubReports.supplierLedger.id,
+                        label: HubReports.supplierLedger.name)
             ])
         ]
     )

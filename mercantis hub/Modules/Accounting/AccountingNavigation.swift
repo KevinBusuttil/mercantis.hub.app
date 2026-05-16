@@ -16,6 +16,12 @@ extension Accounting {
             HubMenuGroup(label: "Ledger", items: [
                 .docType(Accounting.glEntry)
             ]),
+            HubMenuGroup(label: "Subledgers", items: [
+                .docType(Accounting.custTrans),
+                .docType(Accounting.vendTrans),
+                .docType(Accounting.settlement),
+                .docType(Accounting.taxTrans)
+            ]),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.trialBalance.id,
                         label: HubReports.trialBalance.name)
