@@ -349,39 +349,86 @@ The new items slot between Phase 5.4 (Bin) and Phase 6.1 (Delivery Note):
 
 ---
 
-## 5. Commercial-packaging sketch
+## 5. Commercial-packaging alignment
 
-_This section is a placeholder. The detailed positioning belongs in
-`Docs/HUB-COMMERCIAL-PACKAGING.md` once that doc is written. The tiers
-sketched here exist only to inform the technical roadmap above._
+The canonical commercial plan lives in
+[`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md). This
+section maps the technical phases in this document to the four
+subscription tiers (Essential / Stock / Trade / Complete) defined
+there, so the implementation order in
+[`POST-WALL-ROADMAP.md`](POST-WALL-ROADMAP.md) ships features in the
+order that maximises commercial value per tier boundary.
 
-A plausible three-tier structure given the technical scope:
+**Important design rule from the packaging doc (§5)**: Sales Orders
+and Purchase Orders are **Essential** — not premium-gated. Tiering is
+for operational depth (warehouse, reservations, advanced reports,
+multi-company, manufacturing), not for gatekeeping documents every
+small business needs daily.
 
-### Mercantis Hub Core
+### Technical phases → commercial tiers
 
-- **Audience**: 1-person businesses, freelancers, side projects.
-- **Functional scope**: Walls 4 + 5 + 6 + 7 + 9 (already shipped) + Phase 5.1 Permissions + 5.2 Multi-company + 5.3 ItemPrice + 5.4 Bin + 5.5 Settings + 5.6 Localizations.
-- **What this gives**: CRM, basic Selling, basic Buying, basic Stock, basic Accounting (single GL Entry table), one company, single user, the four canonical reports + dashboards.
+| Capability | Tier | Phase / Wall |
+|---|---|---|
+| Quotation / Sales Order / Sales Invoice / Purchase Order / Purchase Invoice / Payment Entry | **Essential** | Walls 4–7 + 9 (✅ shipped) |
+| Basic customer / supplier balances (sum of CustTrans / VendTrans `amount`) | **Essential** | Phase 5.7 ✅ — the rows exist; the basic-balance widget surfaces in Essential. |
+| Basic VAT and basic GL posting | **Essential** | Walls 4–7 (✅) + minimal Tax sketch (subset of Phase 5.9) |
+| Stock Ledger Entry / InventTrans + multi-warehouse + Stock Counts + Stock Reconciliation | **Stock** | Phase 5.7 ✅ shipped the InventTrans shape; the Stock-tier surface adds Phase 5.4 Bin + Phase 6.1's stock side. |
+| Purchase Receipt / Delivery Note / barcode workflows | **Stock** | Phase 6.1 + Phase 7.2 attachment-style barcode UI |
+| Stock reservation + picking/packing + returns/credit notes/debit notes | **Trade** | Phase 6.1 follow-on (reservations are a separate increment) |
+| Customer Aging / AR-AP aging / Customer Statement / Supplier Ledger | **Trade** | Wall 9 ✅ shipped Customer Aging; Phase 5.7 ✅ shipped Customer Statement + Supplier Ledger. Surfaced via the Trade tier gate. |
+| Posting profiles (eliminate per-document `debit_to` boilerplate) | **Trade** | Phase 5.8 |
+| Trial Balance / P&L / Balance Sheet | **Complete** | Wall 9 ✅ shipped Trial Balance; P&L + Balance Sheet are new Complete-tier reports. |
+| Advanced VAT + WHT reports (VAT Return, WHT Certificate) | **Complete** | Phase 5.9 |
+| Dashboards | **Complete** | Wall 9 ✅ shipped three dashboards; Complete is when they're surfaced as primary navigation. |
+| Multi-company | **Complete** | Phase 5.2 |
+| Batch / serial tracking + advanced approvals | **Complete** | Phase 6 follow-on |
+| Manufacturing (BOM / Work Order / Production Plan) | **Complete** | Phase 6.5 |
 
-### Mercantis Hub Accounting Pro
+### How the subledger architecture spans tiers
 
-- **Adds**: 5.7 Subledger transactions + 5.8 Posting profiles + 5.9 Tax/WHT + 6.1 Delivery Note + Purchase Receipt + 7.1 Print formats with VAT lines + the three-way match (Phase 6 follow-on).
-- **Audience**: small businesses that file VAT returns and need supplier ledgers / customer statements / WHT certificates for tax authorities or external accountants.
-- **What this gives**: production-grade financial output. The kind of thing an external accountant can sign off on without spreadsheet exports.
+The Phase 5.7 subledger tables (CustTrans / VendTrans / TaxTrans /
+Settlement) are **shared infrastructure** — the DocTypes always
+install, the derivation always fires. Tiering gates which *reports
+and screens* are surfaced to the user, not whether the underlying
+rows are written.
 
-### Mercantis Hub Operations Plus
+Concretely:
 
-- **Adds**: HR (6.4) + Manufacturing (6.5) + Projects (6.6) + Assets (6.7) + 7.3 CloudKit multi-device + 7.4 Global search.
-- **Audience**: 5-25 employee businesses with a single physical operation — workshops, services firms with multiple consultants, light manufacturing.
-- **What this gives**: payroll, BOM-driven manufacturing, project billing, depreciation, multi-device sync.
+- An **Essential**-tier customer's CustTrans / VendTrans rows are
+  still written by `LedgerDerivationService` on every invoice and
+  payment submit. The user just doesn't see the Customer Statement
+  or Supplier Ledger reports in their sidebar.
+- When they upgrade to **Trade**, those reports flip on immediately
+  — the data is already there from day one.
+- A downgrade never deletes subledger rows or audit data; the UI
+  hides them but the trail stays intact.
 
-The tier boundary that makes commercial sense is **between Core and Accounting Pro**: subledgers + tax + posting profiles are the features a paying customer (or their accountant) actually feels the value of. Core is what gets adoption; Accounting Pro is what justifies pricing.
+This is the right shape because:
 
-The packaging doc when written should fill in:
-- Pricing model (per-seat / per-company / per-device?).
-- Activation mechanism (license file? in-app purchase via App Store?).
-- Upgrade / downgrade paths (what happens to existing data when a customer drops a tier?).
-- App Review compliance (no executable plugins per ADR-008, no external server per ADR-010 — these are already aligned).
+1. No tier change ever requires schema migration or data backfill.
+2. The audit trail (ADR-039) stays compliance-clean across tier
+   transitions.
+3. The implementation stays a single code path —
+   `LedgerDerivationService` doesn't branch on tier.
+
+It aligns with packaging-doc rule §10.1 ("never create separate
+databases for different presets") and §10.8 ("allow upgrade /
+downgrade of subscription tier without changing the underlying
+company data model").
+
+### Business presets
+
+The packaging doc defines six presets — Retail, Distribution,
+Warehouse, Service, Finance, Light Manufacturing — orthogonal to
+tier. They control navigation, terminology, default dashboard, setup
+checklist, visible reports, and quick actions. They do **not** create
+separate databases, gate which derivations run, or change which
+DocTypes exist.
+
+From the technical roadmap perspective, presets are a thin filter on
+top of `HubNavigation.allModules` plus per-preset label overrides
+(e.g. "Job" instead of "Sales Order" for the Service preset). No new
+DocTypes; no new derivation routines.
 
 ---
 

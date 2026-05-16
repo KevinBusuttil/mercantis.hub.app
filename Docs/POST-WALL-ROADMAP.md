@@ -316,36 +316,70 @@ Items that aren't blocking any module but are blocking *deployment*.
 
 ## Recommended sequencing
 
-Updated to fold in the AX-inspired Phase 5.7 / 5.8 / 5.9 items. The
-order compounds value at each step and aligns with the commercial-
-tier boundaries in `HUB-COMMERCIAL-PACKAGING.md`.
+The implementation order aligns with the four commercial tiers
+defined in [`HUB-COMMERCIAL-PACKAGING.md`](HUB-COMMERCIAL-PACKAGING.md)
+(Essential / Stock / Trade / Complete). The subledger infrastructure
+from Phase 5.7 ✅ is **shared across all tiers** — the rows always
+get written; tiering controls which reports / screens are surfaced
+to the user.
 
-**Tier 1 — Core completion (Mercantis Hub Core)**
+**Essential-tier completion** (the entry tier — Sales Orders and
+Purchase Orders are intentionally *not* gated up):
 
 1. **5.1 Permissions** — every later DocType needs roles bound.
 2. **5.2 Multi-company** — closes the `Document.company: ""` lie.
+   Multi-company unlock surfaces only at Complete, but the data
+   model needs to be company-aware from Essential onward to avoid
+   migration later.
 3. **5.3 ItemPrice lookup** — biggest UX win for the daily flow.
-4. **5.4 Bin aggregate** — live inventory positions.
-5. **5.5 Settings DocType** + **5.6 Localizations** — small-effort cleanup.
+4. **5.5 Settings DocType** + **5.6 Localizations** — small-effort cleanup.
+5. Basic Tax sketch (a minimal `Tax` DocType + per-line tax tagging,
+   subset of Phase 5.9 — Essential gets "basic VAT", the full VAT /
+   WHT reports come at Complete).
 
-**Tier 2 — Accounting Pro upgrade (AX synthesis)**
+**Stock-tier upgrade** (warehouse sophistication):
 
-6. **5.7 Subledger transaction tables** — CustTrans / VendTrans / InventTrans / TaxTrans + drill-down reports.
-7. **5.8 Posting profiles** — remove per-document account boilerplate.
-8. **5.9 Tax + WHT** — proper VAT + WHT handling; VAT Return + WHT Certificate reports.
-9. **6.1 Delivery Note + Purchase Receipt** — completes transactional surface; unlocks three-way matching.
-10. **7.1 Print formats** — customer-facing artefacts (with VAT lines now). Pilot deployments become possible.
-11. **6.3 Opportunity + Sales Person** — closes CRM.
+6. **5.4 Bin aggregate** — live on-hand positions instead of
+   scanning the SLE.
+7. **6.1 Delivery Note + Purchase Receipt** — completes transactional
+   surface; structural prerequisite for stock reservation in Trade.
+8. Barcode workflow polish — wire `FieldType.barcode` into Item
+   lookup / Stock Entry scanning.
 
-**Tier 3 — Operations Plus**
+**Trade-tier upgrade** (AX-style operational depth, the flagship):
 
-12. **6.4 HR module** — Department / Employee / Leave / Attendance / Payroll.
-13. **7.3 CloudKit adapter** — multi-device sync.
-14. **6.5 Manufacturing**, **6.6 Projects**, **6.7 Assets** — pick by customer demand.
+9. ✅ **5.7 Subledger transaction tables** (shipped) — CustTrans /
+   VendTrans / Settlement / InventTrans `trans_type`. Customer
+   Statement + Supplier Ledger reports written; surfaced via Trade
+   tier gate.
+10. **5.8 Posting profiles** — remove per-document account boilerplate.
+11. Stock reservation / allocation + picking/packing workflow.
+12. Returns / credit notes / debit notes.
+13. **7.1 Print formats** — customer-facing artefacts (Sales Invoice,
+    PO, Delivery Note). Trade is the natural moment to ship print.
+14. **6.3 Opportunity + Sales Person** — closes CRM. Optional at this
+    tier.
 
-**Polish — anywhere**
+**Complete-tier upgrade** (full accounting + advanced controls):
 
-15. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**, **7.6 Prune scheduler** — slot wherever they fit.
+15. **5.9 Tax + WHT** — VAT Return + WHT Certificate reports. TaxTrans
+    derivation that's currently a no-op in Phase 5.7 starts writing.
+16. Trial Balance polish + Profit & Loss + Balance Sheet reports
+    (Trial Balance already shipped at Wall 9; P&L + Balance Sheet
+    are new).
+17. **6.4 HR module** — Department / Employee / Leave / Attendance /
+    Payroll.
+18. **6.5 Manufacturing** — BOM / Work Order / Production Plan.
+19. **6.6 Projects** / **6.7 Assets** — pick by customer demand.
+20. Batch / serial tracking + advanced approvals.
+
+**Cross-tier infrastructure** (slot anywhere):
+
+21. **7.3 CloudKit adapter** — multi-device sync. Likely a Complete-
+    tier feature commercially.
+22. **7.2 Attachments UI**, **7.4 Search**, **7.5 Charts**,
+    **7.6 Prune scheduler** — quality-of-life polish; surface in
+    appropriate tier.
 
 ---
 
