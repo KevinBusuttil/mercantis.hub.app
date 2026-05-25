@@ -95,12 +95,19 @@ struct RootView: View {
                     workflowEngine: workflowEngine,
                     customFieldStore: customFieldStore
                 )
+                // Force a fresh view identity per DocType so SwiftUI doesn't
+                // reuse the previous workspace's @State (`documents`,
+                // `customFields`) when the user jumps Customer → Item.
+                // Without this, the records of whichever DocType was loaded
+                // first stick around in every workspace.
+                .id("docType:\(docType.id)")
             case .report(let id, let label):
                 HubReportContainerView(
                     reportId: id,
                     reportLabel: label,
                     engine: engine
                 )
+                .id("report:\(id)")
             case .dashboard(let id, let label):
                 HubDashboardView(
                     dashboardId: id,
@@ -109,6 +116,7 @@ struct RootView: View {
                 ) { selected in
                     selection = selected
                 }
+                .id("dashboard:\(id)")
             case .none:
                 HubHomeView(engine: engine) { item in
                     selection = item
