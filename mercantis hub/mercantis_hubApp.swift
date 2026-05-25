@@ -12,6 +12,9 @@ struct mercantis_hubApp: App {
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
+    /// End-user customizations (ADR-021). Persisted in the `custom_fields`
+    /// table so they survive app restarts and HubManifest reinstalls.
+    let customFieldStore: CustomFieldStore
 
     init() {
         let databaseURL = Self.makeDatabaseURL()
@@ -71,6 +74,13 @@ struct mercantis_hubApp: App {
             dashboardEngine.register(dashboard)
         }
         self.dashboardEngine = dashboardEngine
+
+        // End-user customizations. The MigrationRunner has already created
+        // the `custom_fields` table by the time we reach here; this just
+        // hands the same database to the store so workspaces can read/write
+        // their own fields without colliding with the HubManifest reinstall
+        // that runs above.
+        self.customFieldStore = CustomFieldStore(database: database)
     }
 
     var body: some Scene {
@@ -79,7 +89,8 @@ struct mercantis_hubApp: App {
                 engine: documentEngine,
                 workflowEngine: workflowEngine,
                 reportEngine: reportEngine,
-                dashboardEngine: dashboardEngine
+                dashboardEngine: dashboardEngine,
+                customFieldStore: customFieldStore
             )
         }
         .defaultSize(width: 1100, height: 720)
