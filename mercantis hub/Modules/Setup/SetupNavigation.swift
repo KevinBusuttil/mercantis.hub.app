@@ -1,8 +1,11 @@
+import MercantisCoreUI
+
 extension Setup {
     static let module = HubModule(
         id: "setup",
         label: "Setup",
         systemImage: "gearshape",
+        tone: .setup,
         groups: [
             HubMenuGroup(label: "Customer", items: [
                 .docType(Setup.customerGroup),

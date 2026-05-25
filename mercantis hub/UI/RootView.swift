@@ -21,56 +21,66 @@ struct RootView: View {
 
     private var sidebar: some View {
         List(selection: $selection) {
+            Section {
+                MercantisSidebarBrandHeader(
+                    title: "Mercantis Hub",
+                    subtitle: "Business workspace",
+                    systemImage: "shippingbox"
+                )
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
+                .listRowSeparator(.hidden)
+            }
+
             ForEach(HubNavigation.allModules) { module in
                 Section {
                     ForEach(module.groups.indices, id: \.self) { gIdx in
                         let group = module.groups[gIdx]
                         let key = "\(module.id)::\(gIdx)"
                         if let label = group.label {
-                            groupHeader(label: label, key: key)
+                            MercantisSidebarGroupHeader(
+                                title: label,
+                                isCollapsed: collapsedGroups.contains(key)
+                            ) {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    if collapsedGroups.contains(key) {
+                                        collapsedGroups.remove(key)
+                                    } else {
+                                        collapsedGroups.insert(key)
+                                    }
+                                }
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
                         if group.label == nil || !collapsedGroups.contains(key) {
                             ForEach(group.items, id: \.self) { item in
-                                Label(item.label, systemImage: item.systemImage)
+                                MercantisSidebarRow(
+                                    title: item.label,
+                                    systemImage: item.systemImage,
+                                    tone: module.tone,
+                                    isSelected: selection == item,
+                                    indentation: group.label == nil ? 0 : 6
+                                )
+                                .tag(item)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
                             }
                         }
                     }
                 } header: {
-                    Label(module.label, systemImage: module.systemImage)
+                    MercantisSidebarModuleHeader(
+                        title: module.label,
+                        systemImage: module.systemImage,
+                        tone: module.tone,
+                        badge: module.itemCount > 0 ? "\(module.itemCount)" : nil
+                    )
                 }
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("Mercantis Hub")
-        .frame(minWidth: 220)
-    }
-
-    private func groupHeader(label: String, key: String) -> some View {
-        let isCollapsed = collapsedGroups.contains(key)
-        return Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                if isCollapsed {
-                    collapsedGroups.remove(key)
-                } else {
-                    collapsedGroups.insert(key)
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                Text(label)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.top, 4)
+        .frame(minWidth: 240)
     }
 
     @ViewBuilder
