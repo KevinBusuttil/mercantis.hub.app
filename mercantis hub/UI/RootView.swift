@@ -148,12 +148,23 @@ private struct HubRecordWorkspaceView: View {
                 documents: documents,
                 configuration: RecordCollectionViewConfiguration(
                     supportedViewModes: [.list, .browse, .detail],
-                    defaultViewMode: .list
+                    // Default to browse so the editor is visible the moment
+                    // a row is selected; otherwise users in .list mode have
+                    // no clear path from "row clicked" to "fields visible".
+                    defaultViewMode: .browse
                 ),
                 primaryCreateActionTitle: "New \(docType.name)",
                 onCreateDocument: { makeDraftDocument() },
                 onSaveDocument: { document in
-                    _ = try engine.save(document)
+                    let saved = try engine.save(document)
+                    reloadDocumentsSafely()
+                    // Refetch so the host's binding picks up the persisted
+                    // `updatedAt`; without this the next save throws
+                    // `concurrencyConflict` (optimistic-concurrency contract).
+                    return (try? engine.fetch(docType: docType.id, id: saved.id)) ?? saved
+                },
+                onDeleteDocument: { document in
+                    try engine.delete(docType: docType.id, id: document.id)
                     reloadDocumentsSafely()
                 },
                 linkSearchProvider: { targetDocType, _ in
@@ -246,17 +257,21 @@ private struct HubRecordWorkspaceView: View {
     }
 }
 
-/// Focused per-record editor that preserves the full Hub lifecycle:
-/// Save / Submit / Cancel / Amend + workflow transitions. Used as the
-/// workspace detail editor and bound to the host's selected document.
+/// Hub-specific lifecycle layer on top of `GenericFormView`. The basic
+/// Save / Delete / "Saved · just now" affordances now live in Core's
+/// `RecordCollectionHostView`; this editor only contributes the
+/// Submit / Cancel / Amend buttons and any DocType-specific workflow
+/// transitions, plus the lifecycle status badge.
 private struct HubDocumentEditor: View {
     let docType: DocType
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
     @Binding var document: Document
+    /// Notifies the host that something persisted, so it can reload its
+    /// `documents` list. The host owns Save itself; this fires for the
+    /// lifecycle actions handled below (submit/cancel/amend/workflow).
     let onPersist: () -> Void
 
-    @State private var lastSavedID: String?
     @State private var errorMessage: String?
 
     private var workflow: WorkflowDefinition? {
@@ -266,7 +281,7 @@ private struct HubDocumentEditor: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 lifecycleHeader
                 GenericFormView(
                     docType: docType,
@@ -276,17 +291,30 @@ private struct HubDocumentEditor: View {
                     },
                     childDocTypeProvider: { HubManifest.docType(for: $0) }
                 )
-                actionRow
-                if let id = lastSavedID {
-                    Text("Saved as \(id)").font(.callout).foregroundStyle(.secondary)
+                if hasLifecycleActions {
+                    actionRow
                 }
                 if let error = errorMessage {
-                    Text(error).font(.callout).foregroundStyle(.red)
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                        Spacer()
+                    }
+                    .font(.callout)
                 }
             }
             .padding()
         }
         .frame(minWidth: 480, minHeight: 400)
+    }
+
+    private var hasLifecycleActions: Bool {
+        if docType.isSubmittable && document.docStatus != 0 { return true }
+        if docType.isSubmittable && document.docStatus == 0 && !document.id.isEmpty { return true }
+        return !availableWorkflowTransitions.filter(shouldOfferWorkflowButton).isEmpty
     }
 
     // MARK: - Lifecycle header
@@ -350,14 +378,8 @@ private struct HubDocumentEditor: View {
     @ViewBuilder
     private var actionRow: some View {
         HStack(spacing: 8) {
-            // Save is always offered while the document is editable.
-            if document.docStatus == 0 {
-                Button("Save") { save() }
-                    .keyboardShortcut("s", modifiers: [.command])
-            }
-
             // Submit appears when the DocType is submittable and the
-            // document is Draft.
+            // document is a persisted Draft.
             if docType.isSubmittable, document.docStatus == 0, !document.id.isEmpty {
                 Button("Submit") { submit() }
                     .keyboardShortcut(.return, modifiers: [.command])
@@ -409,23 +431,13 @@ private struct HubDocumentEditor: View {
 
     // MARK: - Engine actions
 
-    private func save() {
-        do {
-            let saved = try engine.save(document)
-            document = saved
-            lastSavedID = saved.id
-            errorMessage = nil
-            onPersist()
-        } catch {
-            errorMessage = String(describing: error)
-        }
-    }
-
     private func submit() {
         do {
-            // 1. Persist any pending edits and refresh updatedAt to satisfy
-            //    optimistic concurrency.
-            document = try engine.save(document)
+            // 1. Persist any pending edits.
+            _ = try engine.save(document)
+            if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {
+                document = refreshed
+            }
             // 2. Flip docStatus 0 → 1 through Core's submit pipeline so
             //    immutability + audit + workflow-history rows fire.
             try engine.submit(&document)
@@ -448,13 +460,13 @@ private struct HubDocumentEditor: View {
                     expressionEvaluator: evaluator,
                     userId: "kevin"
                 )
-                document = try engine.save(document)
+                _ = try engine.save(document)
             }
-            lastSavedID = document.id
+            refreshBinding(toID: document.id)
             errorMessage = nil
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
@@ -479,25 +491,24 @@ private struct HubDocumentEditor: View {
                     expressionEvaluator: evaluator,
                     userId: "kevin"
                 )
-                document = try engine.save(document)
+                _ = try engine.save(document)
             }
-            lastSavedID = document.id
+            refreshBinding(toID: document.id)
             errorMessage = nil
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
     private func amend() {
         do {
             let amended = try engine.amend(document)
-            document = amended
-            lastSavedID = amended.id
+            refreshBinding(toID: amended.id, fallback: amended)
             errorMessage = nil
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
@@ -512,11 +523,35 @@ private struct HubDocumentEditor: View {
                 expressionEvaluator: evaluator,
                 userId: "kevin"
             )
-            document = try engine.save(document)
+            _ = try engine.save(document)
+            refreshBinding(toID: document.id)
             errorMessage = nil
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
+    }
+
+    // MARK: - Helpers
+
+    /// Re-reads the persisted document so the in-memory binding carries
+    /// the latest `updatedAt` and any engine-applied side-effects (naming
+    /// series, computed fields, etc.). Mirrors the Core host's own
+    /// refetch-after-save behaviour for the lifecycle paths Hub owns.
+    private func refreshBinding(toID id: String, fallback: Document? = nil) {
+        if !id.isEmpty,
+           let refreshed = try? engine.fetch(docType: docType.id, id: id) {
+            document = refreshed
+        } else if let fallback {
+            document = fallback
+        }
+    }
+
+    private func humanReadable(_ error: Error) -> String {
+        let description = (error as NSError).localizedDescription
+        if description.isEmpty || description == "The operation couldn’t be completed." {
+            return String(describing: error)
+        }
+        return description
     }
 }
