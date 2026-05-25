@@ -148,7 +148,10 @@ private struct HubRecordWorkspaceView: View {
                 documents: documents,
                 configuration: RecordCollectionViewConfiguration(
                     supportedViewModes: [.list, .browse, .detail],
-                    defaultViewMode: .list
+                    // Default to browse so the editor is visible the moment
+                    // a row is selected; otherwise users in .list mode have
+                    // no clear path from "row clicked" to "fields visible".
+                    defaultViewMode: .browse
                 ),
                 primaryCreateActionTitle: "New \(docType.name)",
                 onCreateDocument: { makeDraftDocument() },
@@ -167,7 +170,11 @@ private struct HubRecordWorkspaceView: View {
                             engine: engine,
                             workflowEngine: workflowEngine,
                             document: binding,
-                            onPersist: { reloadDocumentsSafely() }
+                            onPersist: { reloadDocumentsSafely() },
+                            onDelete: { documentId in
+                                try engine.delete(docType: docType.id, id: documentId)
+                                reloadDocumentsSafely()
+                            }
                         )
                     )
                 }
@@ -255,9 +262,14 @@ private struct HubDocumentEditor: View {
     let workflowEngine: WorkflowEngine
     @Binding var document: Document
     let onPersist: () -> Void
+    /// Deletes the record with the supplied id. Throws are surfaced in the
+    /// editor's error row.
+    let onDelete: (String) throws -> Void
 
     @State private var lastSavedID: String?
+    @State private var lastSavedAt: Date?
     @State private var errorMessage: String?
+    @State private var showDeleteConfirmation = false
 
     private var workflow: WorkflowDefinition? {
         HubWorkflows.workflow(forDocTypeId: docType.id)
@@ -266,7 +278,7 @@ private struct HubDocumentEditor: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 lifecycleHeader
                 GenericFormView(
                     docType: docType,
@@ -277,16 +289,57 @@ private struct HubDocumentEditor: View {
                     childDocTypeProvider: { HubManifest.docType(for: $0) }
                 )
                 actionRow
-                if let id = lastSavedID {
-                    Text("Saved as \(id)").font(.callout).foregroundStyle(.secondary)
-                }
-                if let error = errorMessage {
-                    Text(error).font(.callout).foregroundStyle(.red)
-                }
+                statusRow
             }
             .padding()
         }
         .frame(minWidth: 480, minHeight: 400)
+        .confirmationDialog(
+            "Delete this \(docType.name)?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(docType.name)", role: .destructive) { performDelete() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will permanently remove \(document.id.isEmpty ? "this draft" : document.id). This action cannot be undone.")
+        }
+    }
+
+    /// Saved/error indicator. Sits beneath the action row so users get
+    /// explicit, visible feedback after every save — the previous
+    /// inline "Saved as X" line was easy to miss.
+    @ViewBuilder
+    private var statusRow: some View {
+        HStack(spacing: 8) {
+            if let error = errorMessage {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(error)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            } else if let lastSavedAt {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Saved \(relativeSaved(lastSavedAt))")
+                    .foregroundStyle(.secondary)
+                if let lastSavedID, !lastSavedID.isEmpty {
+                    Text("· \(lastSavedID)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+        }
+        .font(.callout)
+    }
+
+    private func relativeSaved(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        let interval = Date().timeIntervalSince(date)
+        if interval < 2 { return "just now" }
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: - Lifecycle header
@@ -354,6 +407,7 @@ private struct HubDocumentEditor: View {
             if document.docStatus == 0 {
                 Button("Save") { save() }
                     .keyboardShortcut("s", modifiers: [.command])
+                    .buttonStyle(.borderedProminent)
             }
 
             // Submit appears when the DocType is submittable and the
@@ -361,7 +415,7 @@ private struct HubDocumentEditor: View {
             if docType.isSubmittable, document.docStatus == 0, !document.id.isEmpty {
                 Button("Submit") { submit() }
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
             }
 
             // Cancel appears when the document is Submitted.
@@ -385,6 +439,18 @@ private struct HubDocumentEditor: View {
             }
 
             Spacer()
+
+            // Delete is allowed for persisted Draft (0) and Cancelled (2)
+            // documents. Submitted (1) documents must be cancelled first;
+            // the engine enforces this and would throw `cannotDeleteSubmitted`.
+            if !document.id.isEmpty, document.docStatus != 1 {
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .keyboardShortcut(.delete, modifiers: [.command])
+            }
         }
     }
 
@@ -412,20 +478,27 @@ private struct HubDocumentEditor: View {
     private func save() {
         do {
             let saved = try engine.save(document)
-            document = saved
-            lastSavedID = saved.id
-            errorMessage = nil
+            // `DocumentEngine.save` returns the input with its ORIGINAL
+            // `updatedAt` (optimistic-concurrency contract: callers must
+            // refetch to see the persisted timestamp). Without this refetch
+            // the binding still holds the stale value and the very next
+            // save throws `concurrencyConflict` — which surfaces to the
+            // user as "Save doesn't seem to do anything".
+            refreshBinding(toID: saved.id)
+            markSaved(id: saved.id)
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
     private func submit() {
         do {
-            // 1. Persist any pending edits and refresh updatedAt to satisfy
-            //    optimistic concurrency.
-            document = try engine.save(document)
+            // 1. Persist any pending edits.
+            _ = try engine.save(document)
+            if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {
+                document = refreshed
+            }
             // 2. Flip docStatus 0 → 1 through Core's submit pipeline so
             //    immutability + audit + workflow-history rows fire.
             try engine.submit(&document)
@@ -448,13 +521,13 @@ private struct HubDocumentEditor: View {
                     expressionEvaluator: evaluator,
                     userId: "kevin"
                 )
-                document = try engine.save(document)
+                _ = try engine.save(document)
             }
-            lastSavedID = document.id
-            errorMessage = nil
+            refreshBinding(toID: document.id)
+            markSaved(id: document.id)
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
@@ -479,25 +552,24 @@ private struct HubDocumentEditor: View {
                     expressionEvaluator: evaluator,
                     userId: "kevin"
                 )
-                document = try engine.save(document)
+                _ = try engine.save(document)
             }
-            lastSavedID = document.id
-            errorMessage = nil
+            refreshBinding(toID: document.id)
+            markSaved(id: document.id)
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
     private func amend() {
         do {
             let amended = try engine.amend(document)
-            document = amended
-            lastSavedID = amended.id
-            errorMessage = nil
+            refreshBinding(toID: amended.id, fallback: amended)
+            markSaved(id: amended.id)
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
     }
 
@@ -512,11 +584,55 @@ private struct HubDocumentEditor: View {
                 expressionEvaluator: evaluator,
                 userId: "kevin"
             )
-            document = try engine.save(document)
-            errorMessage = nil
+            _ = try engine.save(document)
+            refreshBinding(toID: document.id)
+            markSaved(id: document.id)
             onPersist()
         } catch {
-            errorMessage = String(describing: error)
+            errorMessage = humanReadable(error)
         }
+    }
+
+    private func performDelete() {
+        guard !document.id.isEmpty else { return }
+        do {
+            try onDelete(document.id)
+            // The host's reload drops this row; once it's no longer in the
+            // documents array, RecordCollectionHostView clears its own
+            // selection. Until then keep the editor on a tidy state.
+            errorMessage = nil
+            lastSavedAt = nil
+            lastSavedID = nil
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Re-reads the persisted document so the in-memory binding carries
+    /// the latest `updatedAt` and any engine-applied side-effects (naming
+    /// series, computed fields, etc.).
+    private func refreshBinding(toID id: String, fallback: Document? = nil) {
+        if !id.isEmpty,
+           let refreshed = try? engine.fetch(docType: docType.id, id: id) {
+            document = refreshed
+        } else if let fallback {
+            document = fallback
+        }
+    }
+
+    private func markSaved(id: String) {
+        lastSavedID = id
+        lastSavedAt = Date()
+        errorMessage = nil
+    }
+
+    private func humanReadable(_ error: Error) -> String {
+        let description = (error as NSError).localizedDescription
+        if description.isEmpty || description == "The operation couldn’t be completed." {
+            return String(describing: error)
+        }
+        return description
     }
 }
