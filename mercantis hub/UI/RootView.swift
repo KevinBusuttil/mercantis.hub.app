@@ -7,6 +7,7 @@ struct RootView: View {
     let workflowEngine: WorkflowEngine
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
+    let customFieldStore: CustomFieldStore
 
     @State private var selection: HubMenuItem?
     @State private var collapsedGroups: Set<String> = []
@@ -91,7 +92,8 @@ struct RootView: View {
                 HubRecordWorkspaceView(
                     docType: docType,
                     engine: engine,
-                    workflowEngine: workflowEngine
+                    workflowEngine: workflowEngine,
+                    customFieldStore: customFieldStore
                 )
             case .report(let id, let label):
                 HubReportContainerView(
@@ -125,8 +127,10 @@ private struct HubRecordWorkspaceView: View {
     let docType: DocType
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
+    let customFieldStore: CustomFieldStore
 
     @State private var documents: [Document] = []
+    @State private var customFields: [CustomField] = []
     @State private var errorMessage: String?
 
     var body: some View {
@@ -167,14 +171,30 @@ private struct HubRecordWorkspaceView: View {
                     try engine.delete(docType: docType.id, id: document.id)
                     reloadDocumentsSafely()
                 },
+                customFields: customFields,
+                onAddCustomField: { field in
+                    try customFieldStore.add(field)
+                    reloadCustomFieldsSafely()
+                },
+                onUpdateCustomField: { field in
+                    try customFieldStore.update(field)
+                    reloadCustomFieldsSafely()
+                },
+                onRemoveCustomField: { id in
+                    try customFieldStore.remove(id: id)
+                    reloadCustomFieldsSafely()
+                },
                 linkSearchProvider: { targetDocType, _ in
                     (try? engine.list(docType: targetDocType)) ?? []
                 },
                 childDocTypeProvider: { HubManifest.docType(for: $0) },
-                detailEditor: { binding in
+                detailEditor: { composedDocType, binding in
                     AnyView(
                         HubDocumentEditor(
-                            docType: docType,
+                            // composedDocType already has any custom fields merged
+                            // into `.fields`, so the form renders end-user
+                            // additions alongside the manifest-declared fields.
+                            docType: composedDocType,
                             engine: engine,
                             workflowEngine: workflowEngine,
                             document: binding,
@@ -184,7 +204,18 @@ private struct HubRecordWorkspaceView: View {
                 }
             )
         }
-        .onAppear { reloadDocumentsSafely() }
+        .onAppear {
+            reloadDocumentsSafely()
+            reloadCustomFieldsSafely()
+        }
+    }
+
+    private func reloadCustomFieldsSafely() {
+        do {
+            customFields = try customFieldStore.list(forDocType: docType.id)
+        } catch {
+            errorMessage = String(describing: error)
+        }
     }
 
     private func reloadDocumentsSafely() {
