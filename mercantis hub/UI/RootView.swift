@@ -78,7 +78,7 @@ struct RootView: View {
         Group {
             switch selection {
             case .docType(let docType):
-                HubDocTypeView(
+                HubRecordWorkspaceView(
                     docType: docType,
                     engine: engine,
                     workflowEngine: workflowEngine
@@ -107,27 +107,83 @@ struct RootView: View {
     }
 }
 
-private struct HubDocTypeView: View {
+/// Wraps Core's `RecordCollectionHostView` so a sidebar DocType click opens
+/// a list/browse/detail workspace rather than a blank create form. Selecting
+/// an existing row delegates to `HubDocumentEditor`, which carries the full
+/// Hub lifecycle (Save/Submit/Cancel/Amend + workflow transitions).
+private struct HubRecordWorkspaceView: View {
     let docType: DocType
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
 
-    @State private var document: Document
-    @State private var lastSavedID: String?
+    @State private var documents: [Document] = []
     @State private var errorMessage: String?
 
-    private let workflow: WorkflowDefinition?
-    private let evaluator = ExpressionEvaluator()
+    var body: some View {
+        VStack(spacing: 0) {
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+            }
+            RecordCollectionHostView(
+                preferenceKey: "hub.\(docType.id)",
+                docType: docType,
+                workspaceTitle: pluralizedTitle(for: docType),
+                workspaceSubtitle: "Manage \(docType.name) records",
+                workspaceSymbol: symbol(for: docType),
+                documents: documents,
+                configuration: RecordCollectionViewConfiguration(
+                    supportedViewModes: [.list, .browse, .detail],
+                    defaultViewMode: .list
+                ),
+                primaryCreateActionTitle: "New \(docType.name)",
+                onCreateDocument: { makeDraftDocument() },
+                onSaveDocument: { document in
+                    _ = try engine.save(document)
+                    reloadDocumentsSafely()
+                },
+                linkSearchProvider: { targetDocType, _ in
+                    (try? engine.list(docType: targetDocType)) ?? []
+                },
+                childDocTypeProvider: { HubManifest.docType(for: $0) },
+                detailEditor: { binding in
+                    AnyView(
+                        HubDocumentEditor(
+                            docType: docType,
+                            engine: engine,
+                            workflowEngine: workflowEngine,
+                            document: binding,
+                            onPersist: { reloadDocumentsSafely() }
+                        )
+                    )
+                }
+            )
+        }
+        .onAppear { reloadDocumentsSafely() }
+    }
 
-    init(docType: DocType, engine: DocumentEngine, workflowEngine: WorkflowEngine) {
-        self.docType = docType
-        self.engine = engine
-        self.workflowEngine = workflowEngine
-        self.workflow = HubWorkflows.workflow(forDocTypeId: docType.id)
+    private func reloadDocumentsSafely() {
+        do {
+            documents = try engine.list(docType: docType.id)
+            errorMessage = nil
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
 
+    private func makeDraftDocument() -> Document {
         let now = Date()
-        let initialStatus = workflow?.states.first(where: { $0.isDefault })?.name ?? ""
-        self._document = State(initialValue: Document(
+        let initialStatus = HubWorkflows
+            .workflow(forDocTypeId: docType.id)?
+            .states
+            .first(where: { $0.isDefault })?
+            .name ?? ""
+
+        return Document(
             id: "",
             docType: docType.id,
             company: "",
@@ -138,8 +194,65 @@ private struct HubDocTypeView: View {
             syncState: .local,
             fields: [:],
             children: [:]
-        ))
+        )
     }
+
+    private func pluralizedTitle(for docType: DocType) -> String {
+        let name = docType.name
+        let lower = name.lowercased()
+        if lower.hasSuffix("s") || lower.hasSuffix("ch") || lower.hasSuffix("sh") || lower.hasSuffix("x") {
+            return "\(name)es"
+        }
+        if lower.hasSuffix("y"),
+           let last = name.dropLast().last,
+           !"aeiou".contains(last.lowercased()) {
+            return "\(name.dropLast())ies"
+        }
+        return "\(name)s"
+    }
+
+    private func symbol(for docType: DocType) -> String {
+        switch docType.id {
+        case "Customer":        return "person.2"
+        case "Contact":         return "person.crop.circle"
+        case "Address":         return "mappin.and.ellipse"
+        case "Lead":            return "person.fill.questionmark"
+        case "Supplier":        return "shippingbox"
+        case "Item":            return "cube.box"
+        case "Quotation":       return "doc.text.below.ecg"
+        case "SalesOrder":      return "cart"
+        case "SalesInvoice":    return "doc.text"
+        case "PurchaseOrder":   return "bag"
+        case "PurchaseInvoice": return "bag.badge.plus"
+        case "JournalEntry":    return "book.pages"
+        case "PaymentEntry":    return "creditcard"
+        case "StockEntry":      return "tray.full"
+        case "Warehouse":       return "building.2"
+        case "Account":         return "list.bullet.rectangle"
+        case "Currency":        return "dollarsign.circle"
+        case "PriceList":       return "tag"
+        default:                return "rectangle.stack"
+        }
+    }
+}
+
+/// Focused per-record editor that preserves the full Hub lifecycle:
+/// Save / Submit / Cancel / Amend + workflow transitions. Used as the
+/// workspace detail editor and bound to the host's selected document.
+private struct HubDocumentEditor: View {
+    let docType: DocType
+    let engine: DocumentEngine
+    let workflowEngine: WorkflowEngine
+    @Binding var document: Document
+    let onPersist: () -> Void
+
+    @State private var lastSavedID: String?
+    @State private var errorMessage: String?
+
+    private var workflow: WorkflowDefinition? {
+        HubWorkflows.workflow(forDocTypeId: docType.id)
+    }
+    private let evaluator = ExpressionEvaluator()
 
     var body: some View {
         ScrollView {
@@ -292,6 +405,7 @@ private struct HubDocTypeView: View {
             document = saved
             lastSavedID = saved.id
             errorMessage = nil
+            onPersist()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -328,6 +442,7 @@ private struct HubDocTypeView: View {
             }
             lastSavedID = document.id
             errorMessage = nil
+            onPersist()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -358,6 +473,7 @@ private struct HubDocTypeView: View {
             }
             lastSavedID = document.id
             errorMessage = nil
+            onPersist()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -369,6 +485,7 @@ private struct HubDocTypeView: View {
             document = amended
             lastSavedID = amended.id
             errorMessage = nil
+            onPersist()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -387,6 +504,7 @@ private struct HubDocTypeView: View {
             )
             document = try engine.save(document)
             errorMessage = nil
+            onPersist()
         } catch {
             errorMessage = String(describing: error)
         }
