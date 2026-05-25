@@ -1,10 +1,12 @@
 import MercantisCore
+import MercantisCoreUI
 
 extension Buying {
     static let module = HubModule(
         id: "buying",
         label: "Buying",
         systemImage: "shippingbox",
+        tone: .buying,
         groups: [
             HubMenuGroup(label: "Suppliers", items: [
                 .docType(Buying.supplier)

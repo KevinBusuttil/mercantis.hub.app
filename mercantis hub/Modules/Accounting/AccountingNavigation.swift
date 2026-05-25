@@ -1,10 +1,12 @@
 import MercantisCore
+import MercantisCoreUI
 
 extension Accounting {
     static let module = HubModule(
         id: "accounting",
         label: "Accounting",
         systemImage: "creditcard",
+        tone: .accounting,
         groups: [
             HubMenuGroup(label: "Chart", items: [
                 .docType(Accounting.account)
