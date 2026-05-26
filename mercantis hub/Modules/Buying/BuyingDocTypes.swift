@@ -95,22 +95,26 @@ enum Buying {
             FormLayoutSection(
                 key: "identity",
                 title: "Supplier",
+                columns: 2,
                 fieldKeys: ["supplier_name", "supplier_type", "supplier_group", "country"]
             ),
             FormLayoutSection(
                 key: "reach",
                 title: "Reach",
+                columns: 2,
                 fieldKeys: ["email_id", "mobile_no", "phone"]
             ),
             FormLayoutSection(
                 key: "defaults",
                 title: "Defaults",
                 helpText: "Used when raising new purchase transactions for this supplier.",
+                columns: 2,
                 fieldKeys: ["default_currency", "default_price_list", "default_cost_center"]
             ),
             FormLayoutSection(
                 key: "financial",
                 title: "Financial",
+                columns: 2,
                 fieldKeys: ["tax_id", "payment_terms"]
             ),
             FormLayoutSection(
@@ -125,6 +129,7 @@ enum Buying {
         FormLayoutSection(
             key: "header",
             title: "Header",
+            columns: 2,
             fieldKeys: ["supplier", "transaction_date", "currency", "price_list"]
         ),
         FormLayoutSection(
@@ -135,6 +140,7 @@ enum Buying {
         FormLayoutSection(
             key: "totals",
             title: "Totals",
+            columns: 2,
             fieldKeys: ["total_qty", "grand_total"]
         ),
         FormLayoutSection(
@@ -250,12 +256,14 @@ enum Buying {
             FormLayoutSection(
                 key: "billing",
                 title: "Billing",
+                columns: 2,
                 fieldKeys: ["due_date", "outstanding_amount"]
             ),
             FormLayoutSection(
                 key: "posting",
                 title: "Posting",
                 helpText: "Accounts used when GL entries are derived on submit.",
+                columns: 2,
                 fieldKeys: ["credit_to", "expense_account", "cost_center"]
             )
         ])

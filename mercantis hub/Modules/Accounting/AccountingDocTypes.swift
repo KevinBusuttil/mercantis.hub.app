@@ -173,6 +173,7 @@ enum Accounting {
             FormLayoutSection(
                 key: "header",
                 title: "Header",
+                columns: 2,
                 fieldKeys: ["voucher_type", "posting_date", "company_currency"]
             ),
             FormLayoutSection(
@@ -184,6 +185,7 @@ enum Accounting {
             FormLayoutSection(
                 key: "totals",
                 title: "Totals",
+                columns: 2,
                 fieldKeys: ["total_debit", "total_credit"]
             ),
             FormLayoutSection(
@@ -243,16 +245,19 @@ enum Accounting {
             FormLayoutSection(
                 key: "header",
                 title: "Header",
+                columns: 2,
                 fieldKeys: ["payment_type", "posting_date"]
             ),
             FormLayoutSection(
                 key: "party",
                 title: "Party",
+                columns: 2,
                 fieldKeys: ["party_type", "party"]
             ),
             FormLayoutSection(
                 key: "accounts",
                 title: "Accounts",
+                columns: 2,
                 fieldKeys: ["paid_from", "paid_to", "paid_amount", "received_amount"]
             ),
             FormLayoutSection(

@@ -94,12 +94,14 @@ enum Stock {
             FormLayoutSection(
                 key: "header",
                 title: "Header",
+                columns: 2,
                 fieldKeys: ["purpose", "posting_date", "posting_time"]
             ),
             FormLayoutSection(
                 key: "defaults",
                 title: "Default Warehouses",
                 helpText: "Pre-fills source / target on each new line.",
+                columns: 2,
                 fieldKeys: ["default_source_warehouse", "default_target_warehouse"]
             ),
             FormLayoutSection(
