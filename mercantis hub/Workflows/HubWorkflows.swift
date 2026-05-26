@@ -221,6 +221,104 @@ public enum HubWorkflows: Sendable {
         ]
     )
 
+    // MARK: - Manufacturing
+
+    public static let bom = WorkflowDefinition(
+        id: "wf-bom",
+        name: "BOM",
+        docType: "BOM",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Inactive",  isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Inactive",  action: "Deactivate",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Inactive",  to: "Submitted", action: "Reactivate",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let workOrder = WorkflowDefinition(
+        id: "wf-work-order",
+        name: "Work Order",
+        docType: "WorkOrder",
+        states: [
+            WorkflowState(name: "Draft",      isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted",  isDefault: false, allowEdit: false),
+            WorkflowState(name: "InProgress", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Completed",  isDefault: false, allowEdit: false),
+            WorkflowState(name: "Stopped",    isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled",  isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",      to: "Submitted",  action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted",  to: "InProgress", action: "Start",
+                               allowedRoles: [systemManagerRole]),
+            // Entering "Completed" is the trigger that
+            // `ManufacturingDerivationService` watches to post the
+            // "Manufacturing" Stock Entry that consumes raw materials
+            // and produces the finished good.
+            WorkflowTransition(from: "InProgress", to: "Completed",  action: "Complete",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "InProgress", to: "Stopped",    action: "Stop",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Stopped",    to: "InProgress", action: "Resume",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted",  to: "Cancelled",  action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let jobCard = WorkflowDefinition(
+        id: "wf-job-card",
+        name: "Job Card",
+        docType: "JobCard",
+        states: [
+            WorkflowState(name: "Draft",      isDefault: true,  allowEdit: true),
+            WorkflowState(name: "InProgress", isDefault: false, allowEdit: true),
+            WorkflowState(name: "Submitted",  isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled",  isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",      to: "InProgress", action: "Start",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "InProgress", to: "Submitted",  action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Draft",      to: "Submitted",  action: "Submit (skip start)",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted",  to: "Cancelled",  action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    public static let productionPlan = WorkflowDefinition(
+        id: "wf-production-plan",
+        name: "Production Plan",
+        docType: "ProductionPlan",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            // Submit triggers `ManufacturingDerivationService` to
+            // generate one Draft Work Order per row in
+            // `items_to_manufacture` (deterministic ids → replay-safe).
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
     // MARK: - Registration
 
     public static let allWorkflows: [WorkflowDefinition] = [
@@ -233,6 +331,10 @@ public enum HubWorkflows: Sendable {
         stockEntry,
         journalEntry,
         paymentEntry,
+        bom,
+        workOrder,
+        jobCard,
+        productionPlan,
     ]
 
     public static func workflow(forDocTypeId docTypeId: String) -> WorkflowDefinition? {

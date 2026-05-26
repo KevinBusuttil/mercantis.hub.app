@@ -6,12 +6,13 @@ public enum HubManifest: Sendable {
     public static let version = "0.1.0"
 
     public static let allDocTypes: [DocType] =
-        Setup.allDocTypes        // tree masters and shared link targets first
-        + CRM.allDocTypes        // Customer, Contact, Address, Lead + DynamicLink
-        + Selling.allDocTypes    // Item + sales transactions
-        + Buying.allDocTypes     // Supplier + purchase transactions
-        + Stock.allDocTypes      // StockEntry + StockEntryDetail
-        + Accounting.allDocTypes // Account + JournalEntry / PaymentEntry
+        Setup.allDocTypes              // tree masters and shared link targets first
+        + CRM.allDocTypes              // Customer, Contact, Address, Lead + DynamicLink
+        + Selling.allDocTypes          // Item + sales transactions
+        + Buying.allDocTypes           // Supplier + purchase transactions
+        + Stock.allDocTypes            // StockEntry + StockEntryDetail
+        + Accounting.allDocTypes       // Account + JournalEntry / PaymentEntry
+        + Manufacturing.allDocTypes    // BOM / WorkOrder / JobCard / ProductionPlan
 
     public static func docType(for id: String) -> DocType? {
         allDocTypes.first { $0.id == id }
