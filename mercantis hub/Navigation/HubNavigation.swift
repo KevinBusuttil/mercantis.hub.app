@@ -69,6 +69,12 @@ enum HubMenuItem: Identifiable {
         case "StockEntry":       return "tray.full"
         case "StockLedgerEntry": return "list.bullet.indent"
         case "Warehouse":        return "building.2"
+        case "Workstation":      return "gearshape"
+        case "Operation":        return "wrench.and.screwdriver"
+        case "BOM":              return "list.bullet.indent"
+        case "WorkOrder":        return "hammer"
+        case "JobCard":          return "doc.text.fill"
+        case "ProductionPlan":   return "calendar"
         case "Account":          return "list.bullet.rectangle"
         case "Currency":         return "dollarsign.circle"
         case "PriceList":        return "tag"
@@ -104,6 +110,7 @@ enum HubNavigation {
         Selling.module,
         Buying.module,
         Stock.module,
+        Manufacturing.module,
         Accounting.module,
         Setup.module
     ]

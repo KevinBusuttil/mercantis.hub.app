@@ -126,9 +126,50 @@ public enum HubDashboards: Sendable {
         ]
     )
 
+    // MARK: - Manufacturing Overview
+
+    public static let manufacturingOverview = DashboardDefinition(
+        id: "manufacturing-overview",
+        name: "Manufacturing Overview",
+        widgets: [
+            DashboardWidget(
+                type: "count", title: "Active BOMs",
+                docType: "BOM",
+                parameters: ["where.docStatus__eq": "1"]
+            ),
+            DashboardWidget(
+                type: "count", title: "Open Work Orders",
+                docType: "WorkOrder",
+                parameters: ["where.status__neq": "Completed"]
+            ),
+            DashboardWidget(
+                type: "count", title: "Production Plans",
+                docType: "ProductionPlan",
+                parameters: ["where.docStatus__eq": "1"]
+            ),
+            DashboardWidget(
+                type: "list", title: "Recent Work Orders",
+                docType: "WorkOrder",
+                parameters: ["columns": "id,item,qty_to_produce,status",
+                             "limit": "10"]
+            ),
+            DashboardWidget(
+                type: "shortcut", title: "New Work Order",
+                docType: "WorkOrder",
+                parameters: ["target": "doctype:WorkOrder"]
+            ),
+            DashboardWidget(
+                type: "shortcut", title: "New Production Plan",
+                docType: "ProductionPlan",
+                parameters: ["target": "doctype:ProductionPlan"]
+            ),
+        ]
+    )
+
     public static let allDashboards: [DashboardDefinition] = [
         salesOverview,
         inventoryOverview,
+        manufacturingOverview,
         accountingOverview,
     ]
 

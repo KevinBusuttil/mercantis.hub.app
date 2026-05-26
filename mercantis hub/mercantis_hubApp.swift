@@ -9,6 +9,9 @@ struct mercantis_hubApp: App {
     /// Wall 7 — retained so its event subscriptions stay alive for the
     /// lifetime of the app. Held via a strong reference at app scope.
     let ledgerDerivation: LedgerDerivationService
+    /// Manufacturing rollups + Stock Entry on WO completion. Same
+    /// lifecycle / strong-retention contract as `ledgerDerivation`.
+    let manufacturingDerivation: ManufacturingDerivationService
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
@@ -47,11 +50,23 @@ struct mercantis_hubApp: App {
         // transitions. The convenience init wires
         // WorkflowTransitionHistoryWriter so every transition persists
         // into `workflow_transitions` automatically (Phase A / ADR-038).
-        self.workflowEngine = WorkflowEngine(database: database)
+        //
+        // Share the same `emitter` instance so the WorkflowTransitionEvent
+        // fired here lands on the same bus that ManufacturingDerivationService
+        // (and any future cross-DocType reaction) is subscribed to.
+        self.workflowEngine = WorkflowEngine(database: database, eventEmitter: emitter)
         // Wall 7: LedgerDerivationService listens for transactional
         // submit / cancel events and writes append-only Stock Ledger
         // Entry / GL Entry rows with deterministic ids.
         self.ledgerDerivation = LedgerDerivationService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Manufacturing: BOM cost rollup on save, Stock Entry on Work
+        // Order completion, Work Order generation from Production Plan.
+        // Shares the same `emitter` so it sees the same submit /
+        // transition events as the ledger derivation.
+        self.manufacturingDerivation = ManufacturingDerivationService(
             engine: documentEngine,
             emitter: emitter
         )
