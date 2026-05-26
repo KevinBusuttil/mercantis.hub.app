@@ -87,18 +87,21 @@ enum CRM {
             FormLayoutSection(
                 key: "identity",
                 title: "Customer",
+                columns: 2,
                 fieldKeys: ["customer_name", "customer_type", "customer_group", "territory"]
             ),
             FormLayoutSection(
                 key: "contact",
                 title: "Contact",
                 helpText: "How sales and support reach this customer.",
+                columns: 2,
                 fieldKeys: ["email", "phone", "mobile", "website"]
             ),
             FormLayoutSection(
                 key: "defaults",
                 title: "Defaults",
                 helpText: "Used when raising new transactions for this customer.",
+                columns: 2,
                 fieldKeys: ["default_currency", "default_price_list",
                             "default_cost_center", "default_warehouse"]
             ),
@@ -106,6 +109,7 @@ enum CRM {
                 key: "financial",
                 title: "Financial",
                 helpText: "Tax registration and accounts-receivable terms.",
+                columns: 2,
                 fieldKeys: ["tax_id", "credit_limit", "payment_terms"]
             ),
             FormLayoutSection(
@@ -148,16 +152,19 @@ enum CRM {
             FormLayoutSection(
                 key: "name",
                 title: "Name",
+                columns: 2,
                 fieldKeys: ["first_name", "last_name"]
             ),
             FormLayoutSection(
                 key: "reach",
                 title: "Reach",
+                columns: 2,
                 fieldKeys: ["email_id", "mobile_no", "phone"]
             ),
             FormLayoutSection(
                 key: "role",
                 title: "Role",
+                columns: 2,
                 fieldKeys: ["designation", "department"]
             ),
             FormLayoutSection(
@@ -204,16 +211,19 @@ enum CRM {
             FormLayoutSection(
                 key: "label",
                 title: "Address",
+                columns: 2,
                 fieldKeys: ["address_title", "address_type"]
             ),
             FormLayoutSection(
                 key: "street",
                 title: "Street",
+                columns: 2,
                 fieldKeys: ["address_line1", "address_line2", "city", "state", "country", "pincode"]
             ),
             FormLayoutSection(
                 key: "reach",
                 title: "Reach",
+                columns: 2,
                 fieldKeys: ["phone", "fax"]
             ),
             FormLayoutSection(
@@ -264,17 +274,20 @@ enum CRM {
             FormLayoutSection(
                 key: "identity",
                 title: "Lead",
+                columns: 2,
                 fieldKeys: ["lead_name", "company_name"]
             ),
             FormLayoutSection(
                 key: "pipeline",
                 title: "Pipeline",
                 helpText: "Where this lead sits in the sales process.",
+                columns: 2,
                 fieldKeys: ["status", "source", "territory"]
             ),
             FormLayoutSection(
                 key: "reach",
                 title: "Reach",
+                columns: 2,
                 fieldKeys: ["email_id", "mobile_no", "phone"]
             ),
             FormLayoutSection(

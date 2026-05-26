@@ -146,18 +146,21 @@ enum Selling {
             FormLayoutSection(
                 key: "identity",
                 title: "Item",
+                columns: 2,
                 fieldKeys: ["item_code", "item_name", "item_group", "brand"]
             ),
             FormLayoutSection(
                 key: "stock",
                 title: "Stock",
                 helpText: "How this item is measured and where it normally lives.",
+                columns: 2,
                 fieldKeys: ["stock_uom", "default_warehouse", "is_stock_item"]
             ),
             FormLayoutSection(
                 key: "transactions",
                 title: "Transactions",
                 helpText: "Which kinds of transactions this item participates in.",
+                columns: 2,
                 fieldKeys: ["is_sales_item", "is_purchase_item", "standard_rate"]
             ),
             FormLayoutSection(
@@ -175,6 +178,7 @@ enum Selling {
             FormLayoutSection(
                 key: "media",
                 title: "Media",
+                columns: 2,
                 fieldKeys: ["barcode", "image", "description"]
             )
         ])
@@ -184,6 +188,7 @@ enum Selling {
         FormLayoutSection(
             key: "header",
             title: "Header",
+            columns: 2,
             fieldKeys: ["customer", "transaction_date", "currency", "price_list"]
         ),
         FormLayoutSection(
@@ -194,6 +199,7 @@ enum Selling {
         FormLayoutSection(
             key: "totals",
             title: "Totals",
+            columns: 2,
             fieldKeys: ["total_qty", "grand_total"]
         ),
         FormLayoutSection(
@@ -323,12 +329,14 @@ enum Selling {
             FormLayoutSection(
                 key: "billing",
                 title: "Billing",
+                columns: 2,
                 fieldKeys: ["due_date", "outstanding_amount"]
             ),
             FormLayoutSection(
                 key: "posting",
                 title: "Posting",
                 helpText: "Accounts used when GL entries are derived on submit.",
+                columns: 2,
                 fieldKeys: ["debit_to", "income_account", "cost_center"]
             )
         ])
