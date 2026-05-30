@@ -195,6 +195,9 @@ private struct HubRecordWorkspaceView: View {
                 linkSearchProvider: { targetDocType, _ in
                     (try? engine.list(docType: targetDocType)) ?? []
                 },
+                linkResolveProvider: { targetDocType, id in
+                    try? engine.fetch(docType: targetDocType, id: id)
+                },
                 childDocTypeProvider: { HubManifest.docType(for: $0) },
                 detailEditor: { composedDocType, binding in
                     AnyView(
@@ -327,6 +330,9 @@ private struct HubDocumentEditor: View {
                     document: $document,
                     linkSearchProvider: { targetDocType, _ in
                         (try? engine.list(docType: targetDocType)) ?? []
+                    },
+                    linkResolveProvider: { targetDocType, id in
+                        try? engine.fetch(docType: targetDocType, id: id)
                     },
                     childDocTypeProvider: { HubManifest.docType(for: $0) }
                 )
