@@ -41,7 +41,11 @@ import MercantisCore
 /// JournalEntry, …) and ignores its own saves: BOM rollup writes
 /// re-fire `DocumentSavedEvent` but the recompute is a no-op when the
 /// stored totals already match.
-public final class ManufacturingDerivationService: @unchecked Sendable {
+/// This service is `nonisolated`: like `LedgerDerivationService` it touches
+/// only `DocumentEngine` and pure value types, never `@MainActor` UI state,
+/// so its handlers can be invoked directly from the `@Sendable` `EventEmitter`
+/// subscription closures.
+public nonisolated final class ManufacturingDerivationService: @unchecked Sendable {
 
     private let engine: DocumentEngine
     private let emitter: EventEmitter
