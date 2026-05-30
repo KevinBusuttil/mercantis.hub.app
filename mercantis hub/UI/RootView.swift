@@ -503,7 +503,7 @@ private struct HubDocumentEditor: View {
                     action: transition.action,
                     userRoles: ["System Manager"],
                     expressionEvaluator: evaluator,
-                    userId: "kevin"
+                    userId: HubIdentity.userId()
                 )
                 _ = try engine.save(document)
             }
@@ -534,7 +534,7 @@ private struct HubDocumentEditor: View {
                     action: "Cancel",
                     userRoles: ["System Manager"],
                     expressionEvaluator: evaluator,
-                    userId: "kevin"
+                    userId: HubIdentity.userId()
                 )
                 _ = try engine.save(document)
             }
@@ -566,7 +566,7 @@ private struct HubDocumentEditor: View {
                 action: transition.action,
                 userRoles: ["System Manager"],
                 expressionEvaluator: evaluator,
-                userId: "kevin"
+                userId: HubIdentity.userId()
             )
             _ = try engine.save(document)
             refreshBinding(toID: document.id)

@@ -24,11 +24,11 @@ struct HubReportContainerView: View {
                     onRefresh: { load() }
                 )
             } else if let errorMessage {
-                ContentUnavailableView(
-                    "Couldn't load \(reportLabel)",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(errorMessage)
-                )
+                ContentUnavailableView {
+                    Label("\(reportLabel) has nothing to show yet", systemImage: "doc.text.magnifyingglass")
+                } description: {
+                    Text("This report needs some data before it can run. Create the relevant records first, then refresh.\n\nDetails: \(errorMessage)")
+                }
             } else {
                 ProgressView("Running \(reportLabel)…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

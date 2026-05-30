@@ -23,11 +23,11 @@ struct HubDashboardView: View {
             if let result {
                 content(result)
             } else if let errorMessage {
-                ContentUnavailableView(
-                    "Couldn't load \(dashboardTitle)",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(errorMessage)
-                )
+                ContentUnavailableView {
+                    Label("\(dashboardTitle) isn't available yet", systemImage: "chart.bar.doc.horizontal")
+                } description: {
+                    Text("This dashboard will summarise your business as soon as there's data to show. Create some records first, then come back.\n\nDetails: \(errorMessage)")
+                }
             } else {
                 ProgressView("Loading \(dashboardTitle)…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -108,9 +108,10 @@ struct HubDashboardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             if rows.isEmpty {
-                Text("No rows")
+                Text("Nothing to show yet — this fills in as you add records.")
                     .font(.callout)
                     .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(rows.prefix(10).indices, id: \.self) { idx in

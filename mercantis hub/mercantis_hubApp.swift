@@ -42,7 +42,7 @@ struct mercantis_hubApp: App {
             database: database,
             registry: registry,
             deviceId: Self.deviceId(),
-            userId: "kevin",
+            userId: HubIdentity.userId(),
             eventEmitter: emitter
         )
         self.documentEngine = documentEngine
@@ -127,10 +127,48 @@ struct mercantis_hubApp: App {
     }
 
     private static func deviceId() -> String {
-        let key = "MercantisHub.deviceId"
-        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        HubIdentity.deviceId()
+    }
+}
+
+/// Product-safe local identity for Mercantis Hub.
+///
+/// This pass replaces the previously hard-coded `userId: "kevin"` with a
+/// stable, locally generated identifier. There is intentionally **no**
+/// account login, sign-in UI, or remote identity in this revision — Hub is
+/// an offline-first single-user workspace for now. When Core grows a real
+/// user/session mechanism, this is the single place to swap the source of
+/// truth from.
+///
+/// Both ids are persisted in `UserDefaults` so they survive app restarts
+/// (mirroring the existing device-id strategy). The user id is prefixed
+/// with `"local-"` so audit-log / workflow-history rows are visibly
+/// attributed to a local identity rather than masquerading as a named user.
+enum HubIdentity {
+
+    private static let userIdKey   = "MercantisHub.userId"
+    private static let deviceIdKey = "MercantisHub.deviceId"
+
+    /// Stable per-installation user id, e.g. `"local-<uuid>"`. Generated and
+    /// persisted on first launch; reused thereafter.
+    static func userId() -> String {
+        if let existing = UserDefaults.standard.string(forKey: userIdKey) {
+            return existing
+        }
+        let id = "local-\(UUID().uuidString)"
+        UserDefaults.standard.set(id, forKey: userIdKey)
+        return id
+    }
+
+    /// Stable per-installation device id. Kept identical in behaviour to the
+    /// previous `mercantis_hubApp.deviceId()` so existing sync metadata stays
+    /// valid; centralised here alongside `userId()`.
+    static func deviceId() -> String {
+        if let existing = UserDefaults.standard.string(forKey: deviceIdKey) {
+            return existing
+        }
         let id = UUID().uuidString
-        UserDefaults.standard.set(id, forKey: key)
+        UserDefaults.standard.set(id, forKey: deviceIdKey)
         return id
     }
 }
