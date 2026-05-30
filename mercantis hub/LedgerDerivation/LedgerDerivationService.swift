@@ -32,7 +32,12 @@ import MercantisCore
 /// The service ignores events whose `docType` it doesn't recognise — in
 /// particular `StockLedgerEntry` and `GLEntry` themselves, so the
 /// `engine.save(...)` calls below don't loop back.
-public final class LedgerDerivationService: @unchecked Sendable {
+/// This service is `nonisolated`: it touches only `DocumentEngine` (a
+/// `Sendable`, nonisolated data engine) and pure value types, never any
+/// `@MainActor` UI state. Opting out of the module's default main-actor
+/// isolation lets its handlers be called directly from the `@Sendable`
+/// `EventEmitter` subscription closures without hopping actors.
+public nonisolated final class LedgerDerivationService: @unchecked Sendable {
 
     private let engine: DocumentEngine
     private let emitter: EventEmitter
