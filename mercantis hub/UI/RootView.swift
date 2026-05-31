@@ -212,7 +212,8 @@ private struct HubRecordWorkspaceView: View {
                             onPersist: { reloadDocumentsSafely() }
                         )
                     )
-                }
+                },
+                listViews: HubListViews.views(for: docType.id)
             )
         }
         .onAppear {
