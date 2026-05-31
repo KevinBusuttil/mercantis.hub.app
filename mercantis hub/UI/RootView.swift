@@ -614,6 +614,13 @@ private struct HubDocumentEditor: View {
             // 2. Flip docStatus 0 → 1 through Core's submit pipeline so
             //    immutability + audit + workflow-history rows fire.
             try engine.submit(&document)
+            // Refetch so the in-memory copy carries the timestamp `submit`'s
+            // save just wrote; the workflow transition below saves again and
+            // would otherwise hit the optimistic-concurrency check with a stale
+            // `updatedAt`.
+            if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {
+                document = refreshed
+            }
             // 3. Run the workflow's Submit transition so Document.status
             //    moves Draft → Submitted (or whichever first transition the
             //    workflow declares from the initial state).
@@ -646,6 +653,11 @@ private struct HubDocumentEditor: View {
     private func cancel() {
         do {
             try engine.cancel(&document)
+            // Refetch so the workflow transition's save below sees the
+            // timestamp `cancel`'s save just wrote (optimistic concurrency).
+            if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {
+                document = refreshed
+            }
             // Mirror the lifecycle change in the workflow status string
             // when a "Cancel" workflow transition exists.
             if let workflow,

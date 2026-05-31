@@ -71,14 +71,31 @@ struct HubDashboardView: View {
         switch widget {
         case .count(let title, let value, let docType):
             countTile(title: title, value: value, docType: docType)
-        case .list(let title, let columns, let rows, _):
-            listTile(title: title, columns: columns, rows: rows)
+        case .list(let title, let columns, let rows, let docType):
+            listTile(title: title, columns: columns,
+                     rows: displayRows(columns: columns, rows: rows, docType: docType))
         case .chart(let title, let columns, let rows, _):
             listTile(title: title, columns: columns, rows: rows)
         case .shortcut(let title, let target):
             shortcutTile(title: title, target: target)
         case .error(let title, let reason):
             errorTile(title: title, reason: reason)
+        }
+    }
+
+    /// Replaces raw values in a "status" column with the document-specific
+    /// business label (e.g. "Submitted" → "Posted") so dashboard list tiles
+    /// match the wording used everywhere else. Other columns pass through.
+    private func displayRows(columns: [String], rows: [[String?]], docType: String) -> [[String?]] {
+        guard !docType.isEmpty,
+              let statusIdx = columns.firstIndex(where: { $0.lowercased() == "status" })
+        else { return rows }
+        return rows.map { row in
+            guard statusIdx < row.count, let raw = row[statusIdx], !raw.isEmpty else { return row }
+            var copy = row
+            copy[statusIdx] = HubWorkflowDisplayPolicy.policy
+                .statusDisplay(docTypeId: docType, state: raw).label
+            return copy
         }
     }
 
