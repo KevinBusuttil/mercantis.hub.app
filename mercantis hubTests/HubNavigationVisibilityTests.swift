@@ -85,4 +85,20 @@ final class HubNavigationVisibilityTests: XCTestCase {
         }
         XCTAssertTrue(reports.contains(HubReports.trialBalance.id), "Trial Balance must be visible in advanced mode")
     }
+
+    func test_pos_shell_stays_out_of_navigation_in_all_modes() {
+        for showAdvanced in [false, true] {
+            let settings = HubVisibilitySettings()
+            settings.showAdvanced = showAdvanced
+
+            let labels = HubNavigation.allModules
+                .filter { settings.isVisible($0.visibility) }
+                .flatMap { $0.visibleGroups(settings) }
+                .flatMap(\.items)
+                .map(\.label)
+
+            XCTAssertFalse(labels.contains("Point of Sale"), "POS should remain preview-only, not in navigation")
+            XCTAssertFalse(labels.contains("POS"), "POS should remain preview-only, not in navigation")
+        }
+    }
 }

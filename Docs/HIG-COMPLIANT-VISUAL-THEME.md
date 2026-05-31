@@ -118,23 +118,35 @@ Reusable across Sales Invoice / Sales Order / Purchase Order / Purchase Invoice
 infrastructure (custom fields, child tables, link fields, and lifecycle actions
 must keep working).
 
-1. **Header:** document id/title, business `MercantisStatusBadge`, primary
-   action, secondary actions, subtle metadata.
-2. **Summary grid:** the few important fields up top in a compact two-column /
-   responsive layout — avoid long unstructured forms for transactional docs.
-3. **Sections:** tabbed/segmented (Details · Items & Pricing · Taxes ·
-   Shipping · Terms · More Info) where appropriate.
-4. **Items / child tables:** real ERP line tables — recognisable, clickable
-   link fields; numeric columns right-aligned; totals aligned; compact but
-   readable row density.
-5. **Inspector** (right, collapsible via `.inspector`): `MercantisInspectorCard`
-   stack — Details, Activity, Attachments, Customer/Supplier contact, Summary
-   totals — shown only when linked data is available.
+1. **Policy location:** Hub owns the transactional workspace mapping (`HubDocumentLayoutPolicy`);
+   Core stays generic. Unknown / unmapped DocTypes fall back to the plain
+   `GenericFormView` workspace unchanged.
+2. **Header:** document id/title, business `MercantisStatusBadge`, primary
+   action, secondary actions, subtle metadata, key party name, and key dates.
+3. **Summary grid:** the few important fields up top in a compact responsive
+   grid. Missing fields are skipped; unresolved links fall back to the stored id.
+4. **Sections:** a segmented control switches between filtered `GenericFormView`
+   layouts (Details · Items & Pricing · Terms / More Info depending on DocType).
+   Custom / unmapped fields are surfaced in the final section so custom fields
+   remain accessible.
+5. **Items / child tables:** continue using the existing generic Core child-table
+   renderer — recognisable link fields, numeric columns right-aligned, compact
+   density, link pickers preserved.
+6. **Inspector** (right, collapsible via native `.inspector`): `MercantisInspectorCard`
+   stack — Details plus policy-driven party / totals cards when data exists.
+7. **Intentionally incomplete:** activity feeds, attachments, shipping/tax-only
+   sections, and richer contact/address cards remain placeholders until the
+   underlying document metadata exists.
 
 ## 8. POS layout rules
 
 `HubPOSView` is a **design-ready shell only** — it locks the layout/look using
 Core primitives and is **not** wired to a POS engine.
+
+**Visibility decision:** Option A, preview-only. The POS shell is intentionally
+kept out of normal navigation (including advanced/accountant mode) and should be
+used only in previews / explicit design-demo contexts until a real checkout
+engine exists.
 
 Layout: category rail (left `List(.sidebar)`) · search/barcode field (top) ·
 product grid (`MercantisCard` tiles, large enough for trackpad but
@@ -146,7 +158,14 @@ barcode lookup, pricing/tax/discount rules, tender + change + receipt, stock
 decrement / Sales Invoice creation, offline session/shift handling. The cart
 maths in the shell are display-only sums, not authoritative business logic.
 
-## 9. Accessibility, light & dark mode
+## 9. Dashboard structure rules
+
+Dashboards remain data-driven: KPI row first, then a main content column with an
+optional right-side support column when there are enough widgets to justify it.
+No fake KPI values, placeholder business numbers, or stubbed recent-document
+rows are allowed.
+
+## 10. Accessibility, light & dark mode
 
 - Light mode reads close in spirit to the reference; dark mode stays polished
   and readable (borders carry elevation where shadows fade).
@@ -159,7 +178,7 @@ maths in the shell are display-only sums, not authoritative business logic.
   at `textSecondary` (not fainter) so it doesn't disappear.
 - System fonts only — no custom fonts.
 
-## 10. Do / Don't
+## 11. Do / Don't
 
 **Do**
 - Use the native sidebar, toolbar, materials, SF Symbols, and `.inspector`.

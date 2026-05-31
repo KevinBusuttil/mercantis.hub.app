@@ -114,4 +114,22 @@ final class HubWorkflowDisplayPolicyTests: XCTestCase {
         XCTAssertFalse(policy.hasMapping(docTypeId: "Customer"))
         XCTAssertTrue(policy.hasMapping(docTypeId: "SalesInvoice"))
     }
+
+    // MARK: - Workspace layout policy
+
+    func test_transactional_workspace_policy_maps_supported_hub_doc_types() {
+        for mapped in ["Quotation", "SalesOrder", "SalesInvoice",
+                       "SupplierQuotation", "PurchaseOrder", "PurchaseInvoice",
+                       "StockEntry", "PaymentEntry"] {
+            let layout = HubDocumentLayoutPolicy.layout(for: mapped)
+            XCTAssertNotNil(layout, "\(mapped) should receive the polished workspace policy")
+            XCTAssertFalse(layout?.summaryFieldKeys.isEmpty ?? true)
+            XCTAssertFalse(layout?.sections.isEmpty ?? true)
+        }
+    }
+
+    func test_workspace_policy_falls_back_for_non_transactional_docs() {
+        XCTAssertNil(HubDocumentLayoutPolicy.layout(for: "Customer"))
+        XCTAssertNil(HubDocumentLayoutPolicy.layout(for: "GLEntry"))
+    }
 }

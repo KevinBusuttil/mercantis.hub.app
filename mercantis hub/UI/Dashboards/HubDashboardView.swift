@@ -80,6 +80,8 @@ struct HubDashboardView: View {
             if case .count = $0 { return false }
             return true
         }
+        let primaryWidgets = Array(others.prefix(2))
+        let secondaryWidgets = Array(others.dropFirst(2))
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -94,9 +96,35 @@ struct HubDashboardView: View {
                 }
 
                 if !others.isEmpty {
-                    LazyVGrid(columns: widgetColumns, spacing: 16) {
-                        ForEach(Array(others.enumerated()), id: \.offset) { _, widget in
-                            tile(for: widget)
+                    if secondaryWidgets.isEmpty {
+                        LazyVGrid(columns: widgetColumns, spacing: 16) {
+                            ForEach(Array(others.enumerated()), id: \.offset) { _, widget in
+                                tile(for: widget)
+                            }
+                        }
+                    } else {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: 16) {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    ForEach(Array(primaryWidgets.enumerated()), id: \.offset) { _, widget in
+                                        tile(for: widget)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                VStack(alignment: .leading, spacing: 16) {
+                                    ForEach(Array(secondaryWidgets.enumerated()), id: \.offset) { _, widget in
+                                        tile(for: widget)
+                                    }
+                                }
+                                .frame(width: 300, alignment: .top)
+                            }
+
+                            LazyVGrid(columns: widgetColumns, spacing: 16) {
+                                ForEach(Array(others.enumerated()), id: \.offset) { _, widget in
+                                    tile(for: widget)
+                                }
+                            }
                         }
                     }
                 } else if metrics.isEmpty {
