@@ -19,10 +19,6 @@ extension Buying {
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.purchaseRegister.id,
                         label: HubReports.purchaseRegister.name)
-            ]),
-            HubMenuGroup(label: "Supplier Ledger", items: [
-                .report(id: HubReports.supplierLedger.id,
-                        label: "Supplier Balances")
             ])
         ]
     )
