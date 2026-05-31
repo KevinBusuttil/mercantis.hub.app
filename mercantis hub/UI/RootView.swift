@@ -277,7 +277,7 @@ private struct HubRecordWorkspaceView: View {
             reloadCustomFieldsSafely()
             showCollectionWorkspace = !documents.isEmpty
         }
-        .onChange(of: documents.count) { count in
+        .onChange(of: documents.count) { _, count in
             if count > 0 {
                 showCollectionWorkspace = true
             } else if !createTrigger {
