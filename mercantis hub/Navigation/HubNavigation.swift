@@ -114,7 +114,7 @@ extension HubMenuItem: Hashable {
         case .docType(let d, let label):
             hasher.combine("doctype")
             hasher.combine(d.id)
-            hasher.combine(label ?? "")
+            hasher.combine(label)
         case .report(let id, _):
             hasher.combine("report")
             hasher.combine(id)
