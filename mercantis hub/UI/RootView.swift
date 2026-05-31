@@ -354,6 +354,8 @@ private struct HubDocumentEditor: View {
     /// A pending action awaiting confirmation (Post / Cancel of a
     /// ledger- or stock-affecting document). Drives the confirmation dialog.
     @State private var pendingConfirmation: PendingLifecycleAction?
+    @State private var selectedWorkspaceSectionID: String = ""
+    @State private var showsInspector = true
 
     private let displayPolicy = HubWorkflowDisplayPolicy.policy
 
@@ -374,6 +376,30 @@ private struct HubDocumentEditor: View {
     }
 
     var body: some View {
+        Group {
+            if let layout = HubDocumentLayoutPolicy.layout(for: docType) {
+                polishedWorkspace(layout: layout)
+            } else {
+                legacyWorkspace
+            }
+        }
+        .frame(minWidth: 480, minHeight: 400)
+        .confirmationDialog(
+            pendingConfirmation?.title ?? "",
+            isPresented: confirmationBinding,
+            titleVisibility: .visible,
+            presenting: pendingConfirmation
+        ) { action in
+            Button(action.confirmLabel, role: confirmRole(for: action)) {
+                runConfirmedAction(action)
+            }
+            Button("Keep Editing", role: .cancel) { pendingConfirmation = nil }
+        } message: { action in
+            Text(action.message)
+        }
+    }
+
+    private var legacyWorkspace: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 lifecycleHeader
@@ -392,34 +418,62 @@ private struct HubDocumentEditor: View {
                     actionRow
                 }
                 if let error = errorMessage {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(MercantisTheme.danger)
-                        Text(error)
-                            .foregroundStyle(MercantisTheme.danger)
-                            .lineLimit(2)
-                        Spacer()
-                    }
-                    .font(.callout)
-                    .padding(10)
-                    .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
+                    errorBanner(error)
                 }
             }
             .padding()
         }
-        .frame(minWidth: 480, minHeight: 400)
-        .confirmationDialog(
-            pendingConfirmation?.title ?? "",
-            isPresented: confirmationBinding,
-            titleVisibility: .visible,
-            presenting: pendingConfirmation
-        ) { action in
-            Button(action.confirmLabel, role: confirmRole(for: action)) {
-                runConfirmedAction(action)
+    }
+
+    private func polishedWorkspace(layout: HubDocumentLayoutPolicy.Layout) -> some View {
+        let cards = inspectorCards(for: layout)
+        let inspectorBinding = Binding(
+            get: { !cards.isEmpty && showsInspector },
+            set: { showsInspector = $0 }
+        )
+
+        return VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                workspaceHeader(layout: layout, inspectorAvailable: !cards.isEmpty)
+                if !summaryItems(for: layout).isEmpty {
+                    summaryGridCard(layout: layout)
+                }
+                if layout.sections.count > 1 {
+                    sectionPicker(layout: layout)
+                }
+                if let error = errorMessage {
+                    errorBanner(error)
+                }
             }
-            Button("Keep Editing", role: .cancel) { pendingConfirmation = nil }
-        } message: { action in
-            Text(action.message)
+            .padding(16)
+
+            Divider()
+
+            GenericFormView(
+                docType: filteredDocType(for: layout, sectionID: selectedSectionID(in: layout)),
+                document: $document,
+                linkSearchProvider: { targetDocType, _ in
+                    (try? engine.list(docType: targetDocType)) ?? []
+                },
+                linkResolveProvider: { targetDocType, id in
+                    try? engine.fetch(docType: targetDocType, id: id)
+                },
+                childDocTypeProvider: { HubManifest.docType(for: $0) }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(MercantisTheme.appBackground)
+        .inspector(isPresented: inspectorBinding) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(cards) { card in
+                        inspectorCardView(card)
+                    }
+                }
+                .padding(16)
+            }
+            .frame(minWidth: 260, idealWidth: 300)
+            .background(MercantisTheme.appBackground)
         }
     }
 
@@ -439,6 +493,32 @@ private struct HubDocumentEditor: View {
         if docType.isSubmittable && document.docStatus != 0 { return true }
         if docType.isSubmittable && document.docStatus == 0 && !document.id.isEmpty { return true }
         return !availableWorkflowTransitions.filter(shouldOfferWorkflowButton).isEmpty
+    }
+
+    private struct WorkspaceFieldDisplay: Identifiable {
+        let key: String
+        let label: String
+        let value: String
+        let isNumeric: Bool
+
+        var id: String { key }
+    }
+
+    private struct InspectorCardContent: Identifiable {
+        let id: String
+        let title: String
+        let systemImage: String
+        let rows: [WorkspaceFieldDisplay]
+
+        var hasContent: Bool { !rows.isEmpty }
+    }
+
+    private struct WorkspaceActionDescriptor: Identifiable {
+        let id: String
+        let label: String
+        let role: ButtonRole?
+        let isPrimary: Bool
+        let perform: () -> Void
     }
 
     // MARK: - Lifecycle header
@@ -487,6 +567,534 @@ private struct HubDocumentEditor: View {
                 MercantisStatusBadge(display: workflowDisplay)
             }
         }
+    }
+
+    private func workspaceHeader(layout: HubDocumentLayoutPolicy.Layout, inspectorAvailable: Bool) -> some View {
+        let actions = workspaceActions
+        let leadingContext = headerContext(for: layout)
+        let metadata = headerMetadata
+
+        return MercantisCard(padding: .standard, tinted: true) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(document.id.isEmpty ? "New \(docType.name)" : docType.name)
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(MercantisTheme.textPrimary)
+                            Spacer(minLength: 12)
+                            if !document.id.isEmpty {
+                                Text(document.id)
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(MercantisTheme.textSecondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+
+                        if let leadingContext {
+                            Text(leadingContext)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(MercantisTheme.textSecondary)
+                                .lineLimit(2)
+                        }
+
+                        HStack(spacing: 6) {
+                            statusBadge
+                        }
+
+                        if !metadata.isEmpty {
+                            Text(metadata.joined(separator: "  •  "))
+                                .font(.caption)
+                                .foregroundStyle(MercantisTheme.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Spacer(minLength: 12)
+
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let primary = actions.first(where: \.isPrimary) {
+                            Button(primary.label, role: primary.role, action: primary.perform)
+                                .buttonStyle(.borderedProminent)
+                        }
+
+                        HStack(spacing: 8) {
+                            ForEach(actions.filter { !$0.isPrimary }) { action in
+                                Button(action.label, role: action.role, action: action.perform)
+                                    .buttonStyle(.bordered)
+                            }
+
+                            if inspectorAvailable {
+                                Button(showsInspector ? "Hide Inspector" : "Show Inspector") {
+                                    showsInspector.toggle()
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var headerMetadata: [String] {
+        var metadata: [String] = []
+        if let workflow {
+            metadata.append(workflow.name)
+        }
+        if !document.company.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            metadata.append(document.company)
+        }
+        if !document.id.isEmpty {
+            metadata.append("Created \(dateTimeFormatter.string(from: document.createdAt))")
+        }
+        metadata.append("Updated \(dateTimeFormatter.string(from: document.updatedAt))")
+        return metadata
+    }
+
+    private func headerContext(for layout: HubDocumentLayoutPolicy.Layout) -> String? {
+        var segments: [String] = []
+        if let party = firstDisplay(for: layout.partyFieldKeys)?.value {
+            segments.append(party)
+        }
+        for key in layout.dateFieldKeys {
+            guard let item = fieldDisplay(for: key) else { continue }
+            segments.append("\(item.label): \(item.value)")
+        }
+        let joined = segments.joined(separator: "  •  ")
+        return joined.isEmpty ? nil : joined
+    }
+
+    private func summaryGridCard(layout: HubDocumentLayoutPolicy.Layout) -> some View {
+        let items = summaryItems(for: layout)
+        return MercantisCard(padding: .compact) {
+            VStack(alignment: .leading, spacing: 10) {
+                MercantisPanelHeader("Summary", systemImage: "square.grid.2x2")
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 10)], spacing: 10) {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.label)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(MercantisTheme.textSecondary)
+                                .lineLimit(1)
+                            Text(item.value)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(MercantisTheme.textPrimary)
+                                .multilineTextAlignment(item.isNumeric ? .trailing : .leading)
+                                .lineLimit(2)
+                                .monospacedDigit()
+                                .frame(maxWidth: .infinity, alignment: item.isNumeric ? .trailing : .leading)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(MercantisTheme.surface)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(MercantisTheme.hairline, lineWidth: 1)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private func sectionPicker(layout: HubDocumentLayoutPolicy.Layout) -> some View {
+        Picker("Workspace Section", selection: sectionSelection(for: layout)) {
+            ForEach(layout.sections) { section in
+                Text(section.title).tag(section.id)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private func errorBanner(_ error: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(MercantisTheme.danger)
+            Text(error)
+                .foregroundStyle(MercantisTheme.danger)
+                .lineLimit(2)
+            Spacer()
+        }
+        .font(.callout)
+        .padding(10)
+        .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var workspaceActions: [WorkspaceActionDescriptor] {
+        var actions: [WorkspaceActionDescriptor] = []
+        var primaryAssigned = false
+
+        if docType.isSubmittable, document.docStatus == 0, !document.id.isEmpty {
+            let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Submit")
+            actions.append(
+                WorkspaceActionDescriptor(
+                    id: "submit",
+                    label: action.label,
+                    role: nil,
+                    isPrimary: true,
+                    perform: { requestSubmit(action) }
+                )
+            )
+            primaryAssigned = true
+        }
+
+        if docType.isSubmittable, document.docStatus == 2 {
+            let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Amend")
+            actions.append(
+                WorkspaceActionDescriptor(
+                    id: "amend",
+                    label: action.label,
+                    role: nil,
+                    isPrimary: !primaryAssigned,
+                    perform: { amend() }
+                )
+            )
+            primaryAssigned = true
+        }
+
+        for transition in availableWorkflowTransitions where shouldOfferWorkflowButton(transition) {
+            let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: transition.action)
+            let isPrimary = !primaryAssigned
+            actions.append(
+                WorkspaceActionDescriptor(
+                    id: "workflow:\(transition.action)",
+                    label: action.label,
+                    role: nil,
+                    isPrimary: isPrimary,
+                    perform: { requestWorkflow(transition, action) }
+                )
+            )
+            if isPrimary {
+                primaryAssigned = true
+            }
+        }
+
+        if docType.isSubmittable, document.docStatus == 1 {
+            let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Cancel")
+            actions.append(
+                WorkspaceActionDescriptor(
+                    id: "cancel",
+                    label: action.label,
+                    role: .destructive,
+                    isPrimary: false,
+                    perform: { requestCancel(action) }
+                )
+            )
+        }
+
+        return actions
+    }
+
+    private func sectionSelection(for layout: HubDocumentLayoutPolicy.Layout) -> Binding<String> {
+        Binding(
+            get: { selectedSectionID(in: layout) },
+            set: { selectedWorkspaceSectionID = $0 }
+        )
+    }
+
+    private func selectedSectionID(in layout: HubDocumentLayoutPolicy.Layout) -> String {
+        if layout.sections.contains(where: { $0.id == selectedWorkspaceSectionID }) {
+            return selectedWorkspaceSectionID
+        }
+        return layout.sections.first?.id ?? ""
+    }
+
+    private func filteredDocType(for layout: HubDocumentLayoutPolicy.Layout, sectionID: String) -> DocType {
+        guard let selection = layout.sections.first(where: { $0.id == sectionID }),
+              let formLayout = docType.formLayout
+        else { return docType }
+
+        var filteredSections = selection.layoutSectionKeys.compactMap { key in
+            formLayout.sections.first(where: { $0.key == key })
+        }
+
+        if selection.includesUnmappedFields {
+            let mappedKeys = Set(formLayout.sections.flatMap(\.fieldKeys))
+            let unmapped = docType.fields.map(\.key).filter { !mappedKeys.contains($0) }
+            if !unmapped.isEmpty {
+                filteredSections.append(
+                    FormLayoutSection(
+                        key: "hub-unmapped-\(selection.id)",
+                        title: filteredSections.isEmpty ? "Custom Fields" : "Additional Fields",
+                        columns: 2,
+                        fieldKeys: unmapped
+                    )
+                )
+            }
+        }
+
+        guard !filteredSections.isEmpty else { return docType }
+        var filtered = docType
+        filtered.formLayout = FormLayout(sections: filteredSections)
+        return filtered
+    }
+
+    private func summaryItems(for layout: HubDocumentLayoutPolicy.Layout) -> [WorkspaceFieldDisplay] {
+        var seen = Set<String>()
+        return layout.summaryFieldKeys.compactMap { key in
+            guard seen.insert(key).inserted else { return nil }
+            return fieldDisplay(for: key)
+        }
+    }
+
+    private func firstDisplay(for keys: [String]) -> WorkspaceFieldDisplay? {
+        for key in keys {
+            if let item = fieldDisplay(for: key) {
+                return item
+            }
+        }
+        return nil
+    }
+
+    private func inspectorCards(for layout: HubDocumentLayoutPolicy.Layout) -> [InspectorCardContent] {
+        let detailsRows = [
+            WorkspaceFieldDisplay(key: "document_id", label: "Document", value: document.id.isEmpty ? "Draft" : document.id, isNumeric: false),
+            WorkspaceFieldDisplay(key: "company", label: "Company", value: document.company.isEmpty ? "—" : document.company, isNumeric: false),
+            WorkspaceFieldDisplay(key: "created_at", label: "Created", value: dateTimeFormatter.string(from: document.createdAt), isNumeric: false),
+            WorkspaceFieldDisplay(key: "updated_at", label: "Updated", value: dateTimeFormatter.string(from: document.updatedAt), isNumeric: false)
+        ]
+
+        var cards: [InspectorCardContent] = [
+            InspectorCardContent(id: "details", title: "Details", systemImage: "info.circle", rows: detailsRows)
+        ]
+
+        for card in layout.inspectorCards {
+            let rows = card.fieldKeys.compactMap { fieldDisplay(for: $0) }
+            if !rows.isEmpty {
+                cards.append(
+                    InspectorCardContent(
+                        id: card.id,
+                        title: card.title,
+                        systemImage: card.systemImage,
+                        rows: rows
+                    )
+                )
+            }
+        }
+
+        return cards.filter(\.hasContent)
+    }
+
+    private func inspectorCardView(_ card: InspectorCardContent) -> some View {
+        MercantisInspectorCard(card.title, systemImage: card.systemImage) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(card.rows.enumerated()), id: \.element.id) { index, row in
+                    MercantisInspectorRow(row.label, value: row.value, isNumeric: row.isNumeric)
+                    if index < card.rows.count - 1 {
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
+    private func fieldDisplay(for key: String) -> WorkspaceFieldDisplay? {
+        let value = displayValue(for: key)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !value.isEmpty else { return nil }
+
+        let field = fieldDefinition(for: key)
+        let label = field?.label ?? humanizedFieldLabel(for: key)
+        let isNumeric = {
+            switch field?.type {
+            case .number, .decimal, .currency:
+                return true
+            default:
+                return key == "total_qty"
+            }
+        }()
+
+        return WorkspaceFieldDisplay(key: key, label: label, value: value, isNumeric: isNumeric)
+    }
+
+    private func displayValue(for key: String) -> String? {
+        if key == "total_qty",
+           document.fields[key] == nil,
+           let derivedQty = derivedQuantityTotal() {
+            return numberFormatter.string(from: NSNumber(value: derivedQty))
+        }
+
+        guard let field = fieldDefinition(for: key) else {
+            return stringValue(document.fields[key])
+        }
+
+        guard let raw = document.fields[key] else {
+            return nil
+        }
+
+        switch field.type {
+        case .link:
+            let rawID = stringValue(raw)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !rawID.isEmpty else { return nil }
+            return resolveLinkValue(field: field, rawID: rawID)
+        case .date:
+            return formatDate(raw)
+        case .datetime:
+            return formatDateTime(raw)
+        case .currency:
+            return formatCurrency(raw)
+        case .number, .decimal:
+            return formatNumber(raw)
+        case .boolean:
+            if case .bool(let value) = raw {
+                return value ? "Yes" : "No"
+            }
+            return stringValue(raw)
+        default:
+            return stringValue(raw)
+        }
+    }
+
+    private func fieldDefinition(for key: String) -> FieldDefinition? {
+        docType.fields.first(where: { $0.key == key })
+    }
+
+    private func resolveLinkValue(field: FieldDefinition, rawID: String) -> String {
+        guard let targetDocType = field.linkedDocType,
+              let linked = try? engine.fetch(docType: targetDocType, id: rawID)
+        else { return rawID }
+
+        if let targetMeta = HubManifest.docType(for: targetDocType),
+           let title = stringValue(linked.fields[targetMeta.titleField]),
+           !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return title
+        }
+
+        return rawID
+    }
+
+    private func derivedQuantityTotal() -> Double? {
+        let keys = ["items", "references", "accounts"]
+        for key in keys {
+            let total = document.children[key, default: []].reduce(0.0) { partial, row in
+                partial + numericValue(row.fields["qty"])
+            }
+            if total > 0 {
+                return total
+            }
+        }
+        return nil
+    }
+
+    private func numericValue(_ raw: FieldValue?) -> Double {
+        switch raw {
+        case .double(let value):
+            return value
+        case .int(let value):
+            return Double(value)
+        case .string(let value):
+            return Double(value) ?? 0
+        default:
+            return 0
+        }
+    }
+
+    private func stringValue(_ raw: FieldValue?) -> String? {
+        switch raw {
+        case .string(let value):
+            return value
+        case .int(let value):
+            return "\(value)"
+        case .double(let value):
+            return numberFormatter.string(from: NSNumber(value: value))
+        case .bool(let value):
+            return value ? "Yes" : "No"
+        case .date(let value), .dateTime(let value):
+            return dateFormatter.string(from: value)
+        default:
+            return nil
+        }
+    }
+
+    private func formatNumber(_ raw: FieldValue) -> String? {
+        switch raw {
+        case .int(let value):
+            return numberFormatter.string(from: NSNumber(value: value))
+        case .double(let value):
+            return numberFormatter.string(from: NSNumber(value: value))
+        case .string(let value):
+            return Double(value).flatMap { numberFormatter.string(from: NSNumber(value: $0)) } ?? value
+        default:
+            return nil
+        }
+    }
+
+    private func formatCurrency(_ raw: FieldValue) -> String? {
+        switch raw {
+        case .int(let value):
+            return currencyString(Double(value))
+        case .double(let value):
+            return currencyString(value)
+        case .string(let value):
+            return Double(value).map { currencyString($0) } ?? value
+        default:
+            return nil
+        }
+    }
+
+    private func currencyString(_ value: Double) -> String {
+        let code = stringValue(document.fields["currency"])?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if code.count == 3 {
+            return value.formatted(.currency(code: code))
+        }
+        return numberFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
+    private func formatDate(_ raw: FieldValue) -> String? {
+        switch raw {
+        case .date(let value), .dateTime(let value):
+            return dateFormatter.string(from: value)
+        case .string(let value):
+            return value
+        default:
+            return nil
+        }
+    }
+
+    private func formatDateTime(_ raw: FieldValue) -> String? {
+        switch raw {
+        case .date(let value), .dateTime(let value):
+            return dateTimeFormatter.string(from: value)
+        case .string(let value):
+            return value
+        default:
+            return nil
+        }
+    }
+
+    private func humanizedFieldLabel(for key: String) -> String {
+        key
+            .split(separator: "_")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    private var numberFormatter: NumberFormatter {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 0
+        return formatter
+    }
+
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }
+
+    private var dateTimeFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
     }
 
     // MARK: - Action row
@@ -738,6 +1346,154 @@ private struct HubDocumentEditor: View {
             return String(describing: error)
         }
         return description
+    }
+}
+
+enum HubDocumentLayoutPolicy {
+    struct Layout {
+        let summaryFieldKeys: [String]
+        let partyFieldKeys: [String]
+        let dateFieldKeys: [String]
+        let sections: [Section]
+        let inspectorCards: [InspectorCard]
+    }
+
+    struct Section: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let layoutSectionKeys: [String]
+        var includesUnmappedFields: Bool = false
+    }
+
+    struct InspectorCard: Identifiable, Hashable {
+        let id: String
+        let title: String
+        let systemImage: String
+        let fieldKeys: [String]
+    }
+
+    static func layout(for docType: DocType) -> Layout? {
+        layout(for: docType.id)
+    }
+
+    static func layout(for docTypeId: String) -> Layout? {
+        switch docTypeId {
+        case "Quotation", "SalesOrder":
+            return Layout(
+                summaryFieldKeys: [
+                    "customer", "transaction_date", "delivery_date",
+                    "price_list", "currency", "payment_terms",
+                    "warehouse", "grand_total"
+                ],
+                partyFieldKeys: ["customer"],
+                dateFieldKeys: ["transaction_date", "delivery_date"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header"]),
+                    Section(id: "items", title: "Items & Pricing", layoutSectionKeys: ["items", "totals"]),
+                    Section(id: "terms", title: "Terms", layoutSectionKeys: ["notes"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "customer", title: "Customer", systemImage: "person.crop.circle", fieldKeys: ["customer", "currency", "price_list"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["total_qty", "grand_total"])
+                ]
+            )
+        case "SalesInvoice":
+            return Layout(
+                summaryFieldKeys: [
+                    "customer", "transaction_date", "due_date",
+                    "price_list", "currency", "payment_terms",
+                    "warehouse", "grand_total"
+                ],
+                partyFieldKeys: ["customer"],
+                dateFieldKeys: ["transaction_date", "due_date"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header", "billing"]),
+                    Section(id: "items", title: "Items & Pricing", layoutSectionKeys: ["items", "totals"]),
+                    Section(id: "more", title: "More Info", layoutSectionKeys: ["posting", "notes"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "customer", title: "Customer", systemImage: "person.crop.circle", fieldKeys: ["customer", "currency", "price_list"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["total_qty", "grand_total", "outstanding_amount"])
+                ]
+            )
+        case "SupplierQuotation", "PurchaseOrder":
+            return Layout(
+                summaryFieldKeys: [
+                    "supplier", "transaction_date", "schedule_date",
+                    "price_list", "currency", "payment_terms",
+                    "warehouse", "grand_total"
+                ],
+                partyFieldKeys: ["supplier"],
+                dateFieldKeys: ["transaction_date", "schedule_date"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header"]),
+                    Section(id: "items", title: "Items & Pricing", layoutSectionKeys: ["items", "totals"]),
+                    Section(id: "terms", title: "Terms", layoutSectionKeys: ["notes"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "supplier", title: "Supplier", systemImage: "shippingbox", fieldKeys: ["supplier", "currency", "price_list"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["total_qty", "grand_total"])
+                ]
+            )
+        case "PurchaseInvoice":
+            return Layout(
+                summaryFieldKeys: [
+                    "supplier", "transaction_date", "due_date",
+                    "price_list", "currency", "payment_terms",
+                    "warehouse", "grand_total"
+                ],
+                partyFieldKeys: ["supplier"],
+                dateFieldKeys: ["transaction_date", "due_date"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header", "billing"]),
+                    Section(id: "items", title: "Items & Pricing", layoutSectionKeys: ["items", "totals"]),
+                    Section(id: "more", title: "More Info", layoutSectionKeys: ["posting", "notes"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "supplier", title: "Supplier", systemImage: "shippingbox", fieldKeys: ["supplier", "currency", "price_list"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["total_qty", "grand_total", "outstanding_amount"])
+                ]
+            )
+        case "StockEntry":
+            return Layout(
+                summaryFieldKeys: [
+                    "purpose", "posting_date", "default_source_warehouse",
+                    "default_target_warehouse", "total_qty", "total_value"
+                ],
+                partyFieldKeys: ["purpose"],
+                dateFieldKeys: ["posting_date", "posting_time"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header", "defaults"]),
+                    Section(id: "items", title: "Items & Pricing", layoutSectionKeys: ["items", "totals"]),
+                    Section(id: "more", title: "More Info", layoutSectionKeys: ["remarks"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "movement", title: "Stock Movement", systemImage: "tray.full", fieldKeys: ["purpose", "default_source_warehouse", "default_target_warehouse"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["total_qty", "total_value"])
+                ]
+            )
+        case "PaymentEntry":
+            return Layout(
+                summaryFieldKeys: [
+                    "payment_type", "party_type", "party",
+                    "posting_date", "paid_amount", "received_amount",
+                    "reference_no"
+                ],
+                partyFieldKeys: ["party"],
+                dateFieldKeys: ["posting_date"],
+                sections: [
+                    Section(id: "details", title: "Details", layoutSectionKeys: ["header", "party", "accounts"]),
+                    Section(id: "terms", title: "Terms", layoutSectionKeys: ["references"]),
+                    Section(id: "more", title: "More Info", layoutSectionKeys: ["remarks"], includesUnmappedFields: true)
+                ],
+                inspectorCards: [
+                    InspectorCard(id: "party", title: "Party", systemImage: "person.crop.circle", fieldKeys: ["party_type", "party", "paid_from", "paid_to"]),
+                    InspectorCard(id: "totals", title: "Summary Totals", systemImage: "sum", fieldKeys: ["paid_amount", "received_amount"])
+                ]
+            )
+        default:
+            return nil
+        }
     }
 }
 
