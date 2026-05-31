@@ -140,6 +140,9 @@ private struct HubRecordWorkspaceView: View {
     @State private var documents: [Document] = []
     @State private var customFields: [CustomField] = []
     @State private var errorMessage: String?
+    /// Flipped by the File ▸ New (⌘N) menu command to open the create flow
+    /// for this workspace's DocType.
+    @State private var createTrigger = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -194,6 +197,7 @@ private struct HubRecordWorkspaceView: View {
                     try customFieldStore.remove(id: id)
                     reloadCustomFieldsSafely()
                 },
+                externalCreateTrigger: $createTrigger,
                 linkSearchProvider: { targetDocType, _ in
                     (try? engine.list(docType: targetDocType)) ?? []
                 },
@@ -218,6 +222,11 @@ private struct HubRecordWorkspaceView: View {
                 listViews: HubListViews.views(for: docType.id)
             )
         }
+        // Publish a context-aware "New <DocType>" action so the File ▸ New
+        // (⌘N) menu command targets this workspace while it's on screen.
+        .focusedSceneValue(\.newRecordAction, NewRecordAction(label: docType.name) {
+            createTrigger = true
+        })
         .onAppear {
             reloadDocumentsSafely()
             reloadCustomFieldsSafely()

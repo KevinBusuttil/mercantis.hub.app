@@ -109,6 +109,7 @@ struct mercantis_hubApp: App {
             )
         }
         .defaultSize(width: 1100, height: 720)
+        .commands { HubCommands() }
     }
 
     // MARK: - Bootstrap helpers
