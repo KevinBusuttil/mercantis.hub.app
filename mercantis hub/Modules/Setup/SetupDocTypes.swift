@@ -334,7 +334,7 @@ enum Setup {
 
     // MARK: - Numbering Settings
 
-    /// Numbering Settings stores the naming series prefixes used by core
+    /// Numbering Series stores the naming series prefixes used by core
     /// transactional documents (invoices, bills, deliveries, POS receipts,
     /// payments). One record per business — edit to change the prefix/format.
     static let numberingSeries = DocType(
