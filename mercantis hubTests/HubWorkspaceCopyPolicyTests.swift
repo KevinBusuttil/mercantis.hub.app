@@ -6,6 +6,12 @@ import MercantisCore
 final class HubWorkspaceCopyPolicyTests: XCTestCase {
 
     func test_business_specific_copy_for_key_doctypes() {
+        let company = HubWorkspaceCopyPolicy.copy(for: Setup.company)
+        XCTAssertEqual(company.title, "Business Profile")
+        XCTAssertEqual(company.subtitle, "Store your business identity and operational defaults in one place.")
+        XCTAssertEqual(company.primaryActionTitle, "New Business Profile")
+        XCTAssertEqual(company.emptyStateTitle, "No business profile yet")
+
         let supplier = HubWorkspaceCopyPolicy.copy(for: Buying.supplier)
         XCTAssertEqual(supplier.title, "Suppliers")
         XCTAssertEqual(supplier.subtitle, "Manage supplier profiles, purchasing defaults, and payment details.")

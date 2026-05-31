@@ -12,6 +12,89 @@ private let systemManagerPermission = PermissionRule(
 
 enum Setup {
 
+    static let company = DocType(
+        id: "Company",
+        name: "Company",
+        module: "Setup",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "business_name", label: "Business Name",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "vat_tax_number", label: "VAT / Tax Number",
+                            type: .text, required: false),
+            FieldDefinition(key: "registration_number", label: "Registration Number",
+                            type: .text, required: false),
+            FieldDefinition(key: "address", label: "Address",
+                            type: .longText, required: false),
+            FieldDefinition(key: "email", label: "Email",
+                            type: .email, required: false, isSearchable: true),
+            FieldDefinition(key: "phone", label: "Phone",
+                            type: .phone, required: false),
+            FieldDefinition(key: "logo", label: "Logo",
+                            type: .image, required: false),
+            FieldDefinition(key: "default_currency", label: "Default Currency",
+                            type: .link, required: false, linkedDocType: "Currency"),
+            FieldDefinition(key: "default_warehouse", label: "Default Warehouse",
+                            type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "default_receivable_account", label: "Default Receivable Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_payable_account", label: "Default Payable Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_income_account", label: "Default Income Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_expense_account", label: "Default Expense Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_cash_bank_account", label: "Default Cash / Bank Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_stock_account", label: "Default Stock Account",
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_vat_account", label: "Default VAT Account",
+                            type: .link, required: false, linkedDocType: "Account")
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["business_name", "registration_number", "vat_tax_number", "email"],
+        titleField: "business_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "identity",
+                title: "Business Identity",
+                helpText: "Set up your legal identity and primary contact details.",
+                columns: 2,
+                fieldKeys: ["business_name", "registration_number", "vat_tax_number"]
+            ),
+            FormLayoutSection(
+                key: "contact",
+                title: "Contact",
+                columns: 2,
+                fieldKeys: ["email", "phone", "logo"]
+            ),
+            FormLayoutSection(
+                key: "address",
+                title: "Address",
+                fieldKeys: ["address"]
+            ),
+            FormLayoutSection(
+                key: "defaults",
+                title: "Defaults",
+                helpText: "Used as defaults for future sales, buying, stock, and accounting setup.",
+                columns: 2,
+                fieldKeys: ["default_currency", "default_warehouse"]
+            ),
+            FormLayoutSection(
+                key: "accounts",
+                title: "Default Accounts",
+                columns: 2,
+                fieldKeys: ["default_receivable_account", "default_payable_account",
+                            "default_income_account", "default_expense_account",
+                            "default_cash_bank_account", "default_stock_account",
+                            "default_vat_account"]
+            )
+        ])
+    )
+
     // MARK: - Tree masters
 
     static let customerGroup = DocType(
@@ -272,6 +355,7 @@ enum Setup {
     )
 
     static let allDocTypes: [DocType] = [
+        company,
         // Tree masters
         customerGroup,
         territory,

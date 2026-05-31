@@ -78,11 +78,11 @@ final class HubNavigationVisibilityTests: XCTestCase {
 
         for visible in ["Customer", "Supplier", "Item", "Quotation", "SalesOrder",
                         "SalesInvoice", "PurchaseOrder", "PurchaseInvoice",
-                        "StockEntry", "PaymentEntry", "Account"] {
+                        "StockEntry", "PaymentEntry", "Account", "Company"] {
             XCTAssertTrue(docTypes.contains(visible), "\(visible) must stay visible in normal mode")
         }
         for visibleLabel in ["Customers", "Suppliers", "Items", "Warehouses",
-                             "Contacts", "Addresses", "Stock Movements", "Payments"] {
+                            "Contacts", "Addresses", "Stock Movements", "Payments", "Business Profile"] {
             XCTAssertTrue(labels.contains(visibleLabel), "\(visibleLabel) must stay visible in normal mode")
         }
         for hidden in ["GL Entry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
