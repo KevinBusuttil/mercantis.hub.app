@@ -7,6 +7,9 @@ struct HubModule: Identifiable {
     let systemImage: String
     let tone: MercantisModuleTone
     let groups: [HubMenuGroup]
+    /// Reserved for future meaningful business alerts (e.g. overdue items).
+    /// Menu structure counts should not be shown as badges.
+    var businessBadge: String? = nil
     /// Whole-module visibility. Manufacturing is `.advanced` so it's optional
     /// for the typical small business; everything else is `.normal`.
     var visibility: HubVisibility = .normal
@@ -18,6 +21,14 @@ struct HubModule: Identifiable {
     /// The groups visible under the current advanced/normal preference.
     func visibleGroups(_ settings: HubVisibilitySettings) -> [HubMenuGroup] {
         groups.filter { settings.isVisible($0.visibility) }
+    }
+
+    func contains(_ item: HubMenuItem, settings: HubVisibilitySettings) -> Bool {
+        visibleGroups(settings).contains { $0.items.contains(item) }
+    }
+
+    func firstVisibleItem(_ settings: HubVisibilitySettings) -> HubMenuItem? {
+        visibleGroups(settings).flatMap(\.items).first
     }
 }
 
@@ -147,4 +158,12 @@ enum HubNavigation {
         Accounting.module,
         Setup.module
     ]
+
+    static func moduleID(for item: HubMenuItem?, settings: HubVisibilitySettings) -> String? {
+        guard let item else { return nil }
+        return allModules
+            .filter { settings.isVisible($0.visibility) }
+            .first(where: { $0.contains(item, settings: settings) })?
+            .id
+    }
 }

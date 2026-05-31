@@ -52,6 +52,12 @@ final class HubNavigationVisibilityTests: XCTestCase {
         return (docTypes, reports, labels, modules)
     }
 
+    private func visibleModules(showAdvanced: Bool) -> [HubModule] {
+        let settings = HubVisibilitySettings()
+        settings.showAdvanced = showAdvanced
+        return HubNavigation.allModules.filter { settings.isVisible($0.visibility) }
+    }
+
     func test_normal_mode_hides_internal_audit_and_manufacturing() {
         let (docTypes, reports, _, modules) = visibleIdentifiers(showAdvanced: false)
 
@@ -76,7 +82,7 @@ final class HubNavigationVisibilityTests: XCTestCase {
             XCTAssertTrue(docTypes.contains(visible), "\(visible) must stay visible in normal mode")
         }
         for visibleLabel in ["Customers", "Suppliers", "Items", "Warehouses",
-                             "Stock Movements", "Payments"] {
+                             "Contacts", "Addresses", "Stock Movements", "Payments"] {
             XCTAssertTrue(labels.contains(visibleLabel), "\(visibleLabel) must stay visible in normal mode")
         }
         for hidden in ["GL Entry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
@@ -101,7 +107,7 @@ final class HubNavigationVisibilityTests: XCTestCase {
     }
 
     func test_advanced_mode_reveals_internal_audit_and_manufacturing() {
-        let (docTypes, reports, _, _) = visibleIdentifiers(showAdvanced: true)
+        let (docTypes, reports, _, modules) = visibleIdentifiers(showAdvanced: true)
 
         for revealed in ["GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
                          "StockLedgerEntry", "JournalEntry",
@@ -109,6 +115,39 @@ final class HubNavigationVisibilityTests: XCTestCase {
             XCTAssertTrue(docTypes.contains(revealed), "\(revealed) must be visible in advanced mode")
         }
         XCTAssertTrue(reports.contains(HubReports.trialBalance.id), "Trial Balance must be visible in advanced mode")
+        XCTAssertTrue(modules.contains("Manufacturing"), "Manufacturing module must be visible in advanced mode")
+    }
+
+    func test_only_selected_module_resolves_as_expanded_module() {
+        let settings = HubVisibilitySettings()
+        settings.showAdvanced = false
+        let modules = visibleModules(showAdvanced: false)
+
+        let supplier = modules
+            .flatMap { $0.visibleGroups(settings) }
+            .flatMap(\.items)
+            .first(where: { $0.label == "Suppliers" })
+        let salesOrder = modules
+            .flatMap { $0.visibleGroups(settings) }
+            .flatMap(\.items)
+            .first(where: { $0.label == "Sales Orders" })
+
+        XCTAssertEqual(HubNavigation.moduleID(for: supplier, settings: settings), "crm")
+        XCTAssertEqual(HubNavigation.moduleID(for: salesOrder, settings: settings), "selling")
+
+        if let supplier {
+            let containingCount = modules.filter { $0.contains(supplier, settings: settings) }.count
+            XCTAssertEqual(containingCount, 1, "A selected sidebar item must map to exactly one expanded module")
+        } else {
+            XCTFail("Suppliers item not found")
+        }
+    }
+
+    func test_module_badges_are_business_alert_backed_only() {
+        let modules = visibleModules(showAdvanced: true)
+        for module in modules {
+            XCTAssertNil(module.businessBadge, "\(module.label) should not show menu-count badges")
+        }
     }
 
     func test_pos_shell_stays_out_of_navigation_in_all_modes() {

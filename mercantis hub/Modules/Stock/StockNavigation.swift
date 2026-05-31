@@ -24,7 +24,7 @@ extension Stock {
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.stockLedgerView.id,
                         label: HubReports.stockLedgerView.name)
-            ], visibility: .advanced),
+            ]),
             HubMenuGroup(label: "Dashboards", items: [
                 .dashboard(id: HubDashboards.inventoryOverview.id,
                            label: HubDashboards.inventoryOverview.name)
