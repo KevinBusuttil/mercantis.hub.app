@@ -17,6 +17,12 @@ Related planning docs in this folder:
   5 / 6 / 7 implementation plan.
 - [`HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md) — product evolution
   beyond the form-only DocType screens.
+- [`MICRO-SMALL-BUSINESS-ERP-ROADMAP.md`](MICRO-SMALL-BUSINESS-ERP-ROADMAP.md) —
+  micro/small-business ERP roadmap and implementation phases.
+- [`IMPLEMENTATION-TRACKER.md`](IMPLEMENTATION-TRACKER.md) —
+  cross-epic implementation tracking, status values, and session handoff protocol.
+- [`GITHUB-ISSUE-DRAFTS.md`](GITHUB-ISSUE-DRAFTS.md) —
+  ready-to-copy GitHub issue bodies for the ERP epic backlog.
 
 > **Core Phases A + B + C + D are all in (2026-05-05).** Fourteen
 > engine-level capabilities shipped in four stacked revisions on
