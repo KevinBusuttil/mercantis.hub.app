@@ -8,12 +8,13 @@ extension CRM {
         tone: .crm,
         groups: [
             HubMenuGroup(label: "Directory", items: [
-                .docType(CRM.customer),
-                .docType(CRM.contact),
-                .docType(CRM.address)
+                .docType(CRM.customer, label: "Customers"),
+                .docType(Buying.supplier, label: "Suppliers"),
+                .docType(CRM.contact, label: "Contacts"),
+                .docType(CRM.address, label: "Addresses")
             ]),
             HubMenuGroup(label: "Sales Pipeline", items: [
-                .docType(CRM.lead)
+                .docType(CRM.lead, label: "Leads")
             ])
         ]
     )

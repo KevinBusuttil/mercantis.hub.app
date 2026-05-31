@@ -26,30 +26,34 @@ final class HubNavigationVisibilityTests: XCTestCase {
         super.tearDown()
     }
 
-    /// Collects the DocType ids and report ids visible under a given mode,
+    /// Collects visible menu identifiers and labels under a given mode,
     /// applying the same module- and group-level filtering `RootView` uses.
-    private func visibleIdentifiers(showAdvanced: Bool) -> (docTypes: Set<String>, reports: Set<String>) {
+    private func visibleIdentifiers(showAdvanced: Bool) -> (docTypes: Set<String>, reports: Set<String>, labels: Set<String>, modules: Set<String>) {
         let settings = HubVisibilitySettings()
         settings.showAdvanced = showAdvanced
 
         var docTypes = Set<String>()
         var reports = Set<String>()
+        var labels = Set<String>()
+        var modules = Set<String>()
         for module in HubNavigation.allModules where settings.isVisible(module.visibility) {
+            modules.insert(module.label)
             for group in module.visibleGroups(settings) {
                 for item in group.items {
+                    labels.insert(item.label)
                     switch item {
-                    case .docType(let d):    docTypes.insert(d.id)
+                    case .docType(let d, _): docTypes.insert(d.id)
                     case .report(let id, _): reports.insert(id)
                     case .dashboard:         break
                     }
                 }
             }
         }
-        return (docTypes, reports)
+        return (docTypes, reports, labels, modules)
     }
 
     func test_normal_mode_hides_internal_audit_and_manufacturing() {
-        let (docTypes, reports) = visibleIdentifiers(showAdvanced: false)
+        let (docTypes, reports, _, modules) = visibleIdentifiers(showAdvanced: false)
 
         for hidden in ["GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
                        "StockLedgerEntry", "JournalEntry"] {
@@ -59,24 +63,45 @@ final class HubNavigationVisibilityTests: XCTestCase {
         for hidden in ["BOM", "WorkOrder", "JobCard", "ProductionPlan", "Workstation", "Operation"] {
             XCTAssertFalse(docTypes.contains(hidden), "Manufacturing DocType \(hidden) must be hidden in normal mode")
         }
+        XCTAssertFalse(modules.contains("Manufacturing"), "Manufacturing module must be hidden in normal mode")
         XCTAssertFalse(reports.contains(HubReports.trialBalance.id), "Trial Balance must be hidden in normal mode")
     }
 
     func test_normal_mode_keeps_everyday_surface() {
-        let (docTypes, reports) = visibleIdentifiers(showAdvanced: false)
+        let (docTypes, reports, labels, _) = visibleIdentifiers(showAdvanced: false)
 
         for visible in ["Customer", "Supplier", "Item", "Quotation", "SalesOrder",
                         "SalesInvoice", "PurchaseOrder", "PurchaseInvoice",
                         "StockEntry", "PaymentEntry", "Account"] {
             XCTAssertTrue(docTypes.contains(visible), "\(visible) must stay visible in normal mode")
         }
+        for visibleLabel in ["Customers", "Suppliers", "Items", "Warehouses",
+                             "Stock Movements", "Payments"] {
+            XCTAssertTrue(labels.contains(visibleLabel), "\(visibleLabel) must stay visible in normal mode")
+        }
+        for hidden in ["GL Entry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
+                       "StockLedgerEntry", "JournalEntry", "Manufacturing"] {
+            XCTAssertFalse(labels.contains(hidden), "\(hidden) should not be shown in normal mode")
+        }
         // User-facing reports remain available.
         XCTAssertTrue(reports.contains(HubReports.customerStatement.id))
         XCTAssertTrue(reports.contains(HubReports.supplierLedger.id))
     }
 
+    func test_menu_uses_friendly_labels_when_configured() {
+        let (_, _, labels, _) = visibleIdentifiers(showAdvanced: false)
+
+        XCTAssertTrue(labels.contains("Quotes"))
+        XCTAssertTrue(labels.contains("Stock Movements"))
+        XCTAssertTrue(labels.contains("Payments"))
+
+        XCTAssertFalse(labels.contains("Quotation"))
+        XCTAssertFalse(labels.contains("Stock Entry"))
+        XCTAssertFalse(labels.contains("Payment Entry"))
+    }
+
     func test_advanced_mode_reveals_internal_audit_and_manufacturing() {
-        let (docTypes, reports) = visibleIdentifiers(showAdvanced: true)
+        let (docTypes, reports, _, _) = visibleIdentifiers(showAdvanced: true)
 
         for revealed in ["GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
                          "StockLedgerEntry", "JournalEntry",
