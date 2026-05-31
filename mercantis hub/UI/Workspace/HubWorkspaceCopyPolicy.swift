@@ -19,6 +19,22 @@ enum HubWorkspaceCopyPolicy {
             emptyStateMessage: "Create your business profile to save company identity, default currency, warehouse, and account selections.",
             emptyStateHint: "Tip: keep one profile updated so future setup can reuse consistent defaults."
         ),
+        "FiscalYear": .init(
+            title: "Fiscal Years",
+            subtitle: "Define accounting periods for financial reporting and period close.",
+            primaryActionTitle: "New Fiscal Year",
+            emptyStateTitle: "No fiscal year yet",
+            emptyStateMessage: "Create your first fiscal year to define when your accounting period starts and ends.",
+            emptyStateHint: "Tip: most businesses use January–December or align with their tax reporting period."
+        ),
+        "NumberingSeries": .init(
+            title: "Numbering Series",
+            subtitle: "Configure automatic numbering for invoices, bills, deliveries, and payments.",
+            primaryActionTitle: "New Numbering Series",
+            emptyStateTitle: "No numbering configured",
+            emptyStateMessage: "Set up numbering patterns so each document gets a unique, sequential reference automatically.",
+            emptyStateHint: "Tip: use .YYYY. for year and .#### for a four-digit sequence number."
+        ),
         "Supplier": .init(
             title: "Suppliers",
             subtitle: "Manage supplier profiles, purchasing defaults, and payment details.",

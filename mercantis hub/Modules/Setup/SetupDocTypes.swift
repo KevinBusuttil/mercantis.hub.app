@@ -296,6 +296,82 @@ enum Setup {
         titleField: "brand_name"
     )
 
+    // MARK: - Fiscal Year
+
+    /// Fiscal Year defines an accounting period for reporting and period-close.
+    /// A micro/small business typically has one active fiscal year at a time.
+    static let fiscalYear = DocType(
+        id: "FiscalYear",
+        name: "Fiscal Year",
+        module: "Setup",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "year_name", label: "Year Name",
+                            type: .text, required: true, isSearchable: true),
+            FieldDefinition(key: "year_start_date", label: "Start Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "year_end_date", label: "End Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "is_closed", label: "Closed",
+                            type: .boolean, required: false, defaultValue: .bool(false))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["year_name"],
+        titleField: "year_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "period",
+                title: "Accounting Period",
+                helpText: "Define the start and end dates for this fiscal year.",
+                columns: 2,
+                fieldKeys: ["year_name", "year_start_date", "year_end_date", "is_closed"]
+            )
+        ])
+    )
+
+    // MARK: - Numbering Settings
+
+    /// Numbering Settings stores the naming series prefixes used by core
+    /// transactional documents (invoices, bills, deliveries, POS receipts,
+    /// payments). One record per business — edit to change the prefix/format.
+    static let numberingSeries = DocType(
+        id: "NumberingSeries",
+        name: "Numbering Series",
+        module: "Setup",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "sales_invoice_prefix", label: "Sales Invoice Prefix",
+                            type: .text, required: false, defaultValue: .string("SINV-.YYYY.-.####")),
+            FieldDefinition(key: "purchase_invoice_prefix", label: "Purchase Invoice / Bill Prefix",
+                            type: .text, required: false, defaultValue: .string("PINV-.YYYY.-.####")),
+            FieldDefinition(key: "delivery_prefix", label: "Delivery Prefix",
+                            type: .text, required: false, defaultValue: .string("DEL-.YYYY.-.####")),
+            FieldDefinition(key: "pos_receipt_prefix", label: "POS Receipt Prefix",
+                            type: .text, required: false, defaultValue: .string("POS-.YYYY.-.####")),
+            FieldDefinition(key: "payment_prefix", label: "Payment Prefix",
+                            type: .text, required: false, defaultValue: .string("PAY-.YYYY.-.####"))
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: [],
+        titleField: "sales_invoice_prefix",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "series",
+                title: "Document Numbering",
+                helpText: "Configure the naming pattern for each document type. Use .YYYY. for year and .#### for sequence.",
+                columns: 2,
+                fieldKeys: ["sales_invoice_prefix", "purchase_invoice_prefix",
+                            "delivery_prefix", "pos_receipt_prefix", "payment_prefix"]
+            )
+        ])
+    )
+
     /// Price list. Per-customer-group / per-currency pricing reference.
     /// Item-level price rows live in the `items` child table (Wall 5).
     static let priceList = DocType(
@@ -356,6 +432,8 @@ enum Setup {
 
     static let allDocTypes: [DocType] = [
         company,
+        fiscalYear,
+        numberingSeries,
         // Tree masters
         customerGroup,
         territory,

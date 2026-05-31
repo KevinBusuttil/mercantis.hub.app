@@ -110,6 +110,8 @@ enum HubMenuItem: Identifiable {
         case "Brand":            return "rosette"
         case "UOM":              return "ruler"
         case "CostCenter":       return "chart.pie"
+        case "FiscalYear":       return "calendar.badge.clock"
+        case "NumberingSeries":  return "number"
         case "GLEntry":          return "tablecells"
         case "CustTrans":        return "person.text.rectangle"
         case "VendTrans":        return "shippingbox"
