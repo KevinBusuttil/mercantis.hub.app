@@ -2,14 +2,14 @@
 
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|
-| Business Setup Foundation | TBD | Not started | - | - | 2026-05-31 | None | First priority |
-| VAT / Tax Foundation | TBD | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
-| Stock Balance / Inventory Availability | TBD | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
-| Purchase Receipt and Sales Delivery | TBD | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |
-| Guided Payments | TBD | Not started | - | - | 2026-05-31 | Existing Payment Entry | Improves Money UX |
-| POS v1 | TBD | Not started | - | - | 2026-05-31 | Business Setup, VAT, Stock Balance | Turns POS shell into real module |
-| Delivery Routes and Tracking | TBD | Not started | - | - | 2026-05-31 | Sales Delivery | Manual routing first |
-| Presets and Onboarding | TBD | Not started | - | - | 2026-05-31 | Business Setup | Product packaging |
+| Business Setup Foundation | #51 | Not started | - | - | 2026-05-31 | None | First priority |
+| VAT / Tax Foundation | #52 | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
+| Stock Balance / Inventory Availability | #53 | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
+| Purchase Receipt and Sales Delivery | #54 | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |
+| Guided Payments | #55 | Not started | - | - | 2026-05-31 | Existing Payment Entry | Improves Money UX |
+| POS v1 | #56 | Not started | - | - | 2026-05-31 | Business Setup, VAT, Stock Balance | Turns POS shell into real module |
+| Delivery Routes and Tracking | #57 | Not started | - | - | 2026-05-31 | Sales Delivery | Manual routing first |
+| Presets and Onboarding | #58 | Not started | - | - | 2026-05-31 | Business Setup | Product packaging |
 
 ## Session handoff protocol
 
@@ -39,4 +39,4 @@ Use:
 Feature PRs should be small and outcome-based. Avoid large mixed PRs.
 
 ## Issue creation note
-GitHub issues were not created by the coding agent. See Docs/GITHUB-ISSUE-DRAFTS.md for ready-to-copy issue bodies.
+GitHub roadmap epic issues now exist. Use the linked issue numbers above as the source of truth.
