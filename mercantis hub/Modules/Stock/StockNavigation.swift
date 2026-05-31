@@ -8,12 +8,15 @@ extension Stock {
         systemImage: "archivebox",
         tone: .stock,
         groups: [
-            HubMenuGroup(label: "Movements", items: [
+            HubMenuGroup(label: "Stock Movements", items: [
                 .docType(Stock.stockEntry)
             ]),
-            HubMenuGroup(label: "Ledger", items: [
+            // The Stock Ledger is the internal append-only audit table; it
+            // powers the Stock Ledger View report, so it's hidden from the
+            // primary surface and surfaced only in advanced mode.
+            HubMenuGroup(label: "Stock Ledger", items: [
                 .docType(Stock.stockLedgerEntry)
-            ]),
+            ], visibility: .advanced),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.stockLedgerView.id,
                         label: HubReports.stockLedgerView.name)

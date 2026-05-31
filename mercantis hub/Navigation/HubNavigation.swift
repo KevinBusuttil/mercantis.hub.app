@@ -7,15 +7,27 @@ struct HubModule: Identifiable {
     let systemImage: String
     let tone: MercantisModuleTone
     let groups: [HubMenuGroup]
+    /// Whole-module visibility. Manufacturing is `.advanced` so it's optional
+    /// for the typical small business; everything else is `.normal`.
+    var visibility: HubVisibility = .normal
 
     var itemCount: Int {
         groups.reduce(0) { $0 + $1.items.count }
+    }
+
+    /// The groups visible under the current advanced/normal preference.
+    func visibleGroups(_ settings: HubVisibilitySettings) -> [HubMenuGroup] {
+        groups.filter { settings.isVisible($0.visibility) }
     }
 }
 
 struct HubMenuGroup {
     let label: String?
     let items: [HubMenuItem]
+    /// Group-level visibility. Audit/ledger groups (GL Entry, CustTrans,
+    /// VendTrans, Settlement, Tax Transaction, Stock Ledger, Journals) are
+    /// `.advanced` so they stay hidden from the everyday surface.
+    var visibility: HubVisibility = .normal
 }
 
 enum HubMenuItem: Identifiable {

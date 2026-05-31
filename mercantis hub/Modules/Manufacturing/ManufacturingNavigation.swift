@@ -22,6 +22,9 @@ extension Manufacturing {
                 .dashboard(id: HubDashboards.manufacturingOverview.id,
                            label: HubDashboards.manufacturingOverview.name)
             ])
-        ]
+        ],
+        // Manufacturing is optional for most small businesses — surface the
+        // whole module only when advanced mode is enabled.
+        visibility: .advanced
     )
 }
