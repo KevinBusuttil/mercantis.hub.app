@@ -1,5 +1,6 @@
 import SwiftUI
 import MercantisCore
+import MercantisCoreUI
 
 /// Default landing page for Mercantis Hub.
 ///
@@ -79,7 +80,7 @@ struct HubHomeView: View {
             HStack(spacing: 10) {
                 Image(systemName: "shippingbox.fill")
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(MercantisTheme.brandPrimary)
                 Text(HubManifest.appName)
                     .font(.largeTitle.weight(.semibold))
             }
@@ -100,7 +101,7 @@ struct HubHomeView: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "wand.and.stars")
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.tint)
+                .foregroundStyle(MercantisTheme.brandPrimary)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Explore with a sample business")
                     .font(.headline)
@@ -109,7 +110,7 @@ struct HubHomeView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Load Sample Business…") { showSampleConfirm = true }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(MercantisPrimaryButtonStyle())
                     .padding(.top, 4)
             }
             Spacer(minLength: 0)
@@ -120,7 +121,7 @@ struct HubHomeView: View {
     private func sampleResultBanner(_ message: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(MercantisTheme.success)
             Text(message)
                 .font(.callout)
             Spacer(minLength: 0)
@@ -160,9 +161,9 @@ struct HubHomeView: View {
         }
         var color: Color {
             switch self {
-            case .ready:      return .green
-            case .needsSetup: return .orange
-            case .comingSoon: return .secondary
+            case .ready:      return MercantisTheme.success
+            case .needsSetup: return MercantisTheme.warning
+            case .comingSoon: return MercantisTheme.textMuted
             }
         }
         var systemImage: String {
@@ -780,13 +781,13 @@ private extension View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                tinted ? AnyShapeStyle(Color.accentColor.opacity(0.08))
+                tinted ? AnyShapeStyle(MercantisTheme.brandPrimarySoft)
                        : AnyShapeStyle(.background.secondary),
-                in: RoundedRectangle(cornerRadius: 10)
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(tinted ? Color.accentColor.opacity(0.35) : Color(nsColor: .separatorColor),
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(tinted ? MercantisTheme.brandPrimaryBorder : Color(nsColor: .separatorColor),
                             lineWidth: 1)
             )
     }

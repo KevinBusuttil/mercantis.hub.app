@@ -20,7 +20,7 @@ struct CustomerFormView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             if let error = errorMessage {
-                Text(error).font(.callout).foregroundStyle(.red)
+                Text(error).font(.callout).foregroundStyle(MercantisTheme.danger)
             }
         }
         .padding()

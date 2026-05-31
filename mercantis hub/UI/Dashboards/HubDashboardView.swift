@@ -1,5 +1,6 @@
 import SwiftUI
 import MercantisCore
+import MercantisCoreUI
 
 /// SwiftUI consumer of `DashboardEngine.resolve(dashboardId:)`. Renders
 /// each `DashboardWidgetResult` case as a self-contained tile so one
@@ -153,14 +154,14 @@ struct HubDashboardView: View {
                 Spacer()
                 Image(systemName: "arrow.forward.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(MercantisTheme.brandPrimary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(.tint.opacity(0.2), lineWidth: 1)
+                    .stroke(MercantisTheme.brandPrimaryBorder, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -170,7 +171,7 @@ struct HubDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(MercantisTheme.warning)
             Text(reason)
                 .font(.caption)
                 .foregroundStyle(.secondary)

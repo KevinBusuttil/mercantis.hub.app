@@ -146,10 +146,12 @@ private struct HubRecordWorkspaceView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.callout)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(MercantisTheme.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                     .padding(.vertical, 8)
+                    .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.horizontal)
             }
             RecordCollectionHostView(
                 preferenceKey: "hub.\(docType.id)",
@@ -343,13 +345,15 @@ private struct HubDocumentEditor: View {
                 if let error = errorMessage {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(MercantisTheme.danger)
                         Text(error)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(MercantisTheme.danger)
                             .lineLimit(2)
                         Spacer()
                     }
                     .font(.callout)
+                    .padding(10)
+                    .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
                 }
             }
             .padding()
@@ -383,18 +387,23 @@ private struct HubDocumentEditor: View {
     }
 
     private var statusBadge: some View {
+        // The lifecycle (docStatus) badge uses Core's semantic status tones so
+        // Draft / Submitted / Cancelled read with the same business-grade
+        // colouring as the list. The workflow state (e.g. "Paid", "Overdue")
+        // is shown as a second semantic badge when it differs, so a single
+        // record can surface both its lifecycle and its operational state.
         let docStatusLabel: String
-        let tint: Color
+        let docStatusTone: MercantisStatusTone
         switch document.docStatus {
         case 1:
             docStatusLabel = "Submitted"
-            tint = .blue
+            docStatusTone = .submitted
         case 2:
             docStatusLabel = "Cancelled"
-            tint = .red
+            docStatusTone = .cancelled
         default:
             docStatusLabel = "Draft"
-            tint = .gray
+            docStatusTone = .draft
         }
 
         let workflowLabel: String? = {
@@ -404,19 +413,11 @@ private struct HubDocumentEditor: View {
         }()
 
         return HStack(spacing: 6) {
-            Circle().fill(tint).frame(width: 8, height: 8)
-            Text(docStatusLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
+            MercantisStatusBadge(text: docStatusLabel, tone: docStatusTone)
             if let workflowLabel {
-                Text("· \(workflowLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                MercantisStatusBadge(workflowLabel)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(tint.opacity(0.12), in: Capsule())
     }
 
     // MARK: - Action row
