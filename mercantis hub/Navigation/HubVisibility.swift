@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 /// How prominent a navigation item is for a typical small-business user.
 ///
