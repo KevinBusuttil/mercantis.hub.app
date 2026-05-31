@@ -93,6 +93,7 @@ enum HubMenuItem: Identifiable {
         case "StockEntry":       return "tray.full"
         case "StockLedgerEntry": return "list.bullet.indent"
         case "Warehouse":        return "building.2"
+        case "Company":          return "building"
         case "Workstation":      return "gearshape"
         case "Operation":        return "wrench.and.screwdriver"
         case "BOM":              return "list.bullet.indent"

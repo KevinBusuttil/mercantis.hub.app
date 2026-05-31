@@ -206,12 +206,9 @@ struct HubHomeView: View {
         }
 
         return [
-            // Business profile has no dedicated Company DocType yet, so it is
-            // shown as planned rather than pretending it's configurable.
             item("profile", "Business profile",
                  "Company name, registration, and defaults.",
-                 docTypeID: HubManifest.docType(for: "Company") != nil ? "Company" : nil,
-                 planned: HubManifest.docType(for: "Company") == nil),
+                 docTypeID: "Company"),
             item("currency", "Currency",
                  "The currencies you trade and report in.",
                  docTypeID: "Currency"),

@@ -2,7 +2,7 @@
 
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|
-| Business Setup Foundation | #51 | Not started | - | - | 2026-05-31 | None | First priority |
+| Business Setup Foundation | #51 | In progress | `copilot/51-business-setup-foundation` | Draft (this PR) | 2026-05-31 | None | Slice 1: Business Profile setup foundation |
 | VAT / Tax Foundation | #52 | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
 | Stock Balance / Inventory Availability | #53 | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
 | Purchase Receipt and Sales Delivery | #54 | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |

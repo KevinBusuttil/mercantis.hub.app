@@ -7,6 +7,9 @@ extension Setup {
         systemImage: "gearshape",
         tone: .setup,
         groups: [
+            HubMenuGroup(label: "Business", items: [
+                .docType(Setup.company, label: "Business Profile")
+            ]),
             HubMenuGroup(label: "Customer", items: [
                 .docType(Setup.customerGroup),
                 .docType(Setup.territory)

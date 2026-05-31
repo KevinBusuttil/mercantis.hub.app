@@ -11,6 +11,14 @@ struct HubWorkspaceCopy {
 
 enum HubWorkspaceCopyPolicy {
     private static let mappedCopy: [String: HubWorkspaceCopy] = [
+        "Company": .init(
+            title: "Business Profile",
+            subtitle: "Store your business identity and operational defaults in one place.",
+            primaryActionTitle: "New Business Profile",
+            emptyStateTitle: "No business profile yet",
+            emptyStateMessage: "Create your business profile to save company identity, default currency, warehouse, and account selections.",
+            emptyStateHint: "Tip: keep one profile updated so future setup can reuse consistent defaults."
+        ),
         "Supplier": .init(
             title: "Suppliers",
             subtitle: "Manage supplier profiles, purchasing defaults, and payment details.",
