@@ -17,7 +17,7 @@ extension Accounting {
             ]),
             HubMenuGroup(label: "Receivables", items: [
                 .report(id: HubReports.customerAging.id,
-                        label: "Customer Balances"),
+                        label: "Customer Aging"),
                 .report(id: HubReports.customerStatement.id,
                         label: "Customer Statement")
             ]),

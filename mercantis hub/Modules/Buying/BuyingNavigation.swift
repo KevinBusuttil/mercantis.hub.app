@@ -13,7 +13,7 @@ extension Buying {
                 .docType(Buying.purchaseInvoice, label: "Purchase Invoices"),
                 .docType(Accounting.paymentEntry, label: "Pay Supplier")
             ]),
-            HubMenuGroup(label: "Procurement (Advanced)", items: [
+            HubMenuGroup(label: "Procurement", items: [
                 .docType(Buying.supplierQuotation, label: "Supplier Quotations")
             ], visibility: .advanced),
             HubMenuGroup(label: "Reports", items: [
