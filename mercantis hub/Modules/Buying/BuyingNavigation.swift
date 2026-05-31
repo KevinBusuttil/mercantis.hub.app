@@ -8,19 +8,21 @@ extension Buying {
         systemImage: "shippingbox",
         tone: .buying,
         groups: [
-            HubMenuGroup(label: "Suppliers", items: [
-                .docType(Buying.supplier)
-            ]),
             HubMenuGroup(label: "Transactions", items: [
-                .docType(Buying.supplierQuotation),
-                .docType(Buying.purchaseOrder),
-                .docType(Buying.purchaseInvoice)
+                .docType(Buying.purchaseOrder, label: "Purchase Orders"),
+                .docType(Buying.purchaseInvoice, label: "Purchase Invoices"),
+                .docType(Accounting.paymentEntry, label: "Pay Supplier")
             ]),
+            HubMenuGroup(label: "Procurement (Advanced)", items: [
+                .docType(Buying.supplierQuotation, label: "Supplier Quotations")
+            ], visibility: .advanced),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.purchaseRegister.id,
-                        label: HubReports.purchaseRegister.name),
+                        label: HubReports.purchaseRegister.name)
+            ]),
+            HubMenuGroup(label: "Supplier Ledger", items: [
                 .report(id: HubReports.supplierLedger.id,
-                        label: HubReports.supplierLedger.name)
+                        label: "Supplier Balances")
             ])
         ]
     )

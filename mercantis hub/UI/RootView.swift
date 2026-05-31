@@ -111,7 +111,7 @@ struct RootView: View {
     private var detail: some View {
         Group {
             switch selection {
-            case .docType(let docType):
+            case .docType(let docType, _):
                 HubRecordWorkspaceView(
                     docType: docType,
                     engine: engine,

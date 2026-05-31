@@ -31,13 +31,13 @@ struct HubMenuGroup {
 }
 
 enum HubMenuItem: Identifiable {
-    case docType(DocType)
+    case docType(DocType, label: String? = nil)
     case report(id: String, label: String)
     case dashboard(id: String, label: String)
 
     var id: String {
         switch self {
-        case .docType(let d):       return "doctype:\(d.id)"
+        case .docType(let d, _):    return "doctype:\(d.id)"
         case .report(let id, _):    return "report:\(id)"
         case .dashboard(let id, _): return "dashboard:\(id)"
         }
@@ -45,7 +45,8 @@ enum HubMenuItem: Identifiable {
 
     var label: String {
         switch self {
-        case .docType(let d):      return d.name
+        case .docType(let d, let friendlyLabel):
+            return friendlyLabel ?? d.name
         case .report(_, let l):    return l
         case .dashboard(_, let l): return l
         }
@@ -53,7 +54,7 @@ enum HubMenuItem: Identifiable {
 
     var systemImage: String {
         switch self {
-        case .docType(let d):
+        case .docType(let d, _):
             return HubMenuItem.symbol(forDocTypeId: d.id)
         case .report:
             return "chart.bar"
@@ -109,10 +110,30 @@ enum HubMenuItem: Identifiable {
 
 extension HubMenuItem: Hashable {
     func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+        switch self {
+        case .docType(let d, let label):
+            hasher.combine("doctype")
+            hasher.combine(d.id)
+            hasher.combine(label ?? "")
+        case .report(let id, _):
+            hasher.combine("report")
+            hasher.combine(id)
+        case .dashboard(let id, _):
+            hasher.combine("dashboard")
+            hasher.combine(id)
+        }
     }
     static func == (lhs: HubMenuItem, rhs: HubMenuItem) -> Bool {
-        lhs.id == rhs.id
+        switch (lhs, rhs) {
+        case let (.docType(ld, ll), .docType(rd, rl)):
+            return ld.id == rd.id && ll == rl
+        case let (.report(lid, _), .report(rid, _)):
+            return lid == rid
+        case let (.dashboard(lid, _), .dashboard(rid, _)):
+            return lid == rid
+        default:
+            return false
+        }
     }
 }
 

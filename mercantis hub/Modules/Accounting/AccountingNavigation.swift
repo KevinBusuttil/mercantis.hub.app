@@ -13,7 +13,17 @@ extension Accounting {
             ]),
             // Payments stay on the everyday surface.
             HubMenuGroup(label: "Payments", items: [
-                .docType(Accounting.paymentEntry)
+                .docType(Accounting.paymentEntry, label: "Payments")
+            ]),
+            HubMenuGroup(label: "Receivables", items: [
+                .report(id: HubReports.customerAging.id,
+                        label: "Customer Balances"),
+                .report(id: HubReports.customerStatement.id,
+                        label: "Customer Statement")
+            ]),
+            HubMenuGroup(label: "Payables", items: [
+                .report(id: HubReports.supplierLedger.id,
+                        label: "Supplier Ledger")
             ]),
             // Journals are an accountant tool — hidden until advanced mode.
             HubMenuGroup(label: "Journals", items: [

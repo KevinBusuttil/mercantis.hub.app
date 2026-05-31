@@ -8,21 +8,17 @@ extension Selling {
         systemImage: "cart",
         tone: .selling,
         groups: [
-            HubMenuGroup(label: "Catalogue", items: [
-                .docType(Selling.item)
-            ]),
             HubMenuGroup(label: "Transactions", items: [
-                .docType(Selling.quotation),
-                .docType(Selling.salesOrder),
-                .docType(Selling.salesInvoice)
+                .docType(Selling.quotation, label: "Quotes"),
+                .docType(Selling.salesOrder, label: "Sales Orders"),
+                .docType(Selling.salesInvoice, label: "Sales Invoices"),
+                .docType(Accounting.paymentEntry, label: "Receive Payment")
             ]),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.salesRegister.id,
                         label: HubReports.salesRegister.name),
                 .report(id: HubReports.customerAging.id,
-                        label: HubReports.customerAging.name),
-                .report(id: HubReports.customerStatement.id,
-                        label: HubReports.customerStatement.name)
+                        label: HubReports.customerAging.name)
             ]),
             HubMenuGroup(label: "Dashboards", items: [
                 .dashboard(id: HubDashboards.salesOverview.id,
