@@ -201,7 +201,14 @@ public enum HubReports: Sendable {
         )
         let rows: [[String?]] = documents.map { doc in
             report.columns.map { col in
-                format(value: lookup(key: col, in: doc))
+                // Render the status column with the document's business wording
+                // (e.g. "Posted" / "Paid") instead of the raw workflow state.
+                if col == "status" {
+                    return HubWorkflowDisplayPolicy.policy
+                        .statusDisplay(docTypeId: report.docType, state: doc.status)
+                        .label
+                }
+                return format(value: lookup(key: col, in: doc))
             }
         }
         return ReportResult(columns: report.columns, rows: rows)

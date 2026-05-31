@@ -88,6 +88,12 @@ own wording while the engine call underneath is always the same
 | Job Card | **Completed** | Complete Job | Cancel |
 | Production Plan | **Planned** | Release Plan | Cancel |
 
+**Amend** (re-opening a cancelled document as a new draft) is also relabelled
+per type: Sales Invoice → "Create Corrected Invoice", Purchase Invoice →
+"Create Corrected Bill", Stock Entry → "Create Correction", Journal Entry →
+"Create Reversal / Correction", Sales/Purchase Order → "Create Revised Order".
+Unmapped DocTypes fall back to "Amend".
+
 Operational (business) statuses such as **Paid**, **Overdue**, **Accepted**,
 **Lost**, **In Progress**, **Completed**, **Reconciled**, **Closed** are
 separate from the lifecycle and shown as a second badge when they add
@@ -120,12 +126,18 @@ a strength of Mercantis and is fully preserved:
 | **VendTrans** | posted purchase invoices / supplier payments | supplier subledger → ledger, aging |
 | **StockLedgerEntry** | posted stock movements | append-only stock history → balances |
 | **Settlement** | payment ↔ invoice matching | open-item settlement |
-| **TaxTrans** | posted documents with tax | tax reporting |
+| **TaxTrans** | _reserved — not yet derived_ | tax reporting (planned) |
 
 `LedgerDerivationService` (and `ManufacturingDerivationService`) derive these
 from submit/cancel/transition events with **deterministic ids** so the
 operation is replay-safe. Cancelling a posted document creates **reversal**
 rows rather than deleting history.
+
+> **TaxTrans status:** the `TaxTrans` DocType exists and is part of the
+> internal/audit navigation, but `LedgerDerivationService` does **not** write
+> `TaxTrans` rows yet — it currently derives StockLedgerEntry, GLEntry,
+> CustTrans, VendTrans and Settlement. `TaxTrans` is reserved for a future
+> tax-derivation pass; treat it as planned, not active.
 
 User-facing copy explains this simply, e.g. on posting:
 *"Posting this document locks most fields and automatically creates the

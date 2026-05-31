@@ -34,6 +34,8 @@ enum HubWorkflowDisplayPolicy {
         "Posting this stock movement updates stock history and creates stock ledger entries."
     private static let reverseStockConfirmation =
         "Reversing this stock movement creates compensating stock ledger entries. The audit trail is retained."
+    private static let completeWorkOrderConfirmation =
+        "Completing this work order posts a manufacturing stock movement: raw materials are consumed and the finished item is received, creating stock ledger entries."
 
     // MARK: - Mapping table
 
@@ -72,6 +74,7 @@ enum HubWorkflowDisplayPolicy {
                 "Close":   .init(label: "Close Order"),
                 "Re-open": .init(label: "Re-open Order"),
                 "Cancel":  .init(label: "Cancel Order"),
+                "Amend":   .init(label: "Create Revised Order"),
             ]
         ),
 
@@ -87,6 +90,7 @@ enum HubWorkflowDisplayPolicy {
             actions: [
                 "Submit":          .init(label: "Post Invoice", confirmation: postLedgerConfirmation),
                 "Cancel":          .init(label: "Cancel Invoice", confirmation: cancelLedgerConfirmation),
+                "Amend":           .init(label: "Create Corrected Invoice"),
                 "Mark as Paid":    .init(label: "Mark as Paid"),
                 "Mark as Overdue": .init(label: "Mark as Overdue"),
             ]
@@ -122,6 +126,7 @@ enum HubWorkflowDisplayPolicy {
                 "Close":   .init(label: "Close Order"),
                 "Re-open": .init(label: "Re-open Order"),
                 "Cancel":  .init(label: "Cancel Order"),
+                "Amend":   .init(label: "Create Revised Order"),
             ]
         ),
 
@@ -137,6 +142,7 @@ enum HubWorkflowDisplayPolicy {
             actions: [
                 "Submit":          .init(label: "Post Bill", confirmation: postLedgerConfirmation),
                 "Cancel":          .init(label: "Cancel Bill", confirmation: cancelLedgerConfirmation),
+                "Amend":           .init(label: "Create Corrected Bill"),
                 "Mark as Paid":    .init(label: "Mark as Paid"),
                 "Mark as Overdue": .init(label: "Mark as Overdue"),
             ]
@@ -155,6 +161,7 @@ enum HubWorkflowDisplayPolicy {
             actions: [
                 "Submit": .init(label: "Post Stock Movement", confirmation: postStockConfirmation),
                 "Cancel": .init(label: "Reverse Stock Movement", confirmation: reverseStockConfirmation),
+                "Amend":  .init(label: "Create Correction"),
             ]
         ),
 
@@ -170,6 +177,7 @@ enum HubWorkflowDisplayPolicy {
             actions: [
                 "Submit": .init(label: "Post Journal", confirmation: postLedgerConfirmation),
                 "Cancel": .init(label: "Reverse Journal", confirmation: cancelLedgerConfirmation),
+                "Amend":  .init(label: "Create Reversal / Correction"),
             ]
         ),
 
@@ -220,7 +228,7 @@ enum HubWorkflowDisplayPolicy {
             actions: [
                 "Submit":   .init(label: "Release Work Order"),
                 "Start":    .init(label: "Start"),
-                "Complete": .init(label: "Complete"),
+                "Complete": .init(label: "Complete", confirmation: completeWorkOrderConfirmation),
                 "Stop":     .init(label: "Stop"),
                 "Resume":   .init(label: "Resume"),
                 "Cancel":   .init(label: "Cancel"),
