@@ -193,3 +193,30 @@ rows are allowed.
 - Overuse shadows, gradients, or translucency.
 - Expose technical internals (audit ledgers, manufacturing) by default —
   preserve Advanced / Accountant visibility rules.
+
+## 12. Sidebar + workspace navigation rules
+
+1. Sidebar shows stable top-level modules (Contacts, Sell, Buy, Stock, Money,
+   Setup; Reports only if it exists as its own module).
+2. **Single-expanded-module model:** only the module containing the current
+   selection expands; all others stay collapsed top-level rows.
+3. Module badges must not show menu-structure counts. Reserve badges for
+   future meaningful business alerts only.
+4. Manufacturing and internal ledgers (`GLEntry`, `CustTrans`, `VendTrans`,
+   `Settlement`, `TaxTrans`, `StockLedgerEntry`, `JournalEntry`, Trial Balance)
+   stay hidden unless Advanced / Accountant mode is enabled.
+
+## 13. Workspace copy + empty-state rules
+
+1. Hub owns workspace copy via `HubWorkspaceCopyPolicy`
+   (`DocType id -> title/subtitle/primary action/empty-state copy`).
+2. Prefer business wording over generated strings (for example Suppliers:
+   "Manage supplier profiles, purchasing defaults, and payment details.").
+3. Friendly create labels are required when configured (for example "New Bill"
+   instead of raw DocType names).
+4. With zero records, render a **single centered full-width empty state** with
+   icon, business explanation, and primary CTA.
+5. Do not render the split list/detail "Select a record" browse layout until at
+   least one record exists.
+6. Keep workspace filter/search controls compact and native-feeling; avoid
+   large dark/heavy toolbar blocks.

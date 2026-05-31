@@ -28,6 +28,10 @@ struct RootView: View {
         HubNavigation.allModules.filter { visibility.isVisible($0.visibility) }
     }
 
+    private var activeModuleID: String? {
+        HubNavigation.moduleID(for: selection, settings: visibility) ?? visibleModules.first?.id
+    }
+
     private var sidebar: some View {
         List(selection: $selection) {
             Section {
@@ -44,49 +48,57 @@ struct RootView: View {
             ForEach(visibleModules) { module in
                 let groups = module.visibleGroups(visibility)
                 Section {
-                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                        // Key the collapse state by label so it stays stable
-                        // when advanced groups appear / disappear.
-                        let key = "\(module.id)::\(group.label ?? "ungrouped")"
-                        if let label = group.label {
-                            MercantisSidebarGroupHeader(
-                                title: label,
-                                isCollapsed: collapsedGroups.contains(key)
-                            ) {
-                                withAnimation(.easeInOut(duration: 0.18)) {
+                    Button {
+                        if let first = module.firstVisibleItem(visibility) {
+                            selection = first
+                        }
+                    } label: {
+                        MercantisSidebarModuleHeader(
+                            title: module.label,
+                            systemImage: module.systemImage,
+                            tone: module.tone,
+                            badge: module.businessBadge
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
+                    if activeModuleID == module.id {
+                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                            // Key the collapse state by label so it stays stable
+                            // when advanced groups appear / disappear.
+                            let key = "\(module.id)::\(group.label ?? "ungrouped")"
+                            if let label = group.label {
+                                MercantisSidebarGroupHeader(
+                                    title: label,
+                                    isCollapsed: collapsedGroups.contains(key)
+                                ) {
                                     if collapsedGroups.contains(key) {
                                         collapsedGroups.remove(key)
                                     } else {
                                         collapsedGroups.insert(key)
                                     }
                                 }
-                            }
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                        }
-                        if group.label == nil || !collapsedGroups.contains(key) {
-                            ForEach(group.items, id: \.self) { item in
-                                MercantisSidebarRow(
-                                    title: item.label,
-                                    systemImage: item.systemImage,
-                                    tone: module.tone,
-                                    isSelected: selection == item,
-                                    indentation: group.label == nil ? 0 : 6
-                                )
-                                .tag(item)
                                 .listRowBackground(Color.clear)
                                 .listRowSeparator(.hidden)
                             }
+                            if group.label == nil || !collapsedGroups.contains(key) {
+                                ForEach(group.items, id: \.self) { item in
+                                    MercantisSidebarRow(
+                                        title: item.label,
+                                        systemImage: item.systemImage,
+                                        tone: module.tone,
+                                        isSelected: selection == item,
+                                        indentation: group.label == nil ? 0 : 6
+                                    )
+                                    .tag(item)
+                                    .listRowBackground(selection == item ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+                                    .listRowSeparator(.hidden)
+                                }
+                            }
                         }
                     }
-                } header: {
-                    let visibleCount = groups.reduce(0) { $0 + $1.items.count }
-                    MercantisSidebarModuleHeader(
-                        title: module.label,
-                        systemImage: module.systemImage,
-                        tone: module.tone,
-                        badge: visibleCount > 0 ? "\(visibleCount)" : nil
-                    )
                 }
             }
 
@@ -166,8 +178,11 @@ private struct HubRecordWorkspaceView: View {
     /// Flipped by the File ▸ New (⌘N) menu command to open the create flow
     /// for this workspace's DocType.
     @State private var createTrigger = false
+    @State private var showCollectionWorkspace = false
 
     var body: some View {
+        let copy = HubWorkspaceCopyPolicy.copy(for: docType)
+
         VStack(spacing: 0) {
             if let errorMessage {
                 Text(errorMessage)
@@ -179,82 +194,135 @@ private struct HubRecordWorkspaceView: View {
                     .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal)
             }
-            RecordCollectionHostView(
-                preferenceKey: "hub.\(docType.id)",
-                docType: docType,
-                workspaceTitle: pluralizedTitle(for: docType),
-                workspaceSubtitle: "Manage \(docType.name) records",
-                workspaceSymbol: symbol(for: docType),
-                documents: documents,
-                configuration: RecordCollectionViewConfiguration(
-                    supportedViewModes: [.list, .browse, .detail],
-                    // Default to browse so the editor is visible the moment
-                    // a row is selected; otherwise users in .list mode have
-                    // no clear path from "row clicked" to "fields visible".
-                    defaultViewMode: .browse
-                ),
-                primaryCreateActionTitle: "New \(docType.name)",
-                onCreateDocument: { makeDraftDocument() },
-                onSaveDocument: { document in
-                    let saved = try engine.save(document)
-                    reloadDocumentsSafely()
-                    // Refetch so the host's binding picks up the persisted
-                    // `updatedAt`; without this the next save throws
-                    // `concurrencyConflict` (optimistic-concurrency contract).
-                    return (try? engine.fetch(docType: docType.id, id: saved.id)) ?? saved
-                },
-                onDeleteDocument: { document in
-                    try engine.delete(docType: docType.id, id: document.id)
-                    reloadDocumentsSafely()
-                },
-                customFields: customFields,
-                onAddCustomField: { field in
-                    try customFieldStore.add(field)
-                    reloadCustomFieldsSafely()
-                },
-                onUpdateCustomField: { field in
-                    try customFieldStore.update(field)
-                    reloadCustomFieldsSafely()
-                },
-                onRemoveCustomField: { id in
-                    try customFieldStore.remove(id: id)
-                    reloadCustomFieldsSafely()
-                },
-                externalCreateTrigger: $createTrigger,
-                linkSearchProvider: { targetDocType, _ in
-                    (try? engine.list(docType: targetDocType)) ?? []
-                },
-                linkResolveProvider: { targetDocType, id in
-                    try? engine.fetch(docType: targetDocType, id: id)
-                },
-                childDocTypeProvider: { HubManifest.docType(for: $0) },
-                detailEditor: { composedDocType, binding in
-                    AnyView(
-                        HubDocumentEditor(
-                            // composedDocType already has any custom fields merged
-                            // into `.fields`, so the form renders end-user
-                            // additions alongside the manifest-declared fields.
-                            docType: composedDocType,
-                            engine: engine,
-                            workflowEngine: workflowEngine,
-                            document: binding,
-                            onPersist: { reloadDocumentsSafely() }
+            if documents.isEmpty && !showCollectionWorkspace {
+                zeroRecordWorkspaceEmptyState(copy: copy)
+            } else {
+                RecordCollectionHostView(
+                    preferenceKey: "hub.\(docType.id)",
+                    docType: docType,
+                    workspaceTitle: copy.title,
+                    workspaceSubtitle: copy.subtitle,
+                    workspaceSymbol: symbol(for: docType),
+                    documents: documents,
+                    configuration: RecordCollectionViewConfiguration(
+                        supportedViewModes: [.list, .browse, .detail],
+                        // Default to browse so the editor is visible the moment
+                        // a row is selected; otherwise users in .list mode have
+                        // no clear path from "row clicked" to "fields visible".
+                        defaultViewMode: .browse
+                    ),
+                    primaryCreateActionTitle: copy.primaryActionTitle,
+                    onCreateDocument: { makeDraftDocument() },
+                    onSaveDocument: { document in
+                        let saved = try engine.save(document)
+                        reloadDocumentsSafely()
+                        // Refetch so the host's binding picks up the persisted
+                        // `updatedAt`; without this the next save throws
+                        // `concurrencyConflict` (optimistic-concurrency contract).
+                        return (try? engine.fetch(docType: docType.id, id: saved.id)) ?? saved
+                    },
+                    onDeleteDocument: { document in
+                        try engine.delete(docType: docType.id, id: document.id)
+                        reloadDocumentsSafely()
+                    },
+                    customFields: customFields,
+                    onAddCustomField: { field in
+                        try customFieldStore.add(field)
+                        reloadCustomFieldsSafely()
+                    },
+                    onUpdateCustomField: { field in
+                        try customFieldStore.update(field)
+                        reloadCustomFieldsSafely()
+                    },
+                    onRemoveCustomField: { id in
+                        try customFieldStore.remove(id: id)
+                        reloadCustomFieldsSafely()
+                    },
+                    externalCreateTrigger: $createTrigger,
+                    linkSearchProvider: { targetDocType, _ in
+                        (try? engine.list(docType: targetDocType)) ?? []
+                    },
+                    linkResolveProvider: { targetDocType, id in
+                        try? engine.fetch(docType: targetDocType, id: id)
+                    },
+                    childDocTypeProvider: { HubManifest.docType(for: $0) },
+                    detailEditor: { composedDocType, binding in
+                        AnyView(
+                            HubDocumentEditor(
+                                // composedDocType already has any custom fields merged
+                                // into `.fields`, so the form renders end-user
+                                // additions alongside the manifest-declared fields.
+                                docType: composedDocType,
+                                engine: engine,
+                                workflowEngine: workflowEngine,
+                                document: binding,
+                                onPersist: { reloadDocumentsSafely() }
+                            )
                         )
-                    )
-                },
-                listViews: HubListViews.views(for: docType.id),
-                displayPolicy: HubWorkflowDisplayPolicy.policy
-            )
+                    },
+                    listViews: HubListViews.views(for: docType.id),
+                    displayPolicy: HubWorkflowDisplayPolicy.policy
+                )
+                .controlSize(.small)
+            }
         }
         // Publish a context-aware "New <DocType>" action so the File ▸ New
         // (⌘N) menu command targets this workspace while it's on screen.
-        .focusedSceneValue(\.newRecordAction, NewRecordAction(label: docType.name) {
+        .focusedSceneValue(\.newRecordAction, NewRecordAction(label: primaryNewRecordLabel(from: copy)) {
+            showCollectionWorkspace = true
             createTrigger = true
         })
         .onAppear {
             reloadDocumentsSafely()
             reloadCustomFieldsSafely()
+            showCollectionWorkspace = !documents.isEmpty
         }
+        .onChange(of: documents.count) { count in
+            if count > 0 {
+                showCollectionWorkspace = true
+            } else if !createTrigger {
+                showCollectionWorkspace = false
+            }
+        }
+    }
+
+    private func zeroRecordWorkspaceEmptyState(copy: HubWorkspaceCopy) -> some View {
+        VStack(spacing: 14) {
+            Image(systemName: symbol(for: docType))
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(MercantisTheme.brandPrimary)
+                .padding(10)
+                .background(MercantisTheme.brandPrimarySoft, in: RoundedRectangle(cornerRadius: 12))
+
+            Text(copy.emptyStateTitle)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(MercantisTheme.textPrimary)
+
+            Text(copy.emptyStateMessage)
+                .font(.callout)
+                .foregroundStyle(MercantisTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 520)
+
+            if let hint = copy.emptyStateHint {
+                Text(hint)
+                    .font(.footnote)
+                    .foregroundStyle(MercantisTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 520)
+            }
+
+            Button(copy.primaryActionTitle) {
+                showCollectionWorkspace = true
+                createTrigger = true
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .padding(.top, 4)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MercantisTheme.appBackground)
     }
 
     private func reloadCustomFieldsSafely() {
@@ -296,18 +364,11 @@ private struct HubRecordWorkspaceView: View {
         )
     }
 
-    private func pluralizedTitle(for docType: DocType) -> String {
-        let name = docType.name
-        let lower = name.lowercased()
-        if lower.hasSuffix("s") || lower.hasSuffix("ch") || lower.hasSuffix("sh") || lower.hasSuffix("x") {
-            return "\(name)es"
+    private func primaryNewRecordLabel(from copy: HubWorkspaceCopy) -> String {
+        if copy.primaryActionTitle.hasPrefix("New ") {
+            return String(copy.primaryActionTitle.dropFirst(4))
         }
-        if lower.hasSuffix("y"),
-           let last = name.dropLast().last,
-           !"aeiou".contains(last.lowercased()) {
-            return "\(name.dropLast())ies"
-        }
-        return "\(name)s"
+        return copy.primaryActionTitle
     }
 
     private func symbol(for docType: DocType) -> String {
