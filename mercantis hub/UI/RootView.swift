@@ -14,6 +14,7 @@ struct RootView: View {
 
     @State private var selection: HubMenuItem?
     @State private var collapsedGroups: Set<String> = []
+    @StateObject private var visibility = HubVisibilitySettings()
 
     var body: some View {
         NavigationSplitView {
@@ -21,6 +22,10 @@ struct RootView: View {
         } detail: {
             detail
         }
+    }
+
+    private var visibleModules: [HubModule] {
+        HubNavigation.allModules.filter { visibility.isVisible($0.visibility) }
     }
 
     private var sidebar: some View {
@@ -36,11 +41,13 @@ struct RootView: View {
                 .listRowSeparator(.hidden)
             }
 
-            ForEach(HubNavigation.allModules) { module in
+            ForEach(visibleModules) { module in
+                let groups = module.visibleGroups(visibility)
                 Section {
-                    ForEach(module.groups.indices, id: \.self) { gIdx in
-                        let group = module.groups[gIdx]
-                        let key = "\(module.id)::\(gIdx)"
+                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                        // Key the collapse state by label so it stays stable
+                        // when advanced groups appear / disappear.
+                        let key = "\(module.id)::\(group.label ?? "ungrouped")"
                         if let label = group.label {
                             MercantisSidebarGroupHeader(
                                 title: label,
@@ -73,13 +80,26 @@ struct RootView: View {
                         }
                     }
                 } header: {
+                    let visibleCount = groups.reduce(0) { $0 + $1.items.count }
                     MercantisSidebarModuleHeader(
                         title: module.label,
                         systemImage: module.systemImage,
                         tone: module.tone,
-                        badge: module.itemCount > 0 ? "\(module.itemCount)" : nil
+                        badge: visibleCount > 0 ? "\(visibleCount)" : nil
                     )
                 }
+            }
+
+            Section {
+                Toggle(isOn: $visibility.showAdvanced) {
+                    Label("Advanced / Accountant view", systemImage: "lock.shield")
+                        .font(.callout)
+                }
+                .toggleStyle(.switch)
+                .help("Show internal ledgers (GL Entry, Customer / Supplier Transactions, Settlements, Tax Transactions, Stock Ledger) and Manufacturing. These power balances, statements and reports behind the scenes.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
             }
         }
         .listStyle(.sidebar)
@@ -222,7 +242,8 @@ private struct HubRecordWorkspaceView: View {
                         )
                     )
                 },
-                listViews: HubListViews.views(for: docType.id)
+                listViews: HubListViews.views(for: docType.id),
+                displayPolicy: HubWorkflowDisplayPolicy.policy
             )
         }
         // Publish a context-aware "New <DocType>" action so the File ▸ New
@@ -330,11 +351,27 @@ private struct HubDocumentEditor: View {
     let onPersist: () -> Void
 
     @State private var errorMessage: String?
+    /// A pending action awaiting confirmation (Post / Cancel of a
+    /// ledger- or stock-affecting document). Drives the confirmation dialog.
+    @State private var pendingConfirmation: PendingLifecycleAction?
+
+    private let displayPolicy = HubWorkflowDisplayPolicy.policy
 
     private var workflow: WorkflowDefinition? {
         HubWorkflows.workflow(forDocTypeId: docType.id)
     }
     private let evaluator = ExpressionEvaluator()
+
+    /// Identifies a lifecycle action that needs a confirmation step before it
+    /// mutates the ledger / stock spine.
+    private struct PendingLifecycleAction: Identifiable {
+        enum Kind { case submit, cancel, workflow(WorkflowTransition) }
+        let id = UUID()
+        let kind: Kind
+        let title: String
+        let message: String
+        let confirmLabel: String
+    }
 
     var body: some View {
         ScrollView {
@@ -371,6 +408,31 @@ private struct HubDocumentEditor: View {
             .padding()
         }
         .frame(minWidth: 480, minHeight: 400)
+        .confirmationDialog(
+            pendingConfirmation?.title ?? "",
+            isPresented: confirmationBinding,
+            titleVisibility: .visible,
+            presenting: pendingConfirmation
+        ) { action in
+            Button(action.confirmLabel, role: confirmRole(for: action)) {
+                runConfirmedAction(action)
+            }
+            Button("Keep Editing", role: .cancel) { pendingConfirmation = nil }
+        } message: { action in
+            Text(action.message)
+        }
+    }
+
+    private var confirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingConfirmation != nil },
+            set: { if !$0 { pendingConfirmation = nil } }
+        )
+    }
+
+    private func confirmRole(for action: PendingLifecycleAction) -> ButtonRole? {
+        if case .cancel = action.kind { return .destructive }
+        return nil
     }
 
     private var hasLifecycleActions: Bool {
@@ -399,35 +461,30 @@ private struct HubDocumentEditor: View {
     }
 
     private var statusBadge: some View {
-        // The lifecycle (docStatus) badge uses Core's semantic status tones so
-        // Draft / Submitted / Cancelled read with the same business-grade
-        // colouring as the list. The workflow state (e.g. "Paid", "Overdue")
-        // is shown as a second semantic badge when it differs, so a single
-        // record can surface both its lifecycle and its operational state.
-        let docStatusLabel: String
-        let docStatusTone: MercantisStatusTone
-        switch document.docStatus {
-        case 1:
-            docStatusLabel = "Submitted"
-            docStatusTone = .submitted
-        case 2:
-            docStatusLabel = "Cancelled"
-            docStatusTone = .cancelled
-        default:
-            docStatusLabel = "Draft"
-            docStatusTone = .draft
-        }
+        // The lifecycle (docStatus) badge shows the document-specific business
+        // wording via the display policy — so a submitted invoice reads
+        // "Posted", a submitted order reads "Confirmed", a submitted BOM reads
+        // "Active", etc. — rather than the raw internal "Submitted". The
+        // operational workflow state (e.g. "Paid", "Overdue") is shown as a
+        // second badge only when it adds information beyond the lifecycle.
+        let lifecycle = displayPolicy.lifecycleDisplay(
+            docTypeId: docType.id,
+            docStatus: document.docStatus
+        )
 
-        let workflowLabel: String? = {
-            guard !document.status.isEmpty,
-                  document.status.lowercased() != docStatusLabel.lowercased() else { return nil }
-            return document.status
+        let workflowDisplay: DocumentStatusDisplay? = {
+            let trimmed = document.status.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let display = displayPolicy.statusDisplay(docTypeId: docType.id, state: trimmed)
+            // Hide the second badge when it would just repeat the lifecycle one.
+            guard display.label.lowercased() != lifecycle.label.lowercased() else { return nil }
+            return display
         }()
 
         return HStack(spacing: 6) {
-            MercantisStatusBadge(text: docStatusLabel, tone: docStatusTone)
-            if let workflowLabel {
-                MercantisStatusBadge(workflowLabel)
+            MercantisStatusBadge(display: lifecycle)
+            if let workflowDisplay {
+                MercantisStatusBadge(display: workflowDisplay)
             }
         }
     }
@@ -437,35 +494,92 @@ private struct HubDocumentEditor: View {
     @ViewBuilder
     private var actionRow: some View {
         HStack(spacing: 8) {
-            // Submit appears when the DocType is submittable and the
-            // document is a persisted Draft.
+            // Post / Submit appears when the DocType is submittable and the
+            // document is a persisted Draft. The label is document-specific
+            // ("Post Invoice", "Confirm Order", "Activate BOM", …).
             if docType.isSubmittable, document.docStatus == 0, !document.id.isEmpty {
-                Button("Submit") { submit() }
+                let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Submit")
+                Button(action.label) { requestSubmit(action) }
                     .keyboardShortcut(.return, modifiers: [.command])
                     .buttonStyle(.borderedProminent)
             }
 
-            // Cancel appears when the document is Submitted.
+            // Cancel / Reverse appears when the document is posted (Submitted).
             if docType.isSubmittable, document.docStatus == 1 {
-                Button("Cancel", role: .destructive) { cancel() }
+                let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Cancel")
+                Button(action.label, role: .destructive) { requestCancel(action) }
             }
 
             // Amend appears when the document has been Cancelled.
             if docType.isSubmittable, document.docStatus == 2 {
-                Button("Amend") { amend() }
+                let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: "Amend")
+                Button(action.label) { amend() }
                     .buttonStyle(.borderedProminent)
             }
 
             // Workflow transition buttons surface every status transition
-            // available from the current state for the System Manager role.
+            // available from the current state, with business-friendly labels.
             ForEach(availableWorkflowTransitions, id: \.action) { transition in
                 if shouldOfferWorkflowButton(transition) {
-                    Button(transition.action) { runWorkflow(transition) }
+                    let action = displayPolicy.actionDisplay(docTypeId: docType.id, action: transition.action)
+                    Button(action.label) { requestWorkflow(transition, action) }
                         .buttonStyle(.bordered)
                 }
             }
 
             Spacer()
+        }
+    }
+
+    // MARK: - Confirmation routing
+
+    /// Posts immediately when the action has no confirmation copy, otherwise
+    /// stages a confirmation dialog first.
+    private func requestSubmit(_ action: DocumentActionDisplay) {
+        if let message = action.confirmation {
+            pendingConfirmation = PendingLifecycleAction(
+                kind: .submit,
+                title: action.label,
+                message: message,
+                confirmLabel: action.label
+            )
+        } else {
+            submit()
+        }
+    }
+
+    private func requestCancel(_ action: DocumentActionDisplay) {
+        if let message = action.confirmation {
+            pendingConfirmation = PendingLifecycleAction(
+                kind: .cancel,
+                title: action.label,
+                message: message,
+                confirmLabel: action.label
+            )
+        } else {
+            cancel()
+        }
+    }
+
+    private func requestWorkflow(_ transition: WorkflowTransition, _ action: DocumentActionDisplay) {
+        if let message = action.confirmation {
+            pendingConfirmation = PendingLifecycleAction(
+                kind: .workflow(transition),
+                title: action.label,
+                message: message,
+                confirmLabel: action.label
+            )
+        } else {
+            runWorkflow(transition)
+        }
+    }
+
+    private func runConfirmedAction(_ action: PendingLifecycleAction) {
+        pendingConfirmation = nil
+        switch action.kind {
+        case .submit:                 submit()
+        case .cancel:                 cancel()
+        case .workflow(let transition): runWorkflow(transition)
         }
     }
 

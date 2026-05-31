@@ -14,6 +14,11 @@ import MercantisCore
 /// - `docStatus` (Int): 0 Draft / 1 Submitted / 2 Cancelled — the lifecycle.
 /// - `status` (String): workflow state ("Paid", "Overdue", "Closed", …).
 ///
+/// Chip *labels* are resolved through `HubWorkflowDisplayPolicy` so they show
+/// the same business wording as the badges (e.g. a SalesInvoice's "Submitted"
+/// lifecycle chip reads "Posted"), while the *predicates* keep matching the
+/// raw persisted values — display aliases never touch the query.
+///
 /// Only fields that actually exist on the current Hub DocTypes are referenced.
 enum HubListViews {
 
@@ -37,21 +42,31 @@ enum HubListViews {
 
     // MARK: - Helpers
 
-    private static func draft(_ image: String = "pencil") -> RecordListViewDefinition {
-        RecordListViewDefinition(id: "draft", label: "Draft", systemImage: image,
+    private static let policy = HubWorkflowDisplayPolicy.policy
+
+    private static func lifecycleLabel(_ docType: String, _ docStatus: Int) -> String {
+        policy.lifecycleDisplay(docTypeId: docType, docStatus: docStatus).label
+    }
+
+    private static func draft(for docType: String, _ image: String = "pencil") -> RecordListViewDefinition {
+        RecordListViewDefinition(id: "draft", label: lifecycleLabel(docType, 0), systemImage: image,
                                  predicates: [ListFilter("docStatus", .eq(.int(0)))])
     }
-    private static func submitted() -> RecordListViewDefinition {
-        RecordListViewDefinition(id: "submitted", label: "Submitted", systemImage: "checkmark.seal",
+    private static func submitted(for docType: String) -> RecordListViewDefinition {
+        RecordListViewDefinition(id: "submitted", label: lifecycleLabel(docType, 1), systemImage: "checkmark.seal",
                                  predicates: [ListFilter("docStatus", .eq(.int(1)))])
     }
-    private static func cancelled() -> RecordListViewDefinition {
-        RecordListViewDefinition(id: "cancelled", label: "Cancelled", systemImage: "xmark.seal",
+    private static func cancelled(for docType: String) -> RecordListViewDefinition {
+        RecordListViewDefinition(id: "cancelled", label: lifecycleLabel(docType, 2), systemImage: "xmark.seal",
                                  predicates: [ListFilter("docStatus", .eq(.int(2)))])
     }
-    private static func status(_ id: String, _ label: String, _ image: String) -> RecordListViewDefinition {
-        RecordListViewDefinition(id: id, label: label, systemImage: image,
-                                 predicates: [ListFilter("status", .eq(.string(label)))])
+    /// `rawState` is the persisted workflow string used by the predicate; the
+    /// visible label is the policy alias for `(docType, rawState)`.
+    private static func status(_ id: String, _ rawState: String, _ image: String, for docType: String) -> RecordListViewDefinition {
+        RecordListViewDefinition(id: id,
+                                 label: policy.statusDisplay(docTypeId: docType, state: rawState).label,
+                                 systemImage: image,
+                                 predicates: [ListFilter("status", .eq(.string(rawState)))])
     }
     private static func purpose(_ value: String, _ image: String) -> RecordListViewDefinition {
         RecordListViewDefinition(id: "purpose:\(value)", label: value, systemImage: image,
@@ -61,59 +76,65 @@ enum HubListViews {
     // MARK: - Selling
 
     private static var salesInvoice: [RecordListViewDefinition] {
-        [
+        let dt = "SalesInvoice"
+        return [
             .all(),
-            draft(),
-            submitted(),
-            status("paid", "Paid", "checkmark.circle"),
-            status("overdue", "Overdue", "exclamationmark.circle"),
+            draft(for: dt),
+            submitted(for: dt),
+            status("paid", "Paid", "checkmark.circle", for: dt),
+            status("overdue", "Overdue", "exclamationmark.circle", for: dt),
             // `outstanding_amount` exists on SalesInvoice; > 0 = still owed.
             RecordListViewDefinition(id: "outstanding", label: "Outstanding", systemImage: "creditcard",
                                      predicates: [ListFilter("outstanding_amount", .gt(.double(0)))]),
-            cancelled()
+            cancelled(for: dt)
         ]
     }
 
     private static var salesOrder: [RecordListViewDefinition] {
-        [.all(), draft(), submitted(), status("closed", "Closed", "lock"), cancelled()]
+        let dt = "SalesOrder"
+        return [.all(), draft(for: dt), submitted(for: dt), status("closed", "Closed", "lock", for: dt), cancelled(for: dt)]
     }
 
     private static var quotation: [RecordListViewDefinition] {
-        [
-            .all(), draft(), submitted(),
-            status("ordered", "Ordered", "cart"),
-            status("lost", "Lost", "xmark.bin"),
-            cancelled()
+        let dt = "Quotation"
+        return [
+            .all(), draft(for: dt), submitted(for: dt),
+            status("ordered", "Ordered", "cart", for: dt),
+            status("lost", "Lost", "xmark.bin", for: dt),
+            cancelled(for: dt)
         ]
     }
 
     // MARK: - Buying
 
     private static var purchaseOrder: [RecordListViewDefinition] {
-        [.all(), draft(), submitted(), status("closed", "Closed", "lock"), cancelled()]
+        let dt = "PurchaseOrder"
+        return [.all(), draft(for: dt), submitted(for: dt), status("closed", "Closed", "lock", for: dt), cancelled(for: dt)]
     }
 
     private static var purchaseInvoice: [RecordListViewDefinition] {
-        [
-            .all(), draft(), submitted(),
-            status("paid", "Paid", "checkmark.circle"),
-            status("overdue", "Overdue", "exclamationmark.circle"),
+        let dt = "PurchaseInvoice"
+        return [
+            .all(), draft(for: dt), submitted(for: dt),
+            status("paid", "Paid", "checkmark.circle", for: dt),
+            status("overdue", "Overdue", "exclamationmark.circle", for: dt),
             RecordListViewDefinition(id: "outstanding", label: "Outstanding", systemImage: "creditcard",
                                      predicates: [ListFilter("outstanding_amount", .gt(.double(0)))]),
-            cancelled()
+            cancelled(for: dt)
         ]
     }
 
     // MARK: - Stock
 
     private static var stockEntry: [RecordListViewDefinition] {
-        [
+        let dt = "StockEntry"
+        return [
             .all(),
             purpose("Material Receipt", "tray.and.arrow.down"),
             purpose("Material Issue", "tray.and.arrow.up"),
             purpose("Material Transfer", "arrow.left.arrow.right"),
-            submitted(),
-            cancelled()
+            submitted(for: dt),
+            cancelled(for: dt)
         ]
     }
 
@@ -151,17 +172,19 @@ enum HubListViews {
     // MARK: - Accounting
 
     private static var paymentEntry: [RecordListViewDefinition] {
-        [
+        let dt = "PaymentEntry"
+        return [
             .all(),
             RecordListViewDefinition(id: "receive", label: "Receive", systemImage: "arrow.down.circle",
                                      predicates: [ListFilter("payment_type", .eq(.string("Receive")))]),
             RecordListViewDefinition(id: "pay", label: "Pay", systemImage: "arrow.up.circle",
                                      predicates: [ListFilter("payment_type", .eq(.string("Pay")))]),
-            submitted()
+            submitted(for: dt)
         ]
     }
 
     private static var journalEntry: [RecordListViewDefinition] {
-        [.all(), draft(), submitted(), cancelled()]
+        let dt = "JournalEntry"
+        return [.all(), draft(for: dt), submitted(for: dt), cancelled(for: dt)]
     }
 }

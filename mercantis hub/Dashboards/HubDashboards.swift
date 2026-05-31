@@ -24,7 +24,7 @@ public enum HubDashboards: Sendable {
                 docType: "Customer", parameters: [:]
             ),
             DashboardWidget(
-                type: "count", title: "Submitted Sales Orders",
+                type: "count", title: "Confirmed Sales Orders",
                 docType: "SalesOrder",
                 parameters: ["where.docStatus__eq": "1"]
             ),
@@ -66,7 +66,7 @@ public enum HubDashboards: Sendable {
                 docType: "Warehouse", parameters: [:]
             ),
             DashboardWidget(
-                type: "count", title: "Submitted Stock Entries",
+                type: "count", title: "Posted Stock Movements",
                 docType: "StockEntry",
                 parameters: ["where.docStatus__eq": "1"]
             ),

@@ -4,7 +4,7 @@ import MercantisCoreUI
 extension Buying {
     static let module = HubModule(
         id: "buying",
-        label: "Buying",
+        label: "Buy",
         systemImage: "shippingbox",
         tone: .buying,
         groups: [

@@ -3,11 +3,11 @@ import MercantisCoreUI
 extension CRM {
     static let module = HubModule(
         id: "crm",
-        label: "CRM",
+        label: "Contacts",
         systemImage: "person.2",
         tone: .crm,
         groups: [
-            HubMenuGroup(label: "Masters", items: [
+            HubMenuGroup(label: "Directory", items: [
                 .docType(CRM.customer),
                 .docType(CRM.contact),
                 .docType(CRM.address)
