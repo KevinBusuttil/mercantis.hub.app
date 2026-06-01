@@ -74,6 +74,24 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + stockRoles
     )
 
+    /// Stock on Hand — Phase 3. `Bin` (Stock Balance) rows: quantity,
+    /// valuation, value and last movement per item / warehouse. Friendly
+    /// column headers; the runner resolves item / warehouse display names.
+    public static let stockOnHand = ReportDefinition(
+        id: "stock-on-hand",
+        name: "Stock on Hand",
+        docType: "Bin",
+        columns: [
+            "Item", "Warehouse", "Actual Qty",
+            "Valuation Rate", "Stock Value", "Last Movement",
+        ],
+        filters: [
+            ReportFilter(fieldKey: "item",      label: "Item"),
+            ReportFilter(fieldKey: "warehouse", label: "Warehouse"),
+        ],
+        allowedRoles: financeRoles + stockRoles
+    )
+
     /// Customer Aging — outstanding receivables bucketed by age.
     /// The `columns` here describe the **output** shape produced by
     /// `runResult`, not the underlying SalesInvoice columns.
@@ -154,7 +172,7 @@ public enum HubReports: Sendable {
 
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
-        stockLedgerView,
+        stockLedgerView, stockOnHand,
         customerAging, trialBalance,
         customerStatement, supplierLedger,
         vatSummary,
@@ -180,6 +198,8 @@ public enum HubReports: Sendable {
             return try runFlatList(report: report, engine: engine, filters: filters)
         case "stock-ledger-view":
             return try runStockLedger(report: report, engine: engine, filters: filters)
+        case "stock-on-hand":
+            return try runStockOnHand(engine: engine, filters: filters)
         case "customer-aging":
             return try runCustomerAging(engine: engine, filters: filters)
         case "trial-balance":
@@ -255,6 +275,54 @@ public enum HubReports: Sendable {
             }
         }
         return ReportResult(columns: report.columns, rows: rows)
+    }
+
+    // MARK: - Stock on Hand (Phase 3)
+
+    private static func runStockOnHand(
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let bins = try engine.list(
+            docType: "Bin",
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [
+                ListSort(fieldKey: "item",      direction: .ascending),
+                ListSort(fieldKey: "warehouse", direction: .ascending),
+            ],
+            applyRowAccess: false
+        )
+
+        let itemNames = displayNames(engine: engine, docType: "Item")
+        let warehouseNames = displayNames(engine: engine, docType: "Warehouse")
+
+        let rows: [[String?]] = bins.map { bin in
+            let itemID = asString(bin.fields["item"]) ?? ""
+            let warehouseID = asString(bin.fields["warehouse"]) ?? ""
+            return [
+                itemNames[itemID] ?? itemID,
+                warehouseNames[warehouseID] ?? warehouseID,
+                format(value: bin.fields["actual_qty"]),
+                format(value: bin.fields["valuation_rate"]),
+                format(value: bin.fields["stock_value"]),
+                format(value: bin.fields["last_movement_date"]),
+            ]
+        }
+        return ReportResult(columns: stockOnHand.columns, rows: rows)
+    }
+
+    /// Map document id → its `titleField` display value for a DocType, so
+    /// reports can show names instead of raw link ids.
+    private static func displayNames(engine: DocumentEngine, docType: String) -> [String: String] {
+        guard let meta = HubManifest.docType(for: docType),
+              let documents = try? engine.list(docType: docType, applyRowAccess: false) else {
+            return [:]
+        }
+        var map: [String: String] = [:]
+        for doc in documents {
+            map[doc.id] = asString(doc.fields[meta.titleField]) ?? doc.id
+        }
+        return map
     }
 
     // MARK: - Customer Aging
