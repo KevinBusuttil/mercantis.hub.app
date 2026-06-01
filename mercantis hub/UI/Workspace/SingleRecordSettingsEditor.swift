@@ -112,7 +112,7 @@ struct SingleRecordSettingsEditor: View {
             // Guard: for single-record DocTypes, prevent creating a second
             // record if one already exists (defense-in-depth beyond UI gating).
             if isNewRecord && HubSingleRecordPolicy.isSingleRecord(docType.id) {
-                let existing = (try? engine.list(docType: docType.id)) ?? []
+                let existing = try engine.list(docType: docType.id)
                 if !existing.isEmpty {
                     errorMessage = "A \(docType.name) record already exists. Please edit the existing record instead."
                     onReload()
