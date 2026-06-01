@@ -484,6 +484,64 @@ private struct HubRecordWorkspaceView: View {
     }
 }
 
+/// Phase 3 — read-only stock-on-hand summary shown on the Item workspace.
+/// Reads materialised Stock Balance (Bin) rows via `StockBalanceService`
+/// so the figures match the Stock on Hand report and POS/Delivery lookups.
+private struct ItemStockSummaryView: View {
+    let itemID: String
+    let engine: DocumentEngine
+
+    @State private var balances: [StockBalanceCalculator.Balance] = []
+    @State private var loaded = false
+
+    private var totalQty: Double { balances.reduce(0) { $0 + $1.actualQty } }
+
+    var body: some View {
+        MercantisInspectorCard("Stock on Hand", systemImage: "shippingbox") {
+            if balances.isEmpty {
+                Text(loaded ? "No stock recorded for this item yet." : "Loading…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(balances.enumerated()), id: \.offset) { index, balance in
+                        MercantisInspectorRow(
+                            warehouseName(balance.warehouse),
+                            value: formatQty(balance.actualQty),
+                            isNumeric: true
+                        )
+                        Divider()
+                    }
+                    MercantisInspectorRow("Total", value: formatQty(totalQty), isNumeric: true)
+                }
+            }
+        }
+        .onAppear(perform: reload)
+    }
+
+    private func reload() {
+        let service = StockBalanceService(engine: engine)
+        balances = ((try? service.balances(forItem: itemID)) ?? [])
+            .filter { $0.actualQty != 0 || $0.lastMovementDate != nil }
+        loaded = true
+    }
+
+    private func warehouseName(_ id: String) -> String {
+        guard let warehouse = try? engine.fetch(docType: "Warehouse", id: id),
+              case .string(let name)? = warehouse.fields["warehouse_name"],
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return id }
+        return name
+    }
+
+    private func formatQty(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 3
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+}
+
 /// Hub-specific lifecycle layer on top of `GenericFormView`. The basic
 /// Save / Delete / "Saved · just now" affordances now live in Core's
 /// `RecordCollectionHostView`; this editor only contributes the
@@ -563,6 +621,11 @@ private struct HubDocumentEditor: View {
                     },
                     childDocTypeProvider: { HubManifest.docType(for: $0) }
                 )
+                // Phase 3: surface current stock-on-hand on the Item
+                // workspace, derived from Stock Balance (Bin) rows.
+                if docType.id == "Item", !document.id.isEmpty {
+                    ItemStockSummaryView(itemID: document.id, engine: engine)
+                }
                 if hasLifecycleActions {
                     actionRow
                 }

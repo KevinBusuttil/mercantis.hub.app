@@ -125,8 +125,52 @@ enum Stock {
     static let allDocTypes: [DocType] = [
         stockEntryDetail,
         stockEntry,
-        stockLedgerEntry
+        stockLedgerEntry,
+        bin
     ]
+
+    // MARK: - Derived balance (Phase 3)
+
+    /// Stock Balance (Bin) — the normal user-facing inventory-availability
+    /// surface, derived from `StockLedgerEntry`. One row per
+    /// (item, warehouse) carrying actual quantity, stock value, moving
+    /// valuation rate, and the last movement date.
+    ///
+    /// Maintained by `StockBalanceService`, which recomputes the affected
+    /// bins from the full ledger whenever a Stock Entry is submitted or
+    /// cancelled — so the row is always a faithful roll-up of the
+    /// append-only ledger, never an independently mutated number. The id is
+    /// deterministic (`BIN-<item>-<warehouse>`) so recomputation upserts in
+    /// place. Not submittable: it is a derived projection, not a document.
+    static let bin = DocType(
+        id: "Bin",
+        name: "Stock Balance",
+        module: "Stock",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "item", label: "Item",
+                            type: .link, required: true, linkedDocType: "Item", isSearchable: true),
+            FieldDefinition(key: "warehouse", label: "Warehouse",
+                            type: .link, required: true, linkedDocType: "Warehouse", isSearchable: true),
+            FieldDefinition(key: "actual_qty", label: "Actual Qty",
+                            type: .decimal, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "valuation_rate", label: "Valuation Rate",
+                            type: .currency, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "stock_value", label: "Stock Value",
+                            type: .currency, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "last_movement_date", label: "Last Movement",
+                            type: .date, required: false)
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [
+            IndexDefinition(fieldKey: "item", unique: false),
+            IndexDefinition(fieldKey: "warehouse", unique: false)
+        ],
+        searchFields: ["item", "warehouse"],
+        titleField: "item"
+    )
 
     // MARK: - Derived ledger (Wall 7)
 

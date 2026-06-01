@@ -92,6 +92,7 @@ enum HubMenuItem: Identifiable {
         case "PaymentEntry":     return "creditcard"
         case "StockEntry":       return "tray.full"
         case "StockLedgerEntry": return "list.bullet.indent"
+        case "Bin":              return "shippingbox"
         case "Warehouse":        return "building.2"
         case "Company":          return "building"
         case "Workstation":      return "gearshape"

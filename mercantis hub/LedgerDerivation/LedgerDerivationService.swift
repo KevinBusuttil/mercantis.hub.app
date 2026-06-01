@@ -41,11 +41,17 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
 
     private let engine: DocumentEngine
     private let emitter: EventEmitter
+    /// Phase 3 — recomputes Stock Balance (Bin) rows after this service
+    /// writes the Stock Ledger rows for a Stock Entry. Owned here (rather
+    /// than wired as a separate event subscriber) so the recompute is
+    /// guaranteed to run *after* the ledger rows it reads are written.
+    private let stockBalance: StockBalanceService
     private var tokens: [SubscriptionToken] = []
 
     public init(engine: DocumentEngine, emitter: EventEmitter) {
         self.engine = engine
         self.emitter = emitter
+        self.stockBalance = StockBalanceService(engine: engine)
         wire()
     }
 
@@ -142,6 +148,12 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
                 )
             }
         }
+
+        // Phase 3: roll the freshly written ledger rows up into the
+        // affected Stock Balance (Bin) rows. Runs for both submit and
+        // cancel — recomputation reads the full ledger, so reversal rows
+        // are accounted for automatically.
+        try stockBalance.recompute(affectedBy: doc)
     }
 
     /// Map a Stock Entry `purpose` to the corresponding StockLedgerEntry
