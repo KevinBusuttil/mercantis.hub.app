@@ -11,7 +11,8 @@ extension Buying {
             HubMenuGroup(label: "Transactions", items: [
                 .docType(Buying.purchaseOrder, label: "Purchase Orders"),
                 .docType(Buying.purchaseInvoice, label: "Purchase Invoices"),
-                .docType(Accounting.paymentEntry, label: "Pay Supplier")
+                .flow(id: "guided-pay-supplier", label: "Pay Supplier",
+                      systemImage: "tray.and.arrow.up")
             ]),
             HubMenuGroup(label: "Receiving", items: [
                 .docType(Buying.purchaseReceipt, label: "Purchase Receipts"),
