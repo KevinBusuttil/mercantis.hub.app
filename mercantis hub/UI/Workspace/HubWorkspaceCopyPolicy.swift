@@ -29,11 +29,11 @@ enum HubWorkspaceCopyPolicy {
         ),
         "NumberingSeries": .init(
             title: "Numbering Series",
-            subtitle: "Configure automatic numbering for invoices, bills, deliveries, and payments.",
+            subtitle: "Store preferred numbering patterns while live document IDs continue to use the built-in Core naming rules.",
             primaryActionTitle: "Set Up Numbering Series",
             emptyStateTitle: "No numbering configured",
-            emptyStateMessage: "Set up numbering patterns so each document gets a unique, sequential reference automatically.",
-            emptyStateHint: "Tip: use .YYYY. for year and .#### for a four-digit sequence number."
+            emptyStateMessage: "Store the numbering patterns you want to standardize before Hub wires them into live autoname behaviour.",
+            emptyStateHint: "Tip: use .YYYY. for year and .#### for a four-digit sequence number. Current live IDs still follow each document's built-in Core pattern."
         ),
         "Supplier": .init(
             title: "Suppliers",

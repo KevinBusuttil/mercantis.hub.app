@@ -285,9 +285,14 @@ private struct HubRecordWorkspaceView: View {
             primaryCreateActionTitle: copy.primaryActionTitle,
             onCreateDocument: { makeDraftDocument() },
             onSaveDocument: { document in
+                let prepared = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(
+                    document,
+                    docType: docType,
+                    businessProfile: currentBusinessProfile()
+                )
                 let existingDocuments = try engine.list(docType: docType.id)
-                try HubFiscalYearValidationPolicy.validate(document, existingDocuments: existingDocuments)
-                let saved = try engine.save(document)
+                try HubFiscalYearValidationPolicy.validate(prepared, existingDocuments: existingDocuments)
+                let saved = try engine.save(prepared)
                 reloadDocumentsSafely()
                 // Refetch so the host's binding picks up the persisted
                 // `updatedAt`; without this the next save throws
@@ -416,7 +421,7 @@ private struct HubRecordWorkspaceView: View {
             .first(where: { $0.isDefault })?
             .name ?? ""
 
-        return Document(
+        let draft = Document(
             id: "",
             docType: docType.id,
             company: "",
@@ -428,6 +433,16 @@ private struct HubRecordWorkspaceView: View {
             fields: [:],
             children: [:]
         )
+
+        return HubBusinessProfileDefaultsPolicy.applyDraftDefaults(
+            to: draft,
+            docType: docType,
+            businessProfile: currentBusinessProfile()
+        )
+    }
+
+    private func currentBusinessProfile() -> Document? {
+        (try? engine.list(docType: "Company"))?.first
     }
 
     private func primaryNewRecordLabel(from copy: HubWorkspaceCopy) -> String {
