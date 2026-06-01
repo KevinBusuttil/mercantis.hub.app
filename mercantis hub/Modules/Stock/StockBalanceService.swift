@@ -26,12 +26,14 @@ public nonisolated final class StockBalanceService: @unchecked Sendable {
     // MARK: - Recompute
 
     /// Recompute the bins for every (item, warehouse) pair touched by a
-    /// Stock Entry (both the source and target sides of each line).
+    /// stock-moving document. Stock Entry lines carry `source_warehouse` /
+    /// `target_warehouse`; Purchase Receipt / Sales Delivery lines carry a
+    /// single `warehouse`. Unknown keys are simply skipped.
     public func recompute(affectedBy stockEntry: Document) throws {
         var seen = Set<String>()
         for row in stockEntry.children["items"] ?? [] {
             guard let item = nonEmptyString(row.fields["item"]) else { continue }
-            for whKey in ["source_warehouse", "target_warehouse"] {
+            for whKey in ["source_warehouse", "target_warehouse", "warehouse"] {
                 guard let warehouse = nonEmptyString(row.fields[whKey]) else { continue }
                 let key = "\(item)\u{1}\(warehouse)"
                 guard seen.insert(key).inserted else { continue }

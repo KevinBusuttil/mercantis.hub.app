@@ -148,6 +148,45 @@ enum HubWorkflowDisplayPolicy {
             ]
         ),
 
+        "PurchaseReceipt": DocTypeDisplayMapping(
+            statuses: [
+                "Draft":     .init(label: "Draft",    tone: .muted),
+                "Submitted": .init(label: "Received", tone: .success,
+                                   help: "Goods received; stock has been increased."),
+                "Cancelled": .init(label: "Reversed", tone: .danger,
+                                   help: "The receipt has been reversed with compensating stock entries."),
+            ],
+            actions: [
+                "Submit": .init(label: "Receive Goods", confirmation: postStockConfirmation),
+                "Cancel": .init(label: "Cancel Receipt", confirmation: reverseStockConfirmation),
+                "Amend":  .init(label: "Create Correction"),
+            ]
+        ),
+
+        // MARK: Deliveries
+
+        "SalesDelivery": DocTypeDisplayMapping(
+            statuses: [
+                "Draft":            .init(label: "Draft",            tone: .muted),
+                "Scheduled":        .init(label: "Scheduled",        tone: .info,
+                                          help: "The delivery is confirmed and stock has been issued."),
+                "Loaded":           .init(label: "Loaded",           tone: .info),
+                "Out for Delivery": .init(label: "Out for Delivery", tone: .brand),
+                "Delivered":        .init(label: "Delivered",        tone: .success),
+                "Failed":           .init(label: "Failed",           tone: .warning),
+                "Cancelled":        .init(label: "Cancelled",        tone: .danger),
+            ],
+            actions: [
+                "Submit":                .init(label: "Schedule Delivery", confirmation: postStockConfirmation),
+                "Mark Loaded":           .init(label: "Mark Loaded"),
+                "Mark Out for Delivery": .init(label: "Mark Out for Delivery"),
+                "Mark Delivered":        .init(label: "Mark Delivered"),
+                "Mark Failed":           .init(label: "Mark Failed"),
+                "Reschedule":            .init(label: "Reschedule"),
+                "Cancel":                .init(label: "Cancel Delivery", confirmation: reverseStockConfirmation),
+            ]
+        ),
+
         // MARK: Stock
 
         "StockEntry": DocTypeDisplayMapping(

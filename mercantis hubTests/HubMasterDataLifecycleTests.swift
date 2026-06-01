@@ -30,6 +30,7 @@ final class HubMasterDataLifecycleTests: XCTestCase {
     private static let submittableDocTypes = [
         "Quotation", "SalesOrder", "SalesInvoice",
         "SupplierQuotation", "PurchaseOrder", "PurchaseInvoice",
+        "PurchaseReceipt", "SalesDelivery",
         "StockEntry", "JournalEntry", "PaymentEntry",
         "BOM", "WorkOrder", "JobCard", "ProductionPlan",
     ]
