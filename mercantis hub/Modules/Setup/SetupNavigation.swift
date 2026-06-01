@@ -31,6 +31,10 @@ extension Setup {
                 .docType(Setup.costCenter),
                 .docType(Setup.currency),
                 .docType(Setup.priceList)
+            ]),
+            HubMenuGroup(label: "Taxes", items: [
+                .docType(Tax.taxCode, label: "Tax Codes"),
+                .docType(Tax.taxCategory, label: "Tax Categories")
             ])
         ]
     )

@@ -424,13 +424,22 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         let currency   = doc.fields["currency"]
         let dueDate    = doc.fields["due_date"]
 
-        // Dr Accounts Receivable (party = customer)
+        // Phase 2 (VAT): split the credit side into income (net) + tax.
+        // `net_total` is set by HubTaxCalculationPolicy; fall back to
+        // grand_total minus the tax rows so the books still balance for
+        // invoices saved before tax was computed.
+        let taxRows = doc.children["taxes"] ?? []
+        let grand   = asDouble(amount) ?? 0
+        let taxSum  = totalTax(in: taxRows)
+        let net     = asDouble(doc.fields["net_total"]) ?? (grand - taxSum)
+
+        // Dr Accounts Receivable (party = customer) — gross
         try writeGLEntry(
             id: "GL-\(doc.id)-debit\(reversal ? "-reversal" : "")",
             postingDate: postingDate,
             account: receivable,
-            debit: reversal ? .double(0) : amount,
-            credit: reversal ? amount : .double(0),
+            debit: reversal ? .double(0) : .double(grand),
+            credit: reversal ? .double(grand) : .double(0),
             partyType: .string("Customer"), party: customer,
             costCenter: costCenter,
             voucherType: "SalesInvoice",
@@ -438,19 +447,29 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             isReversal: reversal,
             company: doc.company
         )
-        // Cr Income
+        // Cr Income — net of tax
         try writeGLEntry(
             id: "GL-\(doc.id)-credit\(reversal ? "-reversal" : "")",
             postingDate: postingDate,
             account: income,
-            debit: reversal ? amount : .double(0),
-            credit: reversal ? .double(0) : amount,
+            debit: reversal ? .double(net) : .double(0),
+            credit: reversal ? .double(0) : .double(net),
             partyType: nil, party: nil,
             costCenter: costCenter,
             voucherType: "SalesInvoice",
             voucherNo: doc.id,
             isReversal: reversal,
             company: doc.company
+        )
+        // Cr Output VAT — one GL leg + one TaxTrans row per tax line.
+        try deriveTaxRows(
+            taxRows,
+            on: doc,
+            postingDate: postingDate,
+            party: customer,
+            partyTypeValue: "Customer",
+            isOutput: true,
+            reversal: reversal
         )
 
         // Phase 5.7: CustTrans subledger row for drill-down reporting.
@@ -484,13 +503,19 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         let currency   = doc.fields["currency"]
         let dueDate    = doc.fields["due_date"]
 
-        // Cr Accounts Payable (party = supplier)
+        // Phase 2 (VAT): split the debit side into expense (net) + input tax.
+        let taxRows = doc.children["taxes"] ?? []
+        let grand   = asDouble(amount) ?? 0
+        let taxSum  = totalTax(in: taxRows)
+        let net     = asDouble(doc.fields["net_total"]) ?? (grand - taxSum)
+
+        // Cr Accounts Payable (party = supplier) — gross
         try writeGLEntry(
             id: "GL-\(doc.id)-credit\(reversal ? "-reversal" : "")",
             postingDate: postingDate,
             account: payable,
-            debit: reversal ? amount : .double(0),
-            credit: reversal ? .double(0) : amount,
+            debit: reversal ? .double(grand) : .double(0),
+            credit: reversal ? .double(0) : .double(grand),
             partyType: .string("Supplier"), party: supplier,
             costCenter: costCenter,
             voucherType: "PurchaseInvoice",
@@ -498,19 +523,29 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             isReversal: reversal,
             company: doc.company
         )
-        // Dr Expense
+        // Dr Expense — net of tax
         try writeGLEntry(
             id: "GL-\(doc.id)-debit\(reversal ? "-reversal" : "")",
             postingDate: postingDate,
             account: expense,
-            debit: reversal ? .double(0) : amount,
-            credit: reversal ? amount : .double(0),
+            debit: reversal ? .double(0) : .double(net),
+            credit: reversal ? .double(net) : .double(0),
             partyType: nil, party: nil,
             costCenter: costCenter,
             voucherType: "PurchaseInvoice",
             voucherNo: doc.id,
             isReversal: reversal,
             company: doc.company
+        )
+        // Dr Input VAT — one GL leg + one TaxTrans row per tax line.
+        try deriveTaxRows(
+            taxRows,
+            on: doc,
+            postingDate: postingDate,
+            party: supplier,
+            partyTypeValue: "Supplier",
+            isOutput: false,
+            reversal: reversal
         )
 
         // Phase 5.7: VendTrans subledger row.
@@ -574,6 +609,125 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             children: [:]
         )
         try engine.save(gle)
+    }
+
+    // MARK: - Tax rows → GL Entry + TaxTrans (Phase 2)
+
+    /// Sum of `tax_amount` across an invoice's `taxes` child rows.
+    private func totalTax(in rows: [ChildRow]) -> Double {
+        rows.reduce(0) { $0 + (asDouble($1.fields["tax_amount"]) ?? 0) }
+    }
+
+    /// For each invoice tax row, post the VAT GL leg (Cr for output / sales,
+    /// Dr for input / purchases) to the row's tax account (falling back to
+    /// the Business Profile default VAT account) and write the matching
+    /// `TaxTrans` ledger row. Reversal swaps the GL leg and negates the
+    /// TaxTrans base / tax amounts so the VAT summary nets out on cancel.
+    private func deriveTaxRows(
+        _ rows: [ChildRow],
+        on doc: Document,
+        postingDate: FieldValue,
+        party: FieldValue?,
+        partyTypeValue: String,
+        isOutput: Bool,
+        reversal: Bool
+    ) throws {
+        guard !rows.isEmpty else { return }
+        let fallbackAccount = defaultVatAccount()
+
+        for (idx, row) in rows.enumerated() {
+            let taxAmount = asDouble(row.fields["tax_amount"]) ?? 0
+            let taxable   = asDouble(row.fields["taxable_amount"]) ?? 0
+            let account   = nonEmptyString(row.fields["tax_account"]) ?? fallbackAccount
+
+            if taxAmount != 0, let account {
+                let amt = FieldValue.double(taxAmount)
+                let zero = FieldValue.double(0)
+                // Output VAT is a credit (we owe the tax authority); input
+                // VAT is a debit (recoverable). Reversal flips each.
+                let debit:  FieldValue
+                let credit: FieldValue
+                if isOutput {
+                    debit  = reversal ? amt : zero
+                    credit = reversal ? zero : amt
+                } else {
+                    debit  = reversal ? zero : amt
+                    credit = reversal ? amt : zero
+                }
+                try writeGLEntry(
+                    id: "GL-\(doc.id)-tax-\(idx)\(reversal ? "-reversal" : "")",
+                    postingDate: postingDate,
+                    account: .string(account),
+                    debit: debit, credit: credit,
+                    partyType: nil, party: nil, costCenter: nil,
+                    voucherType: doc.docType, voucherNo: doc.id,
+                    isReversal: reversal, company: doc.company
+                )
+            }
+
+            try writeTaxTrans(
+                id: "TT-\(doc.id)-\(idx)\(reversal ? "-reversal" : "")",
+                taxType: asString(row.fields["tax_type"]) ?? "VAT",
+                tax: asString(row.fields["tax_code"]),
+                postingDate: postingDate,
+                baseAmount: signedAmount(.double(taxable), negate: reversal),
+                taxAmount: signedAmount(.double(taxAmount), negate: reversal),
+                rate: row.fields["rate"],
+                partyType: partyTypeValue,
+                party: party,
+                voucherType: doc.docType,
+                voucherNo: doc.id,
+                isReversal: reversal,
+                company: doc.company
+            )
+        }
+    }
+
+    private func writeTaxTrans(
+        id: String,
+        taxType: String,
+        tax: String?,
+        postingDate: FieldValue,
+        baseAmount: FieldValue,
+        taxAmount: FieldValue,
+        rate: FieldValue?,
+        partyType: String,
+        party: FieldValue?,
+        voucherType: String,
+        voucherNo: String,
+        isReversal: Bool,
+        company: String
+    ) throws {
+        if try engine.fetch(docType: "TaxTrans", id: id) != nil { return }
+
+        var fields: [String: FieldValue] = [
+            "tax_type":     .string(taxType),
+            "posting_date": postingDate,
+            "base_amount":  baseAmount,
+            "tax_amount":   taxAmount,
+            "party_type":   .string(partyType),
+            "voucher_type": .string(voucherType),
+            "voucher_no":   .string(voucherNo),
+            "is_reversal":  .bool(isReversal),
+        ]
+        if let tax { fields["tax"] = .string(tax) }
+        if let rate { fields["rate"] = rate }
+        if let party { fields["party"] = party }
+
+        let doc = Document(
+            id: id, docType: "TaxTrans", company: company, status: "",
+            createdAt: Date(), updatedAt: Date(),
+            syncVersion: 0, syncState: .local,
+            fields: fields, children: [:]
+        )
+        try engine.save(doc)
+    }
+
+    /// The single Business Profile's default VAT account, used as the
+    /// posting account when a tax row carries no explicit `tax_account`.
+    private func defaultVatAccount() -> String? {
+        guard let company = (try? engine.list(docType: "Company"))?.first else { return nil }
+        return nonEmptyString(company.fields["default_vat_account"])
     }
 
     // MARK: - Subledger writers (Phase 5.7)
@@ -737,5 +891,18 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         case .int(let i):    return Double(i)
         default:             return nil
         }
+    }
+
+    private func asString(_ value: FieldValue?) -> String? {
+        if case .string(let s) = value { return s }
+        return nil
+    }
+
+    /// Trimmed non-empty string, or `nil`. Used so an empty `tax_account`
+    /// link falls through to the default VAT account.
+    private func nonEmptyString(_ value: FieldValue?) -> String? {
+        guard case .string(let s) = value else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

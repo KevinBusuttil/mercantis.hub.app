@@ -117,6 +117,8 @@ enum HubMenuItem: Identifiable {
         case "VendTrans":        return "shippingbox"
         case "Settlement":       return "checkmark.seal"
         case "TaxTrans":         return "percent"
+        case "TaxCode":          return "percent"
+        case "TaxCategory":      return "square.stack.3d.up"
         default:                 return "doc.text"
         }
     }

@@ -19,7 +19,7 @@ final class HubMasterDataLifecycleTests: XCTestCase {
         "Customer", "Supplier", "Item", "Contact", "Address",
         "Currency", "UOM", "Brand", "Warehouse", "Company", "Account",
         "CostCenter", "PriceList", "Workstation", "Operation",
-        "FiscalYear", "NumberingSeries",
+        "FiscalYear", "NumberingSeries", "TaxCategory", "TaxCode",
     ]
 
     private static let auditDocTypes = [

@@ -285,10 +285,17 @@ private struct HubRecordWorkspaceView: View {
             primaryCreateActionTitle: copy.primaryActionTitle,
             onCreateDocument: { makeDraftDocument() },
             onSaveDocument: { document in
-                let prepared = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(
+                let withDefaults = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(
                     document,
                     docType: docType,
                     businessProfile: currentBusinessProfile()
+                )
+                // Phase 2 (VAT): recompute tax rows + tax-aware totals from
+                // the line items and resolved tax codes on every save.
+                let prepared = HubTaxCalculationPolicy.applied(
+                    to: withDefaults,
+                    docType: docType,
+                    engine: engine
                 )
                 let existingDocuments = try engine.list(docType: docType.id)
                 try HubFiscalYearValidationPolicy.validate(prepared, existingDocuments: existingDocuments)
@@ -1356,6 +1363,14 @@ private struct HubDocumentEditor: View {
 
     private func submit() {
         do {
+            // Phase 2 (VAT): make sure taxes + totals reflect the latest
+            // line items before they are frozen by submit and read by the
+            // ledger / TaxTrans derivation.
+            document = HubTaxCalculationPolicy.applied(
+                to: document,
+                docType: docType,
+                engine: engine
+            )
             // 1. Persist any pending edits.
             _ = try engine.save(document)
             if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {

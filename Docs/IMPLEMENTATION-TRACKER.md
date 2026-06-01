@@ -3,7 +3,7 @@
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|
 | Business Setup Foundation | #51 | Done | - | #59, #60, #63, #68, #69, #71 | 2026-06-01 | None | Business setup foundation complete: Business Profile, Fiscal Year, Numbering Series, single-record settings UX, active fiscal year validation, NumberingSeries storage-only decision, and safe Business Profile defaults for sales/purchase/payment drafts. Stock/VAT account defaults remain stored-only placeholders until those flows ship. |
-| VAT / Tax Foundation | #52 | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
+| VAT / Tax Foundation | #52 | Done | claude/tender-euler-ierBR | - | 2026-06-01 | Business Setup | TaxCategory + TaxCode masters, shared pure `HubTaxEngine`, `HubTaxCalculationPolicy` writes net_total/taxes/total_taxes/grand_total on save+submit, item/customer/supplier + per-line tax defaults, GL split (net income/expense vs output/input VAT account with default_vat_account fallback), TaxTrans derivation on submit/cancel with reversal, VAT Summary report. POS reuses `HubTaxEngine` (pure). Build/tests verified on macOS/Xcode (no Swift toolchain in web env). |
 | Stock Balance / Inventory Availability | #53 | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
 | Purchase Receipt and Sales Delivery | #54 | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |
 | Guided Payments | #55 | Not started | - | - | 2026-05-31 | Existing Payment Entry | Improves Money UX |

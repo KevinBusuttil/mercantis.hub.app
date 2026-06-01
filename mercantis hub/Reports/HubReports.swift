@@ -134,11 +134,30 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + buyingRoles
     )
 
+    /// VAT Summary — Phase 2. `TaxTrans` rolled up per tax code, split into
+    /// output (sales) and input (purchase) VAT, with the net payable.
+    /// Reversal rows carry negative base / tax so cancelled invoices drop
+    /// out of the totals automatically.
+    public static let vatSummary = ReportDefinition(
+        id: "vat-summary",
+        name: "VAT Summary",
+        docType: "TaxTrans",
+        columns: [
+            "Tax Code", "Rate",
+            "Output Base", "Output VAT",
+            "Input Base", "Input VAT",
+            "Net VAT",
+        ],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView,
         customerAging, trialBalance,
         customerStatement, supplierLedger,
+        vatSummary,
     ]
 
     public static func report(forId id: String) -> ReportDefinition? {
@@ -181,6 +200,8 @@ public enum HubReports: Sendable {
                 filters: filters,
                 engine: engine
             )
+        case "vat-summary":
+            return try runVatSummary(engine: engine)
         default:
             return nil
         }
@@ -337,6 +358,83 @@ public enum HubReports: Sendable {
             ])
         }
         return ReportResult(columns: report.columns, rows: output)
+    }
+
+    // MARK: - VAT Summary (Phase 2)
+
+    /// Roll up `TaxTrans` rows per tax code into output (sales) vs input
+    /// (purchase) VAT. Output is identified by the source voucher type
+    /// (SalesInvoice / POS); everything else is treated as input.
+    private static func runVatSummary(engine: DocumentEngine) throws -> ReportResult {
+        let entries = try engine.list(docType: "TaxTrans", applyRowAccess: false)
+
+        struct Bucket {
+            var rate: Double = 0
+            var outputBase: Double = 0
+            var outputVat: Double = 0
+            var inputBase: Double = 0
+            var inputVat: Double = 0
+        }
+
+        // Resolve tax-code ids to their friendly names for display.
+        let codeNames: [String: String] = Dictionary(
+            (try engine.list(docType: "TaxCode", applyRowAccess: false))
+                .map { ($0.id, asString($0.fields["tax_code_name"]) ?? $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let outputVouchers: Set<String> = ["SalesInvoice", "POSInvoice", "POSSale"]
+        var perCode: [String: Bucket] = [:]
+        var order: [String] = []
+
+        for entry in entries {
+            let code = asString(entry.fields["tax"]) ?? "(none)"
+            if perCode[code] == nil { order.append(code) }
+            var bucket = perCode[code] ?? Bucket()
+            bucket.rate = asDouble(entry.fields["rate"]) ?? bucket.rate
+            let base = asDouble(entry.fields["base_amount"]) ?? 0
+            let tax  = asDouble(entry.fields["tax_amount"]) ?? 0
+            let voucher = asString(entry.fields["voucher_type"]) ?? ""
+            if outputVouchers.contains(voucher) {
+                bucket.outputBase += base
+                bucket.outputVat  += tax
+            } else {
+                bucket.inputBase += base
+                bucket.inputVat  += tax
+            }
+            perCode[code] = bucket
+        }
+
+        var rows: [[String?]] = []
+        var totalOutVat = 0.0
+        var totalInVat = 0.0
+        for code in order {
+            guard let b = perCode[code] else { continue }
+            totalOutVat += b.outputVat
+            totalInVat  += b.inputVat
+            rows.append([
+                codeNames[code] ?? code,
+                formatRate(b.rate),
+                formatCurrency(b.outputBase),
+                formatCurrency(b.outputVat),
+                formatCurrency(b.inputBase),
+                formatCurrency(b.inputVat),
+                formatCurrency(b.outputVat - b.inputVat),
+            ])
+        }
+        // Net VAT payable (output) / reclaimable (input) across all codes.
+        rows.append([
+            "Total", "", "", formatCurrency(totalOutVat),
+            "", formatCurrency(totalInVat),
+            formatCurrency(totalOutVat - totalInVat),
+        ])
+        return ReportResult(columns: vatSummary.columns, rows: rows)
+    }
+
+    private static func formatRate(_ rate: Double) -> String {
+        rate == rate.rounded()
+            ? String(format: "%.0f%%", rate)
+            : String(format: "%.2f%%", rate)
     }
 
     // MARK: - Trial Balance

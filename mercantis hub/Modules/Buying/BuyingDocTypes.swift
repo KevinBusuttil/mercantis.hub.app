@@ -37,6 +37,8 @@ enum Buying {
             FieldDefinition(key: "amount", label: "Amount",
                             type: .currency, required: false,
                             formulaExpression: "qty * rate"),
+            FieldDefinition(key: "tax_code", label: "Tax Code",
+                            type: .link, required: false, linkedDocType: "TaxCode"),
             FieldDefinition(key: "warehouse", label: "Target Warehouse",
                             type: .link, required: false, linkedDocType: "Warehouse"),
             FieldDefinition(key: "schedule_date", label: "Required By",
@@ -75,6 +77,8 @@ enum Buying {
             FieldDefinition(key: "mobile_no", label: "Mobile", type: .phone, required: false),
             FieldDefinition(key: "phone", label: "Phone", type: .phone, required: false),
             FieldDefinition(key: "tax_id", label: "Tax ID", type: .text, required: false),
+            FieldDefinition(key: "tax_code", label: "Default Tax Code",
+                            type: .link, required: false, linkedDocType: "TaxCode"),
             FieldDefinition(key: "default_currency", label: "Default Currency",
                             type: .link, required: false, linkedDocType: "Currency"),
             FieldDefinition(key: "default_price_list", label: "Default Buying Price List",
@@ -115,7 +119,7 @@ enum Buying {
                 key: "financial",
                 title: "Financial",
                 columns: 2,
-                fieldKeys: ["tax_id", "payment_terms"]
+                fieldKeys: ["tax_id", "tax_code", "payment_terms"]
             ),
             FormLayoutSection(
                 key: "notes",
@@ -238,6 +242,14 @@ enum Buying {
         isChildTable: false,
         isSubmittable: true,
         fields: purchaseParentFields(includeOutstanding: true) + [
+            FieldDefinition(key: "tax_code", label: "Default Tax Code",
+                            type: .link, required: false, linkedDocType: "TaxCode"),
+            FieldDefinition(key: "net_total", label: "Net Total",
+                            type: .currency, required: false),
+            FieldDefinition(key: "taxes", label: "Taxes",
+                            type: .table, required: false, childDocType: "TaxCharge"),
+            FieldDefinition(key: "total_taxes", label: "Total Taxes",
+                            type: .currency, required: false),
             FieldDefinition(key: "credit_to", label: "Credit To (Payable)",
                             type: .link, required: true, linkedDocType: "Account"),
             FieldDefinition(key: "expense_account", label: "Expense Account",
@@ -252,7 +264,30 @@ enum Buying {
         indexes: [],
         searchFields: ["supplier"],
         titleField: "supplier",
-        formLayout: FormLayout(sections: purchaseParentLayout + [
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "header",
+                title: "Header",
+                columns: 2,
+                fieldKeys: ["supplier", "transaction_date", "currency", "price_list", "tax_code"]
+            ),
+            FormLayoutSection(
+                key: "items",
+                title: "Items",
+                fieldKeys: ["items"]
+            ),
+            FormLayoutSection(
+                key: "taxes",
+                title: "Taxes",
+                helpText: "Tax rows are calculated from item / supplier tax codes on save.",
+                fieldKeys: ["taxes"]
+            ),
+            FormLayoutSection(
+                key: "totals",
+                title: "Totals",
+                columns: 2,
+                fieldKeys: ["total_qty", "net_total", "total_taxes", "grand_total"]
+            ),
             FormLayoutSection(
                 key: "billing",
                 title: "Billing",
@@ -265,6 +300,11 @@ enum Buying {
                 helpText: "Accounts used when GL entries are derived on submit.",
                 columns: 2,
                 fieldKeys: ["credit_to", "expense_account", "cost_center"]
+            ),
+            FormLayoutSection(
+                key: "notes",
+                title: "Notes",
+                fieldKeys: ["notes"]
             )
         ])
     )
