@@ -25,7 +25,7 @@ struct RootView: View {
     }
 
     private var visibleModules: [HubModule] {
-        HubNavigation.allModules.filter { visibility.isVisible($0.visibility) }
+        HubNavigation.allModules.filter { visibility.isModuleVisible($0) }
     }
 
     private var activeModuleID: String? {
@@ -112,6 +112,16 @@ struct RootView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .padding(.vertical, 4)
+
+                Toggle(isOn: $visibility.posEnabled) {
+                    Label("Point of Sale", systemImage: "creditcard.and.123")
+                        .font(.callout)
+                }
+                .toggleStyle(.switch)
+                .help("Enable the retail POS module — a touch-friendly till that posts real sales, payments, VAT, and stock movements.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
             }
         }
         .listStyle(.sidebar)
@@ -153,7 +163,10 @@ struct RootView: View {
                 }
                 .id("dashboard:\(id)")
             case .flow(let id, _, _):
-                if let mode = guidedPaymentMode(for: id) {
+                if id == "pos-checkout" {
+                    HubPOSCheckoutView(engine: engine, workflowEngine: workflowEngine)
+                        .id("flow:\(id)")
+                } else if let mode = guidedPaymentMode(for: id) {
                     GuidedPaymentFlowView(mode: mode, engine: engine, workflowEngine: workflowEngine)
                         .id("flow:\(id)")
                 } else {

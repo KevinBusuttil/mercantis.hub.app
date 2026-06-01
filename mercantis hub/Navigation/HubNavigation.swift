@@ -13,6 +13,9 @@ struct HubModule: Identifiable {
     /// Whole-module visibility. Manufacturing is `.advanced` so it's optional
     /// for the typical small business; everything else is `.normal`.
     var visibility: HubVisibility = .normal
+    /// When true, the module is gated behind the Retail/POS feature flag and
+    /// hidden unless the user has enabled POS.
+    var requiresPOS: Bool = false
 
     var itemCount: Int {
         groups.reduce(0) { $0 + $1.items.count }
@@ -173,6 +176,7 @@ enum HubNavigation {
         CRM.module,
         Selling.module,
         Buying.module,
+        POS.module,
         Stock.module,
         Deliveries.module,
         Manufacturing.module,
@@ -183,7 +187,7 @@ enum HubNavigation {
     static func moduleID(for item: HubMenuItem?, settings: HubVisibilitySettings) -> String? {
         guard let item else { return nil }
         return allModules
-            .filter { settings.isVisible($0.visibility) }
+            .filter { settings.isModuleVisible($0) }
             .first(where: { $0.contains(item, settings: settings) })?
             .id
     }

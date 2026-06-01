@@ -20,7 +20,7 @@ import MercantisCore
 enum HubTaxCalculationPolicy {
 
     /// DocTypes that carry a `taxes` table and tax-aware totals.
-    static let supportedDocTypes: Set<String> = ["SalesInvoice", "PurchaseInvoice"]
+    static let supportedDocTypes: Set<String> = ["SalesInvoice", "PurchaseInvoice", "POSInvoice"]
 
     /// The line-item child table key for a supported DocType.
     private static let lineTableKey = "items"
@@ -167,7 +167,7 @@ enum HubTaxCalculationPolicy {
         engine: DocumentEngine
     ) -> String? {
         switch docTypeId {
-        case "SalesInvoice":
+        case "SalesInvoice", "POSInvoice":
             guard let id = nonEmptyString(document.fields["customer"]),
                   let customer = try? engine.fetch(docType: "Customer", id: id) else { return nil }
             return nonEmptyString(customer.fields["tax_code"])
