@@ -181,6 +181,14 @@ Seven canonical reports and three dashboards ship in the manifest:
 | Inventory Overview | Item / Warehouse / Submitted Stock Entry counts, Recent Stock Movements list, shortcuts |
 | Accounting Overview | Account / Journal Entry / Payment Entry counts, Recent GL Entries list, shortcuts |
 
+### Business Profile transaction defaults
+
+- `HubBusinessProfileDefaultsPolicy` applies Business Profile defaults in Hub when drafts are created and again before the first save.
+- Sales Order / Sales Invoice / Purchase Order / Purchase Invoice drafts inherit `currency`; Sales Invoice also inherits `debit_to` + `income_account`; Purchase Invoice also inherits `credit_to` + `expense_account`.
+- Existing `items` rows on those drafts, and any rows still blank on first save, inherit the Business Profile `default_warehouse`.
+- Payment Entry applies `paid_from` / `paid_to` defaults once `payment_type` is known: **Receive** uses receivable → cash/bank, **Pay** uses cash/bank → payable, and **Internal Transfer** stays unchanged because there is no safe single-account default.
+- `default_stock_account` and `default_vat_account` are currently stored on the Business Profile only; Hub does not consume them yet because stock-account posting and VAT calculation are still tracked separately.
+
 Architecture:
 - `Reports/HubReports.swift` declares the five `ReportDefinition`s
   with proper `allowedRoles` (Phase D / ADR-049) and provides

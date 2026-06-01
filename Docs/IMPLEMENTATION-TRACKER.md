@@ -2,7 +2,7 @@
 
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|
-| Business Setup Foundation | #51 | In progress | - | #59, #60, #63 | 2026-06-01 | None | Business Profile, Fiscal Year, Numbering Series, and settings/single-record UX merged; active fiscal year validation shipped. Numbering Series is documented as storage-only until Core supports safe runtime overrides, and Business Profile defaults now seed selected orders, invoices, and payment accounts in Hub. |
+| Business Setup Foundation | #51 | In progress | - | #59, #60, #63 | 2026-06-01 | None | Business Profile, Fiscal Year, Numbering Series, and settings/single-record UX merged; active fiscal year validation shipped. Numbering Series is documented as storage-only until Core supports safe runtime overrides. Business Profile defaults now seed sales/purchase draft currency, invoice posting accounts, item-row warehouses, and Payment Entry receive/pay accounts; stock/VAT account defaults remain stored-only placeholders until those flows ship. |
 | VAT / Tax Foundation | #52 | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
 | Stock Balance / Inventory Availability | #53 | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
 | Purchase Receipt and Sales Delivery | #54 | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |

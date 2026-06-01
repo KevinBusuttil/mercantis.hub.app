@@ -42,6 +42,51 @@ final class HubBusinessProfileDefaultsPolicyTests: XCTestCase {
         XCTAssertEqual(stringValue(purchaseInvoice.fields["expense_account"]), "COGS - HUB")
     }
 
+    func test_draft_defaults_fill_existing_item_rows_and_prefilled_payment_accounts() {
+        let businessProfile = makeBusinessProfile()
+
+        let salesOrder = HubBusinessProfileDefaultsPolicy.applyDraftDefaults(
+            to: makeDocument(
+                docType: "SalesOrder",
+                children: [
+                    "items": [
+                        makeChild(docType: "SalesItem", fields: ["item": .string("ITEM-001")]),
+                        makeChild(docType: "SalesItem", fields: ["item": .string("ITEM-002"), "warehouse": .string("Row Warehouse")])
+                    ]
+                ]
+            ),
+            docType: Selling.salesOrder,
+            businessProfile: businessProfile
+        )
+        let salesItems = salesOrder.children["items"] ?? []
+        XCTAssertEqual(stringValue(salesItems.first.flatMap { $0.fields["warehouse"] }), "Main Warehouse")
+        XCTAssertEqual(stringValue(salesItems.last.flatMap { $0.fields["warehouse"] }), "Row Warehouse")
+
+        let receivePayment = HubBusinessProfileDefaultsPolicy.applyDraftDefaults(
+            to: makeDocument(docType: "PaymentEntry", fields: ["payment_type": .string("Receive")]),
+            docType: Accounting.paymentEntry,
+            businessProfile: businessProfile
+        )
+        XCTAssertEqual(stringValue(receivePayment.fields["paid_from"]), "Debtors - HUB")
+        XCTAssertEqual(stringValue(receivePayment.fields["paid_to"]), "Bank - HUB")
+
+        let payPayment = HubBusinessProfileDefaultsPolicy.applyDraftDefaults(
+            to: makeDocument(docType: "PaymentEntry", fields: ["payment_type": .string("Pay")]),
+            docType: Accounting.paymentEntry,
+            businessProfile: businessProfile
+        )
+        XCTAssertEqual(stringValue(payPayment.fields["paid_from"]), "Bank - HUB")
+        XCTAssertEqual(stringValue(payPayment.fields["paid_to"]), "Creditors - HUB")
+
+        let internalTransfer = HubBusinessProfileDefaultsPolicy.applyDraftDefaults(
+            to: makeDocument(docType: "PaymentEntry", fields: ["payment_type": .string("Internal Transfer")]),
+            docType: Accounting.paymentEntry,
+            businessProfile: businessProfile
+        )
+        XCTAssertNil(internalTransfer.fields["paid_from"])
+        XCTAssertNil(internalTransfer.fields["paid_to"])
+    }
+
     func test_first_save_defaults_fill_item_warehouses_and_payment_accounts() {
         let businessProfile = makeBusinessProfile()
 
