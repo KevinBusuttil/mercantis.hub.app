@@ -20,6 +20,7 @@ final class HubMasterDataLifecycleTests: XCTestCase {
         "Currency", "UOM", "Brand", "Warehouse", "Company", "Account",
         "CostCenter", "PriceList", "Workstation", "Operation",
         "FiscalYear", "NumberingSeries", "TaxCategory", "TaxCode",
+        "POSProfile", "POSSession",
     ]
 
     private static let auditDocTypes = [
@@ -30,7 +31,7 @@ final class HubMasterDataLifecycleTests: XCTestCase {
     private static let submittableDocTypes = [
         "Quotation", "SalesOrder", "SalesInvoice",
         "SupplierQuotation", "PurchaseOrder", "PurchaseInvoice",
-        "PurchaseReceipt", "SalesDelivery",
+        "PurchaseReceipt", "SalesDelivery", "POSInvoice",
         "StockEntry", "JournalEntry", "PaymentEntry",
         "BOM", "WorkOrder", "JobCard", "ProductionPlan",
     ]

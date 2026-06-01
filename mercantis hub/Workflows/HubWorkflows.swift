@@ -227,6 +227,25 @@ public enum HubWorkflows: Sendable {
         ]
     )
 
+    // MARK: - POS
+
+    public static let posInvoice = WorkflowDefinition(
+        id: "wf-pos-invoice",
+        name: "POS Sale",
+        docType: "POSInvoice",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
     // MARK: - Stock + Accounting (canonical Draft / Submitted / Cancelled only)
 
     public static let stockEntry = WorkflowDefinition(
@@ -392,6 +411,7 @@ public enum HubWorkflows: Sendable {
         purchaseInvoice,
         purchaseReceipt,
         salesDelivery,
+        posInvoice,
         stockEntry,
         journalEntry,
         paymentEntry,

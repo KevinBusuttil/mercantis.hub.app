@@ -82,6 +82,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             case "PurchaseInvoice": try derivePurchaseInvoice(document, reversal: false)
             case "PurchaseReceipt": try deriveStockDocument(document, incoming: true,  voucherType: "PurchaseReceipt", reversal: false)
             case "SalesDelivery":   try deriveStockDocument(document, incoming: false, voucherType: "SalesDelivery",   reversal: false)
+            case "POSInvoice":      try derivePOSInvoice(document, reversal: false)
             default: return
             }
         } catch {
@@ -103,6 +104,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             case "PurchaseInvoice": try derivePurchaseInvoice(document, reversal: true)
             case "PurchaseReceipt": try deriveStockDocument(document, incoming: true,  voucherType: "PurchaseReceipt", reversal: true)
             case "SalesDelivery":   try deriveStockDocument(document, incoming: false, voucherType: "SalesDelivery",   reversal: true)
+            case "POSInvoice":      try derivePOSInvoice(document, reversal: true)
             default: return
             }
         } catch {
@@ -178,8 +180,10 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         let postingDate = doc.fields["posting_date"] ?? doc.fields["transaction_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
         let transType = incoming ? "Receipt" : "Issue"
-        // Lines may omit a warehouse and inherit the document default.
+        // Lines may omit a warehouse and inherit the document default
+        // (`set_warehouse` on fulfilment docs, `warehouse` on POS).
         let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+            ?? nonEmptyString(doc.fields["warehouse"])
 
         var affected: [String: (item: String, warehouse: String)] = [:]
         for row in rows {
@@ -634,6 +638,60 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         )
     }
 
+    // MARK: - POS Invoice → Stock issue + GL + Output VAT (Phase 6)
+
+    /// A POS sale is a cash sale: stock leaves, the bank/cash account is
+    /// debited for the gross, income is credited net of tax, and output VAT
+    /// is credited per tax row. Payment is captured inline (the `tenders`
+    /// child), so there is no receivable / CustTrans leg. Reuses the shared
+    /// stock and tax derivation so the behaviour matches the rest of Hub.
+    private func derivePOSInvoice(_ doc: Document, reversal: Bool) throws {
+        // 1. Stock out (Issue) — reuses the fulfilment stock derivation,
+        //    which also recomputes the affected Stock Balance rows.
+        try deriveStockDocument(doc, incoming: false, voucherType: "POSInvoice", reversal: reversal)
+
+        // 2. Financial posting.
+        let postingDate = doc.fields["transaction_date"] ?? .date(Date())
+        let taxRows = doc.children["taxes"] ?? []
+        let grand = asDouble(doc.fields["grand_total"]) ?? 0
+        let taxSum = totalTax(in: taxRows)
+        let net = asDouble(doc.fields["net_total"]) ?? (grand - taxSum)
+
+        guard let cash = nonEmptyString(doc.fields["cash_account"]) ?? companyDefault("default_cash_bank_account"),
+              let income = nonEmptyString(doc.fields["income_account"]) ?? companyDefault("default_income_account")
+        else { return }
+        let customer = doc.fields["customer"]
+
+        // Dr Cash / Bank — gross received
+        try writeGLEntry(
+            id: "GL-\(doc.id)-cash\(reversal ? "-reversal" : "")",
+            postingDate: postingDate,
+            account: .string(cash),
+            debit: reversal ? .double(0) : .double(grand),
+            credit: reversal ? .double(grand) : .double(0),
+            partyType: nil, party: nil, costCenter: nil,
+            voucherType: "POSInvoice", voucherNo: doc.id,
+            isReversal: reversal, company: doc.company
+        )
+        // Cr Income — net of tax
+        try writeGLEntry(
+            id: "GL-\(doc.id)-income\(reversal ? "-reversal" : "")",
+            postingDate: postingDate,
+            account: .string(income),
+            debit: reversal ? .double(net) : .double(0),
+            credit: reversal ? .double(0) : .double(net),
+            partyType: nil, party: nil, costCenter: nil,
+            voucherType: "POSInvoice", voucherNo: doc.id,
+            isReversal: reversal, company: doc.company
+        )
+        // Cr Output VAT + TaxTrans per tax row.
+        try deriveTaxRows(
+            taxRows, on: doc, postingDate: postingDate,
+            party: customer, partyTypeValue: "Customer",
+            isOutput: true, reversal: reversal
+        )
+    }
+
     // MARK: - Shared writer
 
     private func writeGLEntry(
@@ -795,8 +853,14 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
     /// The single Business Profile's default VAT account, used as the
     /// posting account when a tax row carries no explicit `tax_account`.
     private func defaultVatAccount() -> String? {
+        companyDefault("default_vat_account")
+    }
+
+    /// A Business Profile default account/value (e.g. `default_cash_bank_account`,
+    /// `default_income_account`), or `nil` when unset.
+    private func companyDefault(_ key: String) -> String? {
         guard let company = (try? engine.list(docType: "Company"))?.first else { return nil }
-        return nonEmptyString(company.fields["default_vat_account"])
+        return nonEmptyString(company.fields[key])
     }
 
     // MARK: - Subledger writers (Phase 5.7)

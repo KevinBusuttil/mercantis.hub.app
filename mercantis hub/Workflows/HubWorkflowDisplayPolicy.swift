@@ -187,6 +187,21 @@ enum HubWorkflowDisplayPolicy {
             ]
         ),
 
+        // MARK: POS
+
+        "POSInvoice": DocTypeDisplayMapping(
+            statuses: [
+                "Draft":     .init(label: "Open Sale", tone: .muted),
+                "Submitted": .init(label: "Completed", tone: .success,
+                                   help: "The sale is posted: payment taken, stock reduced, tax recorded."),
+                "Cancelled": .init(label: "Voided",    tone: .danger),
+            ],
+            actions: [
+                "Submit": .init(label: "Complete Sale", confirmation: postStockConfirmation),
+                "Cancel": .init(label: "Void Sale", confirmation: reverseStockConfirmation),
+            ]
+        ),
+
         // MARK: Stock
 
         "StockEntry": DocTypeDisplayMapping(

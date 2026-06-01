@@ -14,6 +14,7 @@ public enum HubManifest: Sendable {
         + Stock.allDocTypes            // StockEntry + StockEntryDetail + Bin
         + Deliveries.allDocTypes       // SalesDelivery + SalesDeliveryItem
         + Accounting.allDocTypes       // Account + JournalEntry / PaymentEntry
+        + POS.allDocTypes              // POS Profile / Session / Invoice + Payment Tender
         + Manufacturing.allDocTypes    // BOM / WorkOrder / JobCard / ProductionPlan
 
     public static func docType(for id: String) -> DocType? {
