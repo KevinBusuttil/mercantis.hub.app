@@ -9,7 +9,7 @@ final class HubWorkspaceCopyPolicyTests: XCTestCase {
         let company = HubWorkspaceCopyPolicy.copy(for: Setup.company)
         XCTAssertEqual(company.title, "Business Profile")
         XCTAssertEqual(company.subtitle, "Store your business identity and operational defaults in one place.")
-        XCTAssertEqual(company.primaryActionTitle, "New Business Profile")
+        XCTAssertEqual(company.primaryActionTitle, "Set Up Business Profile")
         XCTAssertEqual(company.emptyStateTitle, "No business profile yet")
 
         let supplier = HubWorkspaceCopyPolicy.copy(for: Buying.supplier)
@@ -47,7 +47,7 @@ final class HubWorkspaceCopyPolicyTests: XCTestCase {
 
         let numbering = HubWorkspaceCopyPolicy.copy(for: Setup.numberingSeries)
         XCTAssertEqual(numbering.title, "Numbering Series")
-        XCTAssertEqual(numbering.primaryActionTitle, "New Numbering Series")
+        XCTAssertEqual(numbering.primaryActionTitle, "Set Up Numbering Series")
         XCTAssertEqual(numbering.emptyStateTitle, "No numbering configured")
     }
 }
