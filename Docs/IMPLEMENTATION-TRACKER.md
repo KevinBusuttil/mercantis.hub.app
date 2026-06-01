@@ -7,7 +7,7 @@
 | Stock Balance / Inventory Availability | #53 | Done | claude/tender-euler-ierBR | #73 | 2026-06-01 | Stock Ledger | Derived `Bin` (Stock Balance) DocType + pure `StockBalanceCalculator` + `StockBalanceService`. |
 | Purchase Receipt and Sales Delivery | #54 | Done | claude/tender-euler-ierBR | #75 | 2026-06-01 | Stock Balance | PurchaseReceipt(+Item) in Buying; SalesDelivery(+Item) in new Deliveries module with posting and availability impact. |
 | Guided Payments | #55 | Done | claude/tender-euler-ierBR | #76 | 2026-06-01 | Existing Payment Entry | Guided Receive Payment / Pay Supplier flows: party picker → outstanding invoices/bills (outstanding/open allocation UX). |
-| POS v1 | #56 | Not started | - | - | 2026-05-31 | Business Setup, VAT, Stock Balance | Turns POS shell into real module |
+| POS v1 | #56 | Done | claude/tender-euler-ierBR | #77 | 2026-06-01 | Business Setup, VAT, Stock Balance | POS v1 implemented: POS Profile, POS Session, POSInvoice, PaymentTender, real item search, price-list pricing, VAT via HubTaxEngine, tender capture, session totals, receipt placeholder, stock decrement, TaxTrans/GL posting, and POS feature-flag gating. |
 | Delivery Routes and Tracking | #57 | Not started | - | - | 2026-05-31 | Sales Delivery | Manual routing first |
 | Presets and Onboarding | #58 | Not started | - | - | 2026-05-31 | Business Setup | Product packaging |
 
