@@ -43,6 +43,14 @@ final class POSCheckoutBuilderTests: XCTestCase {
         XCTAssertEqual(POSCheckoutBuilder.tendered(tenders), 15.5, accuracy: 0.0001)
     }
 
+    func test_is_fully_paid_requires_tender_to_cover_grand_total() {
+        let exact = [POSCheckoutBuilder.Tender(type: "Cash", amount: 15.5, reference: nil)]
+        let short = [POSCheckoutBuilder.Tender(type: "Cash", amount: 15.49, reference: nil)]
+
+        XCTAssertTrue(POSCheckoutBuilder.isFullyPaid(tenders: exact, grandTotal: 15.5))
+        XCTAssertFalse(POSCheckoutBuilder.isFullyPaid(tenders: short, grandTotal: 15.5))
+    }
+
     // MARK: - Build
 
     func test_build_pos_invoice_shapes_items_and_tenders() {

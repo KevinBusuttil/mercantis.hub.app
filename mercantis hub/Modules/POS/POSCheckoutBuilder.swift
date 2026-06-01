@@ -44,6 +44,10 @@ enum POSCheckoutBuilder {
         round2(tenders.reduce(0) { $0 + $1.amount })
     }
 
+    static func isFullyPaid(tenders: [Tender], grandTotal: Double) -> Bool {
+        tendered(tenders) >= round2(grandTotal)
+    }
+
     /// Change owed to the customer (never negative).
     static func change(tenders: [Tender], grandTotal: Double) -> Double {
         max(0, round2(tendered(tenders) - grandTotal))
