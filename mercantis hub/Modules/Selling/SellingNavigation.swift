@@ -12,7 +12,8 @@ extension Selling {
                 .docType(Selling.quotation, label: "Quotes"),
                 .docType(Selling.salesOrder, label: "Sales Orders"),
                 .docType(Selling.salesInvoice, label: "Sales Invoices"),
-                .docType(Accounting.paymentEntry, label: "Receive Payment")
+                .flow(id: "guided-receive-payment", label: "Receive Payment",
+                      systemImage: "tray.and.arrow.down")
             ]),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.salesRegister.id,

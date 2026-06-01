@@ -11,9 +11,14 @@ extension Accounting {
             HubMenuGroup(label: "Chart of Accounts", items: [
                 .docType(Accounting.account)
             ]),
-            // Payments stay on the everyday surface.
+            // Guided money flows stay on the everyday surface; the raw
+            // Payment Entry list is for accountants who want the spine.
             HubMenuGroup(label: "Payments", items: [
-                .docType(Accounting.paymentEntry, label: "Payments")
+                .flow(id: "guided-receive-payment", label: "Receive Payment",
+                      systemImage: "tray.and.arrow.down"),
+                .flow(id: "guided-pay-supplier", label: "Pay Supplier",
+                      systemImage: "tray.and.arrow.up"),
+                .docType(Accounting.paymentEntry, label: "All Payments")
             ]),
             HubMenuGroup(label: "Receivables", items: [
                 .report(id: HubReports.customerAging.id,

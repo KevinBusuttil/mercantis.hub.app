@@ -152,6 +152,13 @@ struct RootView: View {
                     selection = selected
                 }
                 .id("dashboard:\(id)")
+            case .flow(let id, _, _):
+                if let mode = guidedPaymentMode(for: id) {
+                    GuidedPaymentFlowView(mode: mode, engine: engine, workflowEngine: workflowEngine)
+                        .id("flow:\(id)")
+                } else {
+                    HubHomeView(engine: engine) { item in selection = item }
+                }
             case .none:
                 HubHomeView(engine: engine) { item in
                     selection = item
@@ -159,6 +166,15 @@ struct RootView: View {
             }
         }
         .navigationTitle(selection?.label ?? "Mercantis Hub")
+    }
+
+    /// Map a guided-flow nav id to its concrete payment mode.
+    private func guidedPaymentMode(for id: String) -> GuidedPaymentMode? {
+        switch id {
+        case "guided-receive-payment": return .receive
+        case "guided-pay-supplier":    return .pay
+        default:                       return nil
+        }
     }
 }
 

@@ -45,12 +45,16 @@ enum HubMenuItem: Identifiable {
     case docType(DocType, label: String? = nil)
     case report(id: String, label: String)
     case dashboard(id: String, label: String)
+    /// A bespoke guided workflow screen (e.g. Receive Payment / Pay Supplier),
+    /// not backed by a single DocType list. `id` selects the concrete flow.
+    case flow(id: String, label: String, systemImage: String)
 
     var id: String {
         switch self {
         case .docType(let d, _):    return "doctype:\(d.id)"
         case .report(let id, _):    return "report:\(id)"
         case .dashboard(let id, _): return "dashboard:\(id)"
+        case .flow(let id, _, _):   return "flow:\(id)"
         }
     }
 
@@ -60,6 +64,7 @@ enum HubMenuItem: Identifiable {
             return friendlyLabel ?? d.name
         case .report(_, let l):    return l
         case .dashboard(_, let l): return l
+        case .flow(_, let l, _):   return l
         }
     }
 
@@ -71,6 +76,8 @@ enum HubMenuItem: Identifiable {
             return "chart.bar"
         case .dashboard:
             return "rectangle.grid.2x2"
+        case .flow(_, _, let systemImage):
+            return systemImage
         }
     }
 
@@ -140,6 +147,9 @@ extension HubMenuItem: Hashable {
         case .dashboard(let id, _):
             hasher.combine("dashboard")
             hasher.combine(id)
+        case .flow(let id, _, _):
+            hasher.combine("flow")
+            hasher.combine(id)
         }
     }
     static func == (lhs: HubMenuItem, rhs: HubMenuItem) -> Bool {
@@ -149,6 +159,8 @@ extension HubMenuItem: Hashable {
         case let (.report(lid, _), .report(rid, _)):
             return lid == rid
         case let (.dashboard(lid, _), .dashboard(rid, _)):
+            return lid == rid
+        case let (.flow(lid, _, _), .flow(rid, _, _)):
             return lid == rid
         default:
             return false
