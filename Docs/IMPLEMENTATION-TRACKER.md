@@ -2,7 +2,7 @@
 
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|
-| Business Setup Foundation | #51 | In progress | - | #59, #60, #63 | 2026-06-01 | None | Business Profile, Fiscal Year, Numbering Series, and settings/single-record UX merged; remaining in #51: active fiscal year validation. Numbering/autoname and document defaults to be moved to follow-up issues. |
+| Business Setup Foundation | #51 | In progress | - | #59, #60, #63 | 2026-06-01 | None | Business Profile, Fiscal Year, Numbering Series, and settings/single-record UX merged; Slice 4 active fiscal year handling/validation in progress. Numbering/autoname and document defaults moved to follow-up issues. |
 | VAT / Tax Foundation | #52 | Not started | - | - | 2026-05-31 | Business Setup | Required before real POS/invoices |
 | Stock Balance / Inventory Availability | #53 | Not started | - | - | 2026-05-31 | Stock Ledger | Required before POS and Deliveries |
 | Purchase Receipt and Sales Delivery | #54 | Not started | - | - | 2026-05-31 | Stock Balance preferred | Needed before Routes |

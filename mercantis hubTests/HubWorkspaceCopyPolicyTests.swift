@@ -42,8 +42,10 @@ final class HubWorkspaceCopyPolicyTests: XCTestCase {
     func test_setup_foundation_copy_for_fiscal_year_and_numbering() {
         let fiscalYear = HubWorkspaceCopyPolicy.copy(for: Setup.fiscalYear)
         XCTAssertEqual(fiscalYear.title, "Fiscal Years")
+        XCTAssertEqual(fiscalYear.subtitle, "Define accounting periods and keep one open year marked active.")
         XCTAssertEqual(fiscalYear.primaryActionTitle, "New Fiscal Year")
         XCTAssertEqual(fiscalYear.emptyStateTitle, "No fiscal year yet")
+        XCTAssertEqual(fiscalYear.emptyStateHint, "Tip: keep one open fiscal year marked active so the Hub has a clear current accounting period.")
 
         let numbering = HubWorkspaceCopyPolicy.copy(for: Setup.numberingSeries)
         XCTAssertEqual(numbering.title, "Numbering Series")
