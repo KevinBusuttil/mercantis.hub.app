@@ -92,4 +92,19 @@ final class HubMasterDataLifecycleTests: XCTestCase {
         XCTAssertEqual(company.titleField, "business_name")
         XCTAssertNotNil(company.formLayout)
     }
+
+    func test_numbering_series_payment_prefix_matches_live_payment_entry_pattern() {
+        guard let paymentPrefixField = Setup.numberingSeries.fields.first(where: { $0.key == "payment_prefix" }) else {
+            XCTFail("payment_prefix field not found")
+            return
+        }
+
+        guard case .string(let storedPattern)? = paymentPrefixField.defaultValue else {
+            XCTFail("payment_prefix default is missing")
+            return
+        }
+
+        XCTAssertEqual(storedPattern, "PE-.YYYY.-.####")
+        XCTAssertEqual(Accounting.paymentEntry.autoname, "naming_series:PE-.YYYY.-.####")
+    }
 }

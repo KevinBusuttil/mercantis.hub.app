@@ -336,9 +336,11 @@ enum Setup {
 
     // MARK: - Numbering Settings
 
-    /// Numbering Series stores the naming series prefixes used by core
-    /// transactional documents (invoices, bills, deliveries, POS receipts,
-    /// payments). One record per business — edit to change the prefix/format.
+    /// Numbering Series stores business-facing numbering preferences for
+    /// invoices, bills, deliveries, POS receipts, and payments.
+    /// Current live document naming still stays in Mercantis Core via each
+    /// DocType's static `autoname` pattern, so this record is storage-only
+    /// until Hub/Core grows a safe runtime override bridge.
     static let numberingSeries = DocType(
         id: "NumberingSeries",
         name: "Numbering Series",
@@ -355,7 +357,7 @@ enum Setup {
             FieldDefinition(key: "pos_receipt_prefix", label: "POS Receipt Prefix",
                             type: .text, required: false, defaultValue: .string("POS-.YYYY.-.####")),
             FieldDefinition(key: "payment_prefix", label: "Payment Prefix",
-                            type: .text, required: false, defaultValue: .string("PAY-.YYYY.-.####"))
+                            type: .text, required: false, defaultValue: .string("PE-.YYYY.-.####"))
         ],
         permissions: [systemManagerPermission],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
@@ -366,7 +368,7 @@ enum Setup {
             FormLayoutSection(
                 key: "series",
                 title: "Document Numbering",
-                helpText: "Configure the naming pattern for each document type. Use .YYYY. for year and .#### for sequence.",
+                helpText: "Store the preferred naming pattern for each document type. Current live IDs still follow the built-in Core autoname patterns. Use .YYYY. for year and .#### for sequence.",
                 columns: 2,
                 fieldKeys: ["sales_invoice_prefix", "purchase_invoice_prefix",
                             "delivery_prefix", "pos_receipt_prefix", "payment_prefix"]

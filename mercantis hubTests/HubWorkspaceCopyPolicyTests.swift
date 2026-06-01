@@ -49,7 +49,9 @@ final class HubWorkspaceCopyPolicyTests: XCTestCase {
 
         let numbering = HubWorkspaceCopyPolicy.copy(for: Setup.numberingSeries)
         XCTAssertEqual(numbering.title, "Numbering Series")
+        XCTAssertEqual(numbering.subtitle, "Store preferred numbering patterns while live document IDs continue to use the built-in Core naming rules.")
         XCTAssertEqual(numbering.primaryActionTitle, "Set Up Numbering Series")
         XCTAssertEqual(numbering.emptyStateTitle, "No numbering configured")
+        XCTAssertEqual(numbering.emptyStateHint, "Tip: use .YYYY. for year and .#### for a four-digit sequence number. Current live IDs still follow each document's built-in Core pattern.")
     }
 }
