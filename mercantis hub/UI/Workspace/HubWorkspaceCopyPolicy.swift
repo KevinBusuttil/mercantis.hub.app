@@ -14,7 +14,7 @@ enum HubWorkspaceCopyPolicy {
         "Company": .init(
             title: "Business Profile",
             subtitle: "Store your business identity and operational defaults in one place.",
-            primaryActionTitle: "New Business Profile",
+            primaryActionTitle: "Set Up Business Profile",
             emptyStateTitle: "No business profile yet",
             emptyStateMessage: "Create your business profile to save company identity, default currency, warehouse, and account selections.",
             emptyStateHint: "Tip: keep one profile updated so future setup can reuse consistent defaults."
@@ -30,7 +30,7 @@ enum HubWorkspaceCopyPolicy {
         "NumberingSeries": .init(
             title: "Numbering Series",
             subtitle: "Configure automatic numbering for invoices, bills, deliveries, and payments.",
-            primaryActionTitle: "New Numbering Series",
+            primaryActionTitle: "Set Up Numbering Series",
             emptyStateTitle: "No numbering configured",
             emptyStateMessage: "Set up numbering patterns so each document gets a unique, sequential reference automatically.",
             emptyStateHint: "Tip: use .YYYY. for year and .#### for a four-digit sequence number."

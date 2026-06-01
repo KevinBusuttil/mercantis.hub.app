@@ -180,6 +180,11 @@ private struct HubRecordWorkspaceView: View {
     @State private var createTrigger = false
     @State private var showCollectionWorkspace = false
 
+    /// Whether this DocType uses single-record / settings mode.
+    private var isSingleRecord: Bool {
+        HubSingleRecordPolicy.isSingleRecord(docType.id)
+    }
+
     var body: some View {
         let copy = HubWorkspaceCopyPolicy.copy(for: docType)
 
@@ -194,84 +199,18 @@ private struct HubRecordWorkspaceView: View {
                     .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
                     .padding(.horizontal)
             }
-            if documents.isEmpty && !showCollectionWorkspace {
+            if isSingleRecord {
+                singleRecordBody(copy: copy)
+            } else if documents.isEmpty && !showCollectionWorkspace {
                 zeroRecordWorkspaceEmptyState(copy: copy)
             } else {
-                RecordCollectionHostView(
-                    preferenceKey: "hub.\(docType.id)",
-                    docType: docType,
-                    workspaceTitle: copy.title,
-                    workspaceSubtitle: copy.subtitle,
-                    workspaceSymbol: symbol(for: docType),
-                    documents: documents,
-                    configuration: RecordCollectionViewConfiguration(
-                        supportedViewModes: [.list, .browse, .detail],
-                        // Default to browse so the editor is visible the moment
-                        // a row is selected; otherwise users in .list mode have
-                        // no clear path from "row clicked" to "fields visible".
-                        defaultViewMode: .browse
-                    ),
-                    primaryCreateActionTitle: copy.primaryActionTitle,
-                    onCreateDocument: { makeDraftDocument() },
-                    onSaveDocument: { document in
-                        let saved = try engine.save(document)
-                        reloadDocumentsSafely()
-                        // Refetch so the host's binding picks up the persisted
-                        // `updatedAt`; without this the next save throws
-                        // `concurrencyConflict` (optimistic-concurrency contract).
-                        return (try? engine.fetch(docType: docType.id, id: saved.id)) ?? saved
-                    },
-                    onDeleteDocument: { document in
-                        try engine.delete(docType: docType.id, id: document.id)
-                        reloadDocumentsSafely()
-                    },
-                    customFields: customFields,
-                    onAddCustomField: { field in
-                        try customFieldStore.add(field)
-                        reloadCustomFieldsSafely()
-                    },
-                    onUpdateCustomField: { field in
-                        try customFieldStore.update(field)
-                        reloadCustomFieldsSafely()
-                    },
-                    onRemoveCustomField: { id in
-                        try customFieldStore.remove(id: id)
-                        reloadCustomFieldsSafely()
-                    },
-                    externalCreateTrigger: $createTrigger,
-                    linkSearchProvider: { targetDocType, _ in
-                        (try? engine.list(docType: targetDocType)) ?? []
-                    },
-                    linkResolveProvider: { targetDocType, id in
-                        try? engine.fetch(docType: targetDocType, id: id)
-                    },
-                    childDocTypeProvider: { HubManifest.docType(for: $0) },
-                    detailEditor: { composedDocType, binding in
-                        AnyView(
-                            HubDocumentEditor(
-                                // composedDocType already has any custom fields merged
-                                // into `.fields`, so the form renders end-user
-                                // additions alongside the manifest-declared fields.
-                                docType: composedDocType,
-                                engine: engine,
-                                workflowEngine: workflowEngine,
-                                document: binding,
-                                onPersist: { reloadDocumentsSafely() }
-                            )
-                        )
-                    },
-                    listViews: HubListViews.views(for: docType.id),
-                    displayPolicy: HubWorkflowDisplayPolicy.policy
-                )
-                .controlSize(.small)
+                multiRecordCollectionView(copy: copy)
             }
         }
         // Publish a context-aware "New <DocType>" action so the File ▸ New
         // (⌘N) menu command targets this workspace while it's on screen.
-        .focusedSceneValue(\.newRecordAction, NewRecordAction(label: primaryNewRecordLabel(from: copy)) {
-            showCollectionWorkspace = true
-            createTrigger = true
-        })
+        // For single-record DocTypes, suppress the action once a record exists.
+        .focusedSceneValue(\.newRecordAction, newRecordActionValue(copy: copy))
         .onAppear {
             reloadDocumentsSafely()
             reloadCustomFieldsSafely()
@@ -283,6 +222,131 @@ private struct HubRecordWorkspaceView: View {
             } else if !createTrigger {
                 showCollectionWorkspace = false
             }
+        }
+    }
+
+    // MARK: - Single-record settings workspace
+
+    @ViewBuilder
+    private func singleRecordBody(copy: HubWorkspaceCopy) -> some View {
+        if let existing = documents.first {
+            // A record exists — show the editor directly.
+            singleRecordEditor(document: existing, copy: copy)
+        } else if createTrigger {
+            // User initiated creation — show a fresh draft editor.
+            singleRecordCreateFlow(copy: copy)
+        } else {
+            // No record yet — show a settings-style empty state.
+            zeroRecordWorkspaceEmptyState(copy: copy)
+        }
+    }
+
+    private func singleRecordEditor(document: Document, copy: HubWorkspaceCopy) -> some View {
+        SingleRecordSettingsEditor(
+            docType: docType,
+            engine: engine,
+            workflowEngine: workflowEngine,
+            customFieldStore: customFieldStore,
+            initialDocument: document,
+            copy: copy,
+            onReload: { reloadDocumentsSafely() }
+        )
+    }
+
+    private func singleRecordCreateFlow(copy: HubWorkspaceCopy) -> some View {
+        SingleRecordSettingsEditor(
+            docType: docType,
+            engine: engine,
+            workflowEngine: workflowEngine,
+            customFieldStore: customFieldStore,
+            initialDocument: makeDraftDocument(),
+            copy: copy,
+            onReload: { reloadDocumentsSafely() }
+        )
+    }
+
+    // MARK: - Multi-record collection workspace
+
+    private func multiRecordCollectionView(copy: HubWorkspaceCopy) -> some View {
+        RecordCollectionHostView(
+            preferenceKey: "hub.\(docType.id)",
+            docType: docType,
+            workspaceTitle: copy.title,
+            workspaceSubtitle: copy.subtitle,
+            workspaceSymbol: symbol(for: docType),
+            documents: documents,
+            configuration: RecordCollectionViewConfiguration(
+                supportedViewModes: [.list, .browse, .detail],
+                // Default to browse so the editor is visible the moment
+                // a row is selected; otherwise users in .list mode have
+                // no clear path from "row clicked" to "fields visible".
+                defaultViewMode: .browse
+            ),
+            primaryCreateActionTitle: copy.primaryActionTitle,
+            onCreateDocument: { makeDraftDocument() },
+            onSaveDocument: { document in
+                let saved = try engine.save(document)
+                reloadDocumentsSafely()
+                // Refetch so the host's binding picks up the persisted
+                // `updatedAt`; without this the next save throws
+                // `concurrencyConflict` (optimistic-concurrency contract).
+                return (try? engine.fetch(docType: docType.id, id: saved.id)) ?? saved
+            },
+            onDeleteDocument: { document in
+                try engine.delete(docType: docType.id, id: document.id)
+                reloadDocumentsSafely()
+            },
+            customFields: customFields,
+            onAddCustomField: { field in
+                try customFieldStore.add(field)
+                reloadCustomFieldsSafely()
+            },
+            onUpdateCustomField: { field in
+                try customFieldStore.update(field)
+                reloadCustomFieldsSafely()
+            },
+            onRemoveCustomField: { id in
+                try customFieldStore.remove(id: id)
+                reloadCustomFieldsSafely()
+            },
+            externalCreateTrigger: $createTrigger,
+            linkSearchProvider: { targetDocType, _ in
+                (try? engine.list(docType: targetDocType)) ?? []
+            },
+            linkResolveProvider: { targetDocType, id in
+                try? engine.fetch(docType: targetDocType, id: id)
+            },
+            childDocTypeProvider: { HubManifest.docType(for: $0) },
+            detailEditor: { composedDocType, binding in
+                AnyView(
+                    HubDocumentEditor(
+                        // composedDocType already has any custom fields merged
+                        // into `.fields`, so the form renders end-user
+                        // additions alongside the manifest-declared fields.
+                        docType: composedDocType,
+                        engine: engine,
+                        workflowEngine: workflowEngine,
+                        document: binding,
+                        onPersist: { reloadDocumentsSafely() }
+                    )
+                )
+            },
+            listViews: HubListViews.views(for: docType.id),
+            displayPolicy: HubWorkflowDisplayPolicy.policy
+        )
+        .controlSize(.small)
+    }
+
+    // MARK: - New record action
+
+    private func newRecordActionValue(copy: HubWorkspaceCopy) -> NewRecordAction {
+        // For single-record DocTypes, suppress ⌘N once a record exists.
+        if isSingleRecord && !documents.isEmpty {
+            return NewRecordAction(label: primaryNewRecordLabel(from: copy)) { }
+        }
+        return NewRecordAction(label: primaryNewRecordLabel(from: copy)) {
+            showCollectionWorkspace = true
+            createTrigger = true
         }
     }
 
