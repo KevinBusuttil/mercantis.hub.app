@@ -285,6 +285,8 @@ private struct HubRecordWorkspaceView: View {
             primaryCreateActionTitle: copy.primaryActionTitle,
             onCreateDocument: { makeDraftDocument() },
             onSaveDocument: { document in
+                let existingDocuments = try engine.list(docType: docType.id)
+                try HubFiscalYearValidationPolicy.validate(document, existingDocuments: existingDocuments)
                 let saved = try engine.save(document)
                 reloadDocumentsSafely()
                 // Refetch so the host's binding picks up the persisted

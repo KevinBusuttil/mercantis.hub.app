@@ -21,11 +21,11 @@ enum HubWorkspaceCopyPolicy {
         ),
         "FiscalYear": .init(
             title: "Fiscal Years",
-            subtitle: "Define accounting periods for financial reporting and period close.",
+            subtitle: "Define accounting periods and keep one open year marked active.",
             primaryActionTitle: "New Fiscal Year",
             emptyStateTitle: "No fiscal year yet",
             emptyStateMessage: "Create your first fiscal year to define when your accounting period starts and ends.",
-            emptyStateHint: "Tip: most businesses use January–December or align with their tax reporting period."
+            emptyStateHint: "Tip: keep one open fiscal year marked active so the Hub has a clear current accounting period."
         ),
         "NumberingSeries": .init(
             title: "Numbering Series",

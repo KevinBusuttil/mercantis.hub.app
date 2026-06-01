@@ -313,6 +313,8 @@ enum Setup {
                             type: .date, required: true),
             FieldDefinition(key: "year_end_date", label: "End Date",
                             type: .date, required: true),
+            FieldDefinition(key: "is_active", label: "Active",
+                            type: .boolean, required: false, defaultValue: .bool(true)),
             FieldDefinition(key: "is_closed", label: "Closed",
                             type: .boolean, required: false, defaultValue: .bool(false))
         ],
@@ -325,9 +327,9 @@ enum Setup {
             FormLayoutSection(
                 key: "period",
                 title: "Accounting Period",
-                helpText: "Define the start and end dates for this fiscal year.",
+                helpText: "Define the start and end dates for this fiscal year. Keep one open year marked active.",
                 columns: 2,
-                fieldKeys: ["year_name", "year_start_date", "year_end_date", "is_closed"]
+                fieldKeys: ["year_name", "year_start_date", "year_end_date", "is_active", "is_closed"]
             )
         ])
     )
