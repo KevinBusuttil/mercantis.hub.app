@@ -63,6 +63,8 @@ enum CRM {
             FieldDefinition(key: "mobile", label: "Mobile", type: .phone, required: false),
             FieldDefinition(key: "website", label: "Website", type: .text, required: false),
             FieldDefinition(key: "tax_id", label: "Tax ID", type: .text, required: false),
+            FieldDefinition(key: "tax_code", label: "Default Tax Code",
+                            type: .link, required: false, linkedDocType: "TaxCode"),
             FieldDefinition(key: "default_currency", label: "Default Currency",
                             type: .link, required: false, linkedDocType: "Currency"),
             FieldDefinition(key: "default_price_list", label: "Default Price List",
@@ -110,7 +112,7 @@ enum CRM {
                 title: "Financial",
                 helpText: "Tax registration and accounts-receivable terms.",
                 columns: 2,
-                fieldKeys: ["tax_id", "credit_limit", "payment_terms"]
+                fieldKeys: ["tax_id", "tax_code", "credit_limit", "payment_terms"]
             ),
             FormLayoutSection(
                 key: "notes",

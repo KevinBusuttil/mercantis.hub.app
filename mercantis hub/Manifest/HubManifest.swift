@@ -7,6 +7,7 @@ public enum HubManifest: Sendable {
 
     public static let allDocTypes: [DocType] =
         Setup.allDocTypes              // tree masters and shared link targets first
+        + Tax.allDocTypes              // TaxCategory / TaxCode + shared TaxCharge row
         + CRM.allDocTypes              // Customer, Contact, Address, Lead + DynamicLink
         + Selling.allDocTypes          // Item + sales transactions
         + Buying.allDocTypes           // Supplier + purchase transactions

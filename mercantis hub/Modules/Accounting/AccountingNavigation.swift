@@ -25,6 +25,10 @@ extension Accounting {
                 .report(id: HubReports.supplierLedger.id,
                         label: "Supplier Ledger")
             ]),
+            HubMenuGroup(label: "Tax", items: [
+                .report(id: HubReports.vatSummary.id,
+                        label: HubReports.vatSummary.name)
+            ]),
             // Journals are an accountant tool — hidden until advanced mode.
             HubMenuGroup(label: "Journals", items: [
                 .docType(Accounting.journalEntry)
