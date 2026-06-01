@@ -80,6 +80,8 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             case "PaymentEntry":    try derivePaymentEntry(document, reversal: false)
             case "SalesInvoice":    try deriveSalesInvoice(document, reversal: false)
             case "PurchaseInvoice": try derivePurchaseInvoice(document, reversal: false)
+            case "PurchaseReceipt": try deriveStockDocument(document, incoming: true,  voucherType: "PurchaseReceipt", reversal: false)
+            case "SalesDelivery":   try deriveStockDocument(document, incoming: false, voucherType: "SalesDelivery",   reversal: false)
             default: return
             }
         } catch {
@@ -99,6 +101,8 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             case "PaymentEntry":    try derivePaymentEntry(document, reversal: true)
             case "SalesInvoice":    try deriveSalesInvoice(document, reversal: true)
             case "PurchaseInvoice": try derivePurchaseInvoice(document, reversal: true)
+            case "PurchaseReceipt": try deriveStockDocument(document, incoming: true,  voucherType: "PurchaseReceipt", reversal: true)
+            case "SalesDelivery":   try deriveStockDocument(document, incoming: false, voucherType: "SalesDelivery",   reversal: true)
             default: return
             }
         } catch {
@@ -156,6 +160,58 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         try stockBalance.recompute(affectedBy: doc)
     }
 
+    // MARK: - Purchase Receipt / Sales Delivery → Stock Ledger Entry (Phase 4)
+
+    /// Fulfilment documents move stock on a single warehouse per line.
+    /// Purchase Receipt brings goods IN (Receipt, +qty on the line
+    /// `warehouse`); Sales Delivery sends goods OUT (Issue, -qty). Reversal
+    /// on cancel negates the quantity. Quantities use the line `warehouse`
+    /// field; the affected bins are recomputed from the full ledger after
+    /// the rows are written (same contract as `deriveStockEntry`).
+    private func deriveStockDocument(
+        _ doc: Document,
+        incoming: Bool,
+        voucherType: String,
+        reversal: Bool
+    ) throws {
+        let rows = doc.children["items"] ?? []
+        let postingDate = doc.fields["posting_date"] ?? doc.fields["transaction_date"] ?? .date(Date())
+        let postingTime = doc.fields["posting_time"]
+        let transType = incoming ? "Receipt" : "Issue"
+        // Lines may omit a warehouse and inherit the document default.
+        let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+
+        var affected: [String: (item: String, warehouse: String)] = [:]
+        for row in rows {
+            let item = row.fields["item"]
+            guard let itemId = nonEmptyString(item) else { continue }
+            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
+            let qty = row.fields["qty"] ?? .double(0)
+            // Receipt: +qty normally, -qty on reversal. Delivery: -qty
+            // normally, +qty on reversal.
+            let signedQty = negate(qty, when: incoming ? reversal : !reversal)
+            let rate = row.fields["valuation_rate"] ?? row.fields["rate"]
+
+            try writeSLE(
+                id: "SLE-\(doc.id)-\(row.rowIndex)\(reversal ? "-reversal" : "")",
+                transType: transType,
+                item: item, warehouse: .string(whId),
+                postingDate: postingDate, postingTime: postingTime,
+                voucherType: voucherType,
+                voucherNo: doc.id, qtyChange: signedQty,
+                rate: rate, isReversal: reversal,
+                company: doc.company
+            )
+            affected["\(itemId)|\(whId)"] = (itemId, whId)
+        }
+
+        // Roll each affected (item, warehouse) up into its Stock Balance
+        // (Bin) row — reversal-aware because recompute reads the full ledger.
+        for pair in affected.values {
+            try stockBalance.recompute(item: pair.item, warehouse: pair.warehouse)
+        }
+    }
+
     /// Map a Stock Entry `purpose` to the corresponding StockLedgerEntry
     /// `trans_type` enum value (Phase 5.7 / AX synthesis). Material
     /// Receipts / Issues / Transfers map 1:1; manufacturing-flavoured
@@ -180,6 +236,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         warehouse: FieldValue,
         postingDate: FieldValue,
         postingTime: FieldValue?,
+        voucherType: String = "StockEntry",
         voucherNo: String,
         qtyChange: FieldValue,
         rate: FieldValue?,
@@ -198,7 +255,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             "item":          item,
             "warehouse":     warehouse,
             "posting_date":  postingDate,
-            "voucher_type":  .string("StockEntry"),
+            "voucher_type":  .string(voucherType),
             "voucher_no":    .string(voucherNo),
             "qty_change":    qtyChange,
             "is_reversal":   .bool(isReversal),

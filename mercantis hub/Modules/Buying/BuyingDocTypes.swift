@@ -309,10 +309,109 @@ enum Buying {
         ])
     )
 
+    // MARK: - Purchase Receipt (Phase 4 — fulfilment)
+
+    /// One received line on a Purchase Receipt. `warehouse` is where the
+    /// goods land; `rate` is the receipt cost used as the stock valuation.
+    static let purchaseReceiptItem = DocType(
+        id: "PurchaseReceiptItem",
+        name: "Purchase Receipt Item",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: true,
+        fields: [
+            FieldDefinition(key: "item", label: "Item",
+                            type: .link, required: true, linkedDocType: "Item"),
+            FieldDefinition(key: "description", label: "Description",
+                            type: .text, required: false),
+            FieldDefinition(key: "qty", label: "Received Qty",
+                            type: .decimal, required: true, defaultValue: .double(1)),
+            FieldDefinition(key: "uom", label: "UOM",
+                            type: .link, required: false, linkedDocType: "UOM"),
+            FieldDefinition(key: "rate", label: "Rate",
+                            type: .currency, required: false, defaultValue: .double(0)),
+            FieldDefinition(key: "amount", label: "Amount",
+                            type: .currency, required: false,
+                            formulaExpression: "qty * rate"),
+            FieldDefinition(key: "warehouse", label: "Warehouse",
+                            type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "purchase_order", label: "Purchase Order",
+                            type: .link, required: false, linkedDocType: "PurchaseOrder")
+        ],
+        permissions: [systemManagerPermission],
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: [],
+        titleField: "item"
+    )
+
+    /// Purchase Receipt — the physical goods-in document. Separate from the
+    /// Purchase Invoice (financial). On submit it increments stock on each
+    /// line warehouse via the Stock Ledger; cancel reverses it. Links back
+    /// to the originating Purchase Order where practical.
+    static let purchaseReceipt = DocType(
+        id: "PurchaseReceipt",
+        name: "Purchase Receipt",
+        module: "Buying",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        isSubmittable: true,
+        fields: [
+            FieldDefinition(key: "supplier", label: "Supplier",
+                            type: .link, required: true, linkedDocType: "Supplier"),
+            FieldDefinition(key: "transaction_date", label: "Receipt Date",
+                            type: .date, required: true),
+            FieldDefinition(key: "purchase_order", label: "Purchase Order",
+                            type: .link, required: false, linkedDocType: "PurchaseOrder"),
+            FieldDefinition(key: "currency", label: "Currency",
+                            type: .link, required: false, linkedDocType: "Currency"),
+            FieldDefinition(key: "set_warehouse", label: "Default Warehouse",
+                            type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "items", label: "Items",
+                            type: .table, required: true, childDocType: "PurchaseReceiptItem"),
+            FieldDefinition(key: "total_qty", label: "Total Qty",
+                            type: .decimal, required: false),
+            FieldDefinition(key: "remarks", label: "Remarks",
+                            type: .longText, required: false, allowOnSubmit: true)
+        ],
+        permissions: [systemManagerPermission],
+        workflowId: "wf-purchase-receipt",
+        autoname: "naming_series:PREC-.YYYY.-.####",
+        syncPolicy: submittableSyncPolicy,
+        indexes: [],
+        searchFields: ["supplier"],
+        titleField: "supplier",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "header",
+                title: "Header",
+                columns: 2,
+                fieldKeys: ["supplier", "transaction_date", "purchase_order", "currency", "set_warehouse"]
+            ),
+            FormLayoutSection(
+                key: "items",
+                title: "Received Items",
+                helpText: "Submitting increases stock at each line's warehouse.",
+                fieldKeys: ["items"]
+            ),
+            FormLayoutSection(
+                key: "totals",
+                title: "Totals",
+                fieldKeys: ["total_qty"]
+            ),
+            FormLayoutSection(
+                key: "notes",
+                title: "Notes",
+                fieldKeys: ["remarks"]
+            )
+        ])
+    )
+
     static let allDocTypes: [DocType] = [
         // Child DocTypes first
-        purchaseItem,
+        purchaseItem, purchaseReceiptItem,
         // Parents
-        supplier, supplierQuotation, purchaseOrder, purchaseInvoice
+        supplier, supplierQuotation, purchaseOrder, purchaseInvoice,
+        purchaseReceipt
     ]
 }

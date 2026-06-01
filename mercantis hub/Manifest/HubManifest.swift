@@ -11,7 +11,8 @@ public enum HubManifest: Sendable {
         + CRM.allDocTypes              // Customer, Contact, Address, Lead + DynamicLink
         + Selling.allDocTypes          // Item + sales transactions
         + Buying.allDocTypes           // Supplier + purchase transactions
-        + Stock.allDocTypes            // StockEntry + StockEntryDetail
+        + Stock.allDocTypes            // StockEntry + StockEntryDetail + Bin
+        + Deliveries.allDocTypes       // SalesDelivery + SalesDeliveryItem
         + Accounting.allDocTypes       // Account + JournalEntry / PaymentEntry
         + Manufacturing.allDocTypes    // BOM / WorkOrder / JobCard / ProductionPlan
 

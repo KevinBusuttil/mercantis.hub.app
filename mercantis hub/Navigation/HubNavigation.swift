@@ -88,6 +88,8 @@ enum HubMenuItem: Identifiable {
         case "SalesInvoice":     return "doc.text"
         case "PurchaseOrder":    return "bag"
         case "PurchaseInvoice":  return "bag.badge.plus"
+        case "PurchaseReceipt":  return "shippingbox.and.arrow.backward"
+        case "SalesDelivery":    return "truck.box"
         case "JournalEntry":     return "book.pages"
         case "PaymentEntry":     return "creditcard"
         case "StockEntry":       return "tray.full"
@@ -160,6 +162,7 @@ enum HubNavigation {
         Selling.module,
         Buying.module,
         Stock.module,
+        Deliveries.module,
         Manufacturing.module,
         Accounting.module,
         Setup.module

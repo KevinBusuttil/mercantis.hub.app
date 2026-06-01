@@ -92,6 +92,33 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + stockRoles
     )
 
+    /// Open Deliveries — Phase 4. Sales Deliveries that have not yet reached
+    /// a terminal state (Delivered / Cancelled): the "undelivered sales"
+    /// view and the foundation for delivery-route planning.
+    public static let openDeliveries = ReportDefinition(
+        id: "open-deliveries",
+        name: "Open Deliveries",
+        docType: "SalesDelivery",
+        columns: ["Delivery", "Customer", "Delivery Date", "Scheduled", "Status"],
+        filters: [
+            ReportFilter(fieldKey: "customer", label: "Customer"),
+        ],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    /// Pending Receipts — Phase 4. Purchase Receipts still in Draft, i.e.
+    /// goods expected but not yet confirmed into stock.
+    public static let pendingReceipts = ReportDefinition(
+        id: "pending-receipts",
+        name: "Pending Receipts",
+        docType: "PurchaseReceipt",
+        columns: ["Receipt", "Supplier", "Receipt Date", "Total Qty", "Status"],
+        filters: [
+            ReportFilter(fieldKey: "supplier", label: "Supplier"),
+        ],
+        allowedRoles: financeRoles + buyingRoles
+    )
+
     /// Customer Aging — outstanding receivables bucketed by age.
     /// The `columns` here describe the **output** shape produced by
     /// `runResult`, not the underlying SalesInvoice columns.
@@ -173,6 +200,7 @@ public enum HubReports: Sendable {
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
+        openDeliveries, pendingReceipts,
         customerAging, trialBalance,
         customerStatement, supplierLedger,
         vatSummary,
@@ -200,6 +228,10 @@ public enum HubReports: Sendable {
             return try runStockLedger(report: report, engine: engine, filters: filters)
         case "stock-on-hand":
             return try runStockOnHand(engine: engine, filters: filters)
+        case "open-deliveries":
+            return try runOpenDeliveries(engine: engine, filters: filters)
+        case "pending-receipts":
+            return try runPendingReceipts(engine: engine, filters: filters)
         case "customer-aging":
             return try runCustomerAging(engine: engine, filters: filters)
         case "trial-balance":
@@ -323,6 +355,68 @@ public enum HubReports: Sendable {
             map[doc.id] = asString(doc.fields[meta.titleField]) ?? doc.id
         }
         return map
+    }
+
+    // MARK: - Fulfilment (Phase 4)
+
+    private static func runOpenDeliveries(
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let deliveries = try engine.list(
+            docType: "SalesDelivery",
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [ListSort(fieldKey: "createdAt", direction: .descending)],
+            applyRowAccess: false
+        )
+        let terminal: Set<String> = ["Delivered", "Cancelled"]
+        let customerNames = displayNames(engine: engine, docType: "Customer")
+
+        let rows: [[String?]] = deliveries.compactMap { doc in
+            guard !terminal.contains(doc.status) else { return nil }
+            let customerID = asString(doc.fields["customer"]) ?? ""
+            return [
+                doc.id,
+                customerNames[customerID] ?? customerID,
+                format(value: doc.fields["transaction_date"]),
+                format(value: doc.fields["scheduled_date"]),
+                statusLabel(docType: "SalesDelivery", state: doc.status),
+            ]
+        }
+        return ReportResult(columns: openDeliveries.columns, rows: rows)
+    }
+
+    private static func runPendingReceipts(
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let receipts = try engine.list(
+            docType: "PurchaseReceipt",
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [ListSort(fieldKey: "createdAt", direction: .descending)],
+            applyRowAccess: false
+        )
+        let supplierNames = displayNames(engine: engine, docType: "Supplier")
+
+        // Pending = not yet submitted into stock (docStatus 0 / Draft).
+        let rows: [[String?]] = receipts.compactMap { doc in
+            guard doc.docStatus == 0 else { return nil }
+            let supplierID = asString(doc.fields["supplier"]) ?? ""
+            let totalQty = (doc.children["items"] ?? [])
+                .reduce(0.0) { $0 + (asDouble($1.fields["qty"]) ?? 0) }
+            return [
+                doc.id,
+                supplierNames[supplierID] ?? supplierID,
+                format(value: doc.fields["transaction_date"]),
+                formatCurrency(totalQty),
+                statusLabel(docType: "PurchaseReceipt", state: doc.status),
+            ]
+        }
+        return ReportResult(columns: pendingReceipts.columns, rows: rows)
+    }
+
+    private static func statusLabel(docType: String, state: String) -> String {
+        HubWorkflowDisplayPolicy.policy.statusDisplay(docTypeId: docType, state: state).label
     }
 
     // MARK: - Customer Aging

@@ -13,6 +13,11 @@ extension Buying {
                 .docType(Buying.purchaseInvoice, label: "Purchase Invoices"),
                 .docType(Accounting.paymentEntry, label: "Pay Supplier")
             ]),
+            HubMenuGroup(label: "Receiving", items: [
+                .docType(Buying.purchaseReceipt, label: "Purchase Receipts"),
+                .report(id: HubReports.pendingReceipts.id,
+                        label: HubReports.pendingReceipts.name)
+            ]),
             HubMenuGroup(label: "Procurement", items: [
                 .docType(Buying.supplierQuotation, label: "Supplier Quotations")
             ], visibility: .advanced),

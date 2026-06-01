@@ -24,6 +24,8 @@ enum HubBusinessProfileDefaultsPolicy {
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
             applyIfMissing(&document, field: "credit_to", from: "default_payable_account", businessProfile: businessProfile)
             applyIfMissing(&document, field: "expense_account", from: "default_expense_account", businessProfile: businessProfile)
+        case "PurchaseReceipt", "SalesDelivery":
+            applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
         case "PaymentEntry":
             applyPaymentDefaults(to: &document, businessProfile: businessProfile)
         default:
@@ -31,7 +33,8 @@ enum HubBusinessProfileDefaultsPolicy {
         }
 
         switch docType.id {
-        case "SalesOrder", "SalesInvoice", "PurchaseOrder", "PurchaseInvoice":
+        case "SalesOrder", "SalesInvoice", "PurchaseOrder", "PurchaseInvoice",
+             "PurchaseReceipt", "SalesDelivery":
             applyWarehouseDefault(toChildrenNamed: "items", in: &document, businessProfile: businessProfile)
         default:
             break
@@ -54,7 +57,8 @@ enum HubBusinessProfileDefaultsPolicy {
         )
 
         switch docType.id {
-        case "SalesOrder", "SalesInvoice", "PurchaseOrder", "PurchaseInvoice":
+        case "SalesOrder", "SalesInvoice", "PurchaseOrder", "PurchaseInvoice",
+             "PurchaseReceipt", "SalesDelivery":
             applyWarehouseDefault(toChildrenNamed: "items", in: &document, businessProfile: businessProfile)
         case "PaymentEntry":
             applyPaymentDefaults(to: &document, businessProfile: businessProfile)

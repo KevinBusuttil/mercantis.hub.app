@@ -165,6 +165,68 @@ public enum HubWorkflows: Sendable {
         ]
     )
 
+    public static let purchaseReceipt = WorkflowDefinition(
+        id: "wf-purchase-receipt",
+        name: "Purchase Receipt",
+        docType: "PurchaseReceipt",
+        states: [
+            WorkflowState(name: "Draft",     isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",     to: "Submitted", action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
+    // MARK: - Deliveries
+
+    /// Sales Delivery status lifecycle. "Submit" confirms the delivery
+    /// (Draft → Scheduled) and is the docStatus trigger that decrements
+    /// stock; the remaining transitions track the physical journey. Cancel
+    /// is reachable from every active state and reverses the stock movement.
+    public static let salesDelivery = WorkflowDefinition(
+        id: "wf-sales-delivery",
+        name: "Sales Delivery",
+        docType: "SalesDelivery",
+        states: [
+            WorkflowState(name: "Draft",            isDefault: true,  allowEdit: true),
+            WorkflowState(name: "Scheduled",        isDefault: false, allowEdit: false),
+            WorkflowState(name: "Loaded",           isDefault: false, allowEdit: false),
+            WorkflowState(name: "Out for Delivery", isDefault: false, allowEdit: false),
+            WorkflowState(name: "Delivered",        isDefault: false, allowEdit: false),
+            WorkflowState(name: "Failed",           isDefault: false, allowEdit: false),
+            WorkflowState(name: "Cancelled",        isDefault: false, allowEdit: false),
+        ],
+        transitions: [
+            WorkflowTransition(from: "Draft",            to: "Scheduled",        action: "Submit",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Scheduled",        to: "Loaded",           action: "Mark Loaded",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Loaded",           to: "Out for Delivery", action: "Mark Out for Delivery",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Out for Delivery", to: "Delivered",        action: "Mark Delivered",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Out for Delivery", to: "Failed",           action: "Mark Failed",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Failed",           to: "Scheduled",        action: "Reschedule",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Scheduled",        to: "Cancelled",        action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Loaded",           to: "Cancelled",        action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Out for Delivery", to: "Cancelled",        action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Delivered",        to: "Cancelled",        action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Failed",           to: "Cancelled",        action: "Cancel",
+                               allowedRoles: [systemManagerRole]),
+        ]
+    )
+
     // MARK: - Stock + Accounting (canonical Draft / Submitted / Cancelled only)
 
     public static let stockEntry = WorkflowDefinition(
@@ -328,6 +390,8 @@ public enum HubWorkflows: Sendable {
         supplierQuotation,
         purchaseOrder,
         purchaseInvoice,
+        purchaseReceipt,
+        salesDelivery,
         stockEntry,
         journalEntry,
         paymentEntry,
