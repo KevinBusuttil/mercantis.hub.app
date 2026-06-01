@@ -38,4 +38,16 @@ final class HubWorkspaceCopyPolicyTests: XCTestCase {
         XCTAssertEqual(HubWorkspaceCopyPolicy.copy(for: Buying.purchaseInvoice).primaryActionTitle, "New Bill")
         XCTAssertEqual(HubWorkspaceCopyPolicy.copy(for: Accounting.paymentEntry).primaryActionTitle, "New Payment")
     }
+
+    func test_setup_foundation_copy_for_fiscal_year_and_numbering() {
+        let fiscalYear = HubWorkspaceCopyPolicy.copy(for: Setup.fiscalYear)
+        XCTAssertEqual(fiscalYear.title, "Fiscal Years")
+        XCTAssertEqual(fiscalYear.primaryActionTitle, "New Fiscal Year")
+        XCTAssertEqual(fiscalYear.emptyStateTitle, "No fiscal year yet")
+
+        let numbering = HubWorkspaceCopyPolicy.copy(for: Setup.numberingSeries)
+        XCTAssertEqual(numbering.title, "Numbering Series")
+        XCTAssertEqual(numbering.primaryActionTitle, "New Numbering Series")
+        XCTAssertEqual(numbering.emptyStateTitle, "No numbering configured")
+    }
 }

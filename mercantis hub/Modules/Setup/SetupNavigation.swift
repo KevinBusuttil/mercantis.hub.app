@@ -8,7 +8,9 @@ extension Setup {
         tone: .setup,
         groups: [
             HubMenuGroup(label: "Business", items: [
-                .docType(Setup.company, label: "Business Profile")
+                .docType(Setup.company, label: "Business Profile"),
+                .docType(Setup.fiscalYear, label: "Fiscal Year"),
+                .docType(Setup.numberingSeries, label: "Numbering")
             ]),
             HubMenuGroup(label: "Customer", items: [
                 .docType(Setup.customerGroup),
