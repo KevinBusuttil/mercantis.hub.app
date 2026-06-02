@@ -123,8 +123,8 @@ struct mercantis_hubApp: App {
                 reportEngine: reportEngine,
                 dashboardEngine: dashboardEngine,
                 customFieldStore: customFieldStore,
-                visibility: visibility,
-                savedReportStore: savedReportStore
+                savedReportStore: savedReportStore,
+                visibility: visibility
             )
         }
         .defaultSize(width: 1100, height: 720)
