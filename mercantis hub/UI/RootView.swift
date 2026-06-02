@@ -22,10 +22,25 @@ struct RootView: View {
         } detail: {
             detail
         }
+        .sheet(isPresented: Binding(
+            get: { !visibility.onboardingComplete },
+            set: { presented in if !presented { visibility.onboardingComplete = true } }
+        )) {
+            HubOnboardingView(engine: engine, settings: visibility)
+        }
     }
 
     private var visibleModules: [HubModule] {
         HubNavigation.allModules.filter { visibility.isModuleVisible($0) }
+    }
+
+    /// Drives the sidebar business-type picker; selecting a preset applies
+    /// its module visibility immediately.
+    private var presetBinding: Binding<HubPreset> {
+        Binding(
+            get: { visibility.preset ?? .services },
+            set: { visibility.apply($0) }
+        )
     }
 
     private var activeModuleID: String? {
@@ -113,12 +128,52 @@ struct RootView: View {
                 .listRowSeparator(.hidden)
                 .padding(.vertical, 4)
 
+                Picker(selection: presetBinding) {
+                    ForEach(HubPreset.allCases) { Text($0.title).tag($0) }
+                } label: {
+                    Label("Business type", systemImage: "square.grid.2x2")
+                        .font(.callout)
+                }
+                .help("Switch your business preset. This turns the optional modules below on or off to match.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
+
                 Toggle(isOn: $visibility.posEnabled) {
                     Label("Point of Sale", systemImage: "creditcard.and.123")
                         .font(.callout)
                 }
                 .toggleStyle(.switch)
                 .help("Enable the retail POS module — a touch-friendly till that posts real sales, payments, VAT, and stock movements.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
+
+                Toggle(isOn: $visibility.deliveriesEnabled) {
+                    Label("Deliveries", systemImage: "truck.box").font(.callout)
+                }
+                .toggleStyle(.switch)
+                .help("Enable Sales Deliveries and delivery route planning.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
+
+                Toggle(isOn: $visibility.manufacturingEnabled) {
+                    Label("Manufacturing", systemImage: "gearshape.2").font(.callout)
+                }
+                .toggleStyle(.switch)
+                .help("Enable BOMs, work orders, and production planning.")
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .padding(.vertical, 4)
+
+                Button {
+                    visibility.onboardingComplete = false
+                } label: {
+                    Label("Run setup wizard…", systemImage: "wand.and.stars")
+                        .font(.callout)
+                }
+                .buttonStyle(.link)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .padding(.vertical, 4)

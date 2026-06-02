@@ -16,6 +16,10 @@ struct HubModule: Identifiable {
     /// When true, the module is gated behind the Retail/POS feature flag and
     /// hidden unless the user has enabled POS.
     var requiresPOS: Bool = false
+    /// Gated behind the Trade/Distribution (deliveries) capability flag.
+    var requiresDeliveries: Bool = false
+    /// Gated behind the Light Manufacturing capability flag.
+    var requiresManufacturing: Bool = false
 
     var itemCount: Int {
         groups.reduce(0) { $0 + $1.items.count }

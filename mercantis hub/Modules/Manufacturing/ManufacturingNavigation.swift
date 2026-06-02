@@ -23,8 +23,8 @@ extension Manufacturing {
                            label: HubDashboards.manufacturingOverview.name)
             ])
         ],
-        // Manufacturing is optional for most small businesses — surface the
-        // whole module only when advanced mode is enabled.
-        visibility: .advanced
+        // Manufacturing is optional — surfaced only when the Light
+        // Manufacturing preset (or its capability toggle) is enabled.
+        requiresManufacturing: true
     )
 }
