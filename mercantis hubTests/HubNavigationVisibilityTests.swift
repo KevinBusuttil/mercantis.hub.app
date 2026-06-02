@@ -69,6 +69,7 @@ final class HubNavigationVisibilityTests: XCTestCase {
                     case .report(let id, _): s.reports.insert(id)
                     case .flow(let id, _, _): s.flows.insert(id)
                     case .dashboard:         break
+                    case .customReports:     break
                     }
                 }
             }

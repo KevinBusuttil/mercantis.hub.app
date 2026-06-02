@@ -16,11 +16,17 @@ struct HubReportContainerView: View {
     let reportId: String
     let reportLabel: String
     let engine: DocumentEngine
+    /// Optional saved-report plumbing. When supplied (and the report is
+    /// customisable), the view offers a "Customise Report" action that clones
+    /// the built-in report into an editable custom one.
+    var savedReportStore: HubSavedReportStore? = nil
+    var visibility: HubVisibilitySettings? = nil
 
     @State private var result: ReportResult?
     @State private var errorMessage: String?
     @State private var partyId: String?
     @State private var parties: [Document] = []
+    @State private var editing: SavedReportDefinition?
 
     /// Describes the party a report must be scoped to before it can run.
     private struct PartyRequirement {
@@ -43,8 +49,17 @@ struct HubReportContainerView: View {
         }
     }
 
+    private var canCustomise: Bool {
+        guard savedReportStore != nil, let visibility else { return false }
+        return HubCustomReportCatalog.isCustomisable(reportId: reportId, settings: visibility)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if canCustomise {
+                customiseBar
+                Divider()
+            }
             if let requirement = partyRequirement {
                 partyPicker(requirement)
                 Divider()
@@ -60,6 +75,49 @@ struct HubReportContainerView: View {
             loadPartiesIfNeeded()
             load()
         }
+        .sheet(item: $editing) { report in
+            if let savedReportStore {
+                HubReportCustomiseView(report: report, store: savedReportStore, engine: engine)
+            }
+        }
+    }
+
+    /// A slim bar offering "Save as Custom Report" for customisable built-ins.
+    private var customiseBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "slider.horizontal.3")
+                .foregroundStyle(.secondary)
+            Text("Make this report your own — pick the columns and save your filters.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                startCustomising()
+            } label: {
+                Label("Save as Custom Report", systemImage: "plus")
+            }
+            .controlSize(.small)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private func startCustomising() {
+        guard let savedReportStore,
+              let template = HubCustomReportCatalog.template(forBaseReportId: reportId) else { return }
+        var report = HubCustomReportCatalog.makeSavedReport(
+            from: template,
+            ownerUserId: HubIdentity.userId(),
+            name: "\(template.name) (Custom)"
+        )
+        // Seed any currently-applied party filter as the new report's default
+        // so "customise what I'm looking at" keeps the user's context.
+        if let requirement = partyRequirement, let partyId,
+           let index = report.filters.firstIndex(where: { $0.fieldKey == requirement.partyField }) {
+            report.filters[index].defaultValue = .string(partyId)
+        }
+        savedReportStore.save(report)
+        editing = report
     }
 
     @ViewBuilder

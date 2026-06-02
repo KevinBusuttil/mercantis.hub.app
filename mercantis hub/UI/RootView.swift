@@ -11,6 +11,8 @@ struct RootView: View {
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
     let customFieldStore: CustomFieldStore
+    /// User-saved custom report variants (Hub user report customisation).
+    @ObservedObject var savedReportStore: HubSavedReportStore
     /// Shared with the Settings (⌘,) window so toggling a preset / module
     /// there updates the sidebar live.
     @ObservedObject var visibility: HubVisibilitySettings
@@ -35,6 +37,8 @@ struct RootView: View {
     private var visibleModules: [HubModule] {
         HubNavigation.allModules.filter { visibility.isModuleVisible($0) }
     }
+
+    private let customReportsItem: HubMenuItem = .customReports(label: "Custom Reports")
 
     private var activeModuleID: String? {
         HubNavigation.moduleID(for: selection, settings: visibility) ?? visibleModules.first?.id
@@ -68,6 +72,24 @@ struct RootView: View {
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(selection == nil ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+                .listRowSeparator(.hidden)
+
+                // Cross-module Custom Reports home. Saved report variants
+                // span modules, so they get a single durable entry here
+                // rather than living under any one module.
+                Button {
+                    selection = customReportsItem
+                } label: {
+                    MercantisSidebarRow(
+                        title: "Custom Reports",
+                        systemImage: "slider.horizontal.3",
+                        tone: .neutral,
+                        isSelected: selection == customReportsItem,
+                        indentation: 0
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(selection == customReportsItem ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
                 .listRowSeparator(.hidden)
             }
 
@@ -172,9 +194,18 @@ struct RootView: View {
                 HubReportContainerView(
                     reportId: id,
                     reportLabel: label,
-                    engine: engine
+                    engine: engine,
+                    savedReportStore: savedReportStore,
+                    visibility: visibility
                 )
                 .id("report:\(id)")
+            case .customReports:
+                HubCustomReportsView(
+                    store: savedReportStore,
+                    engine: engine,
+                    visibility: visibility
+                )
+                .id("custom-reports")
             case .dashboard(let id, let label):
                 HubDashboardView(
                     dashboardId: id,
