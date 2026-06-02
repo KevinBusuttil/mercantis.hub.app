@@ -400,6 +400,10 @@ struct HubPOSCheckoutView: View {
         // Stamp taxes + totals with the shared engine, then record change.
         var sale = HubTaxCalculationPolicy.applied(to: draft, docType: docType, engine: engine)
         let grand = doubleValue(sale.fields["grand_total"]) ?? 0
+        guard POSCheckoutBuilder.isFullyPaid(tenders: tenders, grandTotal: grand) else {
+            errorMessage = "Tendered amount must cover the sale total."
+            return
+        }
         sale.fields["change_amount"] = .double(max(0, ((tenderedAmount - grand) * 100).rounded() / 100))
 
         do {
