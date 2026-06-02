@@ -8,13 +8,17 @@ import Foundation
 /// math is unit-testable with plain values. `StockBalanceService` reads the
 /// ledger and feeds rows in; the report / Item workspace / POS availability
 /// all consume the same `Balance` shape.
-public enum StockBalanceCalculator {
+///
+/// `nonisolated` because the module compiles with main-actor-by-default
+/// isolation, but `StockBalanceService` (a `nonisolated` derivation service)
+/// must call this off the main actor.
+public nonisolated enum StockBalanceCalculator {
 
     /// One Stock Ledger Entry, reduced to the fields balances care about.
     /// `amount` is derived as `qtyChange * (valuationRate ?? 0)` rather than
     /// trusting a stored formula field, so the value column is always
     /// internally consistent with the quantity.
-    public struct Row: Equatable, Sendable {
+    public nonisolated struct Row: Equatable, Sendable {
         public let item: String
         public let warehouse: String
         public let qtyChange: Double
@@ -39,7 +43,7 @@ public enum StockBalanceCalculator {
     }
 
     /// Stock on hand for one item in one warehouse.
-    public struct Balance: Equatable, Sendable {
+    public nonisolated struct Balance: Equatable, Sendable {
         public let item: String
         public let warehouse: String
         public let actualQty: Double

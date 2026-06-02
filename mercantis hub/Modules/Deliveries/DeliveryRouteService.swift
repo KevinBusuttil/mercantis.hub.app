@@ -2,8 +2,10 @@ import Foundation
 import MercantisCore
 
 /// Pure decision helpers for route reconciliation, split out so they can be
-/// unit-tested without a `DocumentEngine`.
-enum DeliveryRoutePlanner {
+/// unit-tested without a `DocumentEngine`. `nonisolated` so the
+/// `nonisolated` `DeliveryRouteService` can call them off the main actor
+/// under the module's main-actor-by-default isolation.
+nonisolated enum DeliveryRoutePlanner {
     /// Whether a new status event should be appended for a stop.
     static func shouldEmitEvent(lastStatus: String?, current: String) -> Bool {
         lastStatus != current
