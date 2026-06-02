@@ -22,6 +22,11 @@ struct mercantis_hubApp: App {
     /// table so they survive app restarts and HubManifest reinstalls.
     let customFieldStore: CustomFieldStore
 
+    /// App-wide workspace preferences (advanced view, business preset,
+    /// optional-module flags, onboarding state). Owned at app scope so the
+    /// main window and the Settings (⌘,) window share one instance.
+    @StateObject private var visibility = HubVisibilitySettings()
+
     init() {
         let databaseURL = Self.makeDatabaseURL()
 
@@ -114,11 +119,19 @@ struct mercantis_hubApp: App {
                 workflowEngine: workflowEngine,
                 reportEngine: reportEngine,
                 dashboardEngine: dashboardEngine,
-                customFieldStore: customFieldStore
+                customFieldStore: customFieldStore,
+                visibility: visibility
             )
         }
         .defaultSize(width: 1100, height: 720)
         .commands { HubCommands() }
+
+        // Standard macOS Settings window (⌘,). App configuration lives here
+        // rather than in the navigation sidebar (HIG: sidebars are for
+        // navigation; settings belong in the Settings window).
+        Settings {
+            HubSettingsView(settings: visibility)
+        }
     }
 
     // MARK: - Bootstrap helpers

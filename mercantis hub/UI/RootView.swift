@@ -11,10 +11,12 @@ struct RootView: View {
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
     let customFieldStore: CustomFieldStore
+    /// Shared with the Settings (⌘,) window so toggling a preset / module
+    /// there updates the sidebar live.
+    @ObservedObject var visibility: HubVisibilitySettings
 
     @State private var selection: HubMenuItem?
     @State private var collapsedGroups: Set<String> = []
-    @StateObject private var visibility = HubVisibilitySettings()
 
     var body: some View {
         NavigationSplitView {
@@ -34,15 +36,6 @@ struct RootView: View {
         HubNavigation.allModules.filter { visibility.isModuleVisible($0) }
     }
 
-    /// Drives the sidebar business-type picker; selecting a preset applies
-    /// its module visibility immediately.
-    private var presetBinding: Binding<HubPreset> {
-        Binding(
-            get: { visibility.preset ?? .services },
-            set: { visibility.apply($0) }
-        )
-    }
-
     private var activeModuleID: String? {
         HubNavigation.moduleID(for: selection, settings: visibility) ?? visibleModules.first?.id
     }
@@ -57,6 +50,24 @@ struct RootView: View {
                 )
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
+                .listRowSeparator(.hidden)
+            }
+
+            // Persistent way back to the overview from anywhere.
+            Section {
+                Button {
+                    selection = nil
+                } label: {
+                    MercantisSidebarRow(
+                        title: "Home",
+                        systemImage: "house",
+                        tone: .neutral,
+                        isSelected: selection == nil,
+                        indentation: 0
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(selection == nil ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
                 .listRowSeparator(.hidden)
             }
 
@@ -117,66 +128,22 @@ struct RootView: View {
                 }
             }
 
+            // Settings opens the standard macOS Settings window (⌘,);
+            // business type, optional modules, and advanced view all live
+            // there rather than cluttering the navigation surface.
             Section {
-                Toggle(isOn: $visibility.showAdvanced) {
-                    Label("Advanced / Accountant view", systemImage: "lock.shield")
-                        .font(.callout)
+                SettingsLink {
+                    MercantisSidebarRow(
+                        title: "Settings",
+                        systemImage: "gearshape",
+                        tone: .neutral,
+                        isSelected: false,
+                        indentation: 0
+                    )
                 }
-                .toggleStyle(.switch)
-                .help("Show internal ledgers (GL Entry, Customer / Supplier Transactions, Settlements, Tax Transactions, Stock Ledger) and Manufacturing. These power balances, statements and reports behind the scenes.")
+                .buttonStyle(.plain)
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
-
-                Picker(selection: presetBinding) {
-                    ForEach(HubPreset.allCases) { Text($0.title).tag($0) }
-                } label: {
-                    Label("Business type", systemImage: "square.grid.2x2")
-                        .font(.callout)
-                }
-                .help("Switch your business preset. This turns the optional modules below on or off to match.")
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
-
-                Toggle(isOn: $visibility.posEnabled) {
-                    Label("Point of Sale", systemImage: "creditcard.and.123")
-                        .font(.callout)
-                }
-                .toggleStyle(.switch)
-                .help("Enable the retail POS module — a touch-friendly till that posts real sales, payments, VAT, and stock movements.")
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
-
-                Toggle(isOn: $visibility.deliveriesEnabled) {
-                    Label("Deliveries", systemImage: "truck.box").font(.callout)
-                }
-                .toggleStyle(.switch)
-                .help("Enable Sales Deliveries and delivery route planning.")
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
-
-                Toggle(isOn: $visibility.manufacturingEnabled) {
-                    Label("Manufacturing", systemImage: "gearshape.2").font(.callout)
-                }
-                .toggleStyle(.switch)
-                .help("Enable BOMs, work orders, and production planning.")
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
-
-                Button {
-                    visibility.onboardingComplete = false
-                } label: {
-                    Label("Run setup wizard…", systemImage: "wand.and.stars")
-                        .font(.callout)
-                }
-                .buttonStyle(.link)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .padding(.vertical, 4)
             }
         }
         .listStyle(.sidebar)
