@@ -30,6 +30,7 @@ extension Deliveries {
             HubMenuGroup(label: "Tracking", items: [
                 .docType(Deliveries.deliveryStatusEvent, label: "Status Events")
             ], visibility: .advanced)
-        ]
+        ],
+        requiresDeliveries: true
     )
 }

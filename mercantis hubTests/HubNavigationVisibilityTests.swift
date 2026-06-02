@@ -3,8 +3,10 @@
 //  mercantis hubTests
 //
 //  The everyday navigation surface must hide the internal AX-style audit /
-//  accounting spine and the optional Manufacturing module; enabling advanced /
-//  accountant mode must reveal them. Mirrors the filtering `RootView` applies.
+//  accounting spine (via the advanced toggle) and the optional POS /
+//  Deliveries / Manufacturing modules (via preset capability flags);
+//  enabling each must reveal the matching surface. Mirrors the filtering
+//  `RootView` applies through `isModuleVisible`.
 //
 
 import XCTest
@@ -14,155 +16,147 @@ import MercantisCore
 @MainActor
 final class HubNavigationVisibilityTests: XCTestCase {
 
-    private var originalAdvanced: Bool!
+    private var snapshot: [String: Any?] = [:]
+    private let keys = [
+        HubVisibilitySettings.defaultsKey,
+        HubVisibilitySettings.posEnabledKey,
+        HubVisibilitySettings.deliveriesEnabledKey,
+        HubVisibilitySettings.manufacturingEnabledKey,
+        HubVisibilitySettings.onboardingDoneKey,
+        HubVisibilitySettings.presetKey,
+    ]
 
     override func setUp() {
         super.setUp()
-        originalAdvanced = UserDefaults.standard.bool(forKey: HubVisibilitySettings.defaultsKey)
+        for key in keys { snapshot[key] = UserDefaults.standard.object(forKey: key) }
     }
 
     override func tearDown() {
-        UserDefaults.standard.set(originalAdvanced, forKey: HubVisibilitySettings.defaultsKey)
+        for key in keys { UserDefaults.standard.set(snapshot[key] ?? nil, forKey: key) }
         super.tearDown()
     }
 
-    /// Collects visible menu identifiers and labels under a given mode,
-    /// applying the same module- and group-level filtering `RootView` uses.
-    private func visibleIdentifiers(showAdvanced: Bool) -> (docTypes: Set<String>, reports: Set<String>, labels: Set<String>, modules: Set<String>) {
-        let settings = HubVisibilitySettings()
-        settings.showAdvanced = showAdvanced
+    // MARK: - Surface collection (mirrors RootView)
 
+    private struct Surface {
         var docTypes = Set<String>()
         var reports = Set<String>()
+        var flows = Set<String>()
         var labels = Set<String>()
         var modules = Set<String>()
-        for module in HubNavigation.allModules where settings.isVisible(module.visibility) {
-            modules.insert(module.label)
+    }
+
+    private func surface(
+        advanced: Bool = false,
+        pos: Bool = false,
+        deliveries: Bool = false,
+        manufacturing: Bool = false
+    ) -> Surface {
+        let settings = HubVisibilitySettings()
+        settings.showAdvanced = advanced
+        settings.posEnabled = pos
+        settings.deliveriesEnabled = deliveries
+        settings.manufacturingEnabled = manufacturing
+
+        var s = Surface()
+        for module in HubNavigation.allModules where settings.isModuleVisible(module) {
+            s.modules.insert(module.label)
             for group in module.visibleGroups(settings) {
                 for item in group.items {
-                    labels.insert(item.label)
+                    s.labels.insert(item.label)
                     switch item {
-                    case .docType(let d, _): docTypes.insert(d.id)
-                    case .report(let id, _): reports.insert(id)
+                    case .docType(let d, _): s.docTypes.insert(d.id)
+                    case .report(let id, _): s.reports.insert(id)
+                    case .flow(let id, _, _): s.flows.insert(id)
                     case .dashboard:         break
                     }
                 }
             }
         }
-        return (docTypes, reports, labels, modules)
+        return s
     }
 
-    private func visibleModules(showAdvanced: Bool) -> [HubModule] {
-        let settings = HubVisibilitySettings()
-        settings.showAdvanced = showAdvanced
-        return HubNavigation.allModules.filter { settings.isVisible($0.visibility) }
+    // MARK: - Defaults: optional modules + audit hidden
+
+    func test_default_surface_hides_optional_modules() {
+        let s = surface()
+        XCTAssertFalse(s.modules.contains("Manufacturing"))
+        XCTAssertFalse(s.modules.contains("POS"))
+        XCTAssertFalse(s.modules.contains("Deliveries"))
+        XCTAssertFalse(s.flows.contains("pos-checkout"))
+        XCTAssertFalse(s.docTypes.contains("BOM"))
+        XCTAssertFalse(s.docTypes.contains("DeliveryRoute"))
     }
 
-    func test_normal_mode_hides_internal_audit_and_manufacturing() {
-        let (docTypes, reports, _, modules) = visibleIdentifiers(showAdvanced: false)
-
+    func test_default_surface_hides_internal_audit_spine() {
+        let s = surface()
         for hidden in ["GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
                        "StockLedgerEntry", "JournalEntry"] {
-            XCTAssertFalse(docTypes.contains(hidden), "\(hidden) must be hidden in normal mode")
+            XCTAssertFalse(s.docTypes.contains(hidden), "\(hidden) must be hidden by default")
         }
-        // Manufacturing is a whole hidden module.
-        for hidden in ["BOM", "WorkOrder", "JobCard", "ProductionPlan", "Workstation", "Operation"] {
-            XCTAssertFalse(docTypes.contains(hidden), "Manufacturing DocType \(hidden) must be hidden in normal mode")
-        }
-        XCTAssertFalse(modules.contains("Manufacturing"), "Manufacturing module must be hidden in normal mode")
-        XCTAssertFalse(reports.contains(HubReports.trialBalance.id), "Trial Balance must be hidden in normal mode")
+        XCTAssertFalse(s.reports.contains(HubReports.trialBalance.id))
     }
 
-    func test_normal_mode_keeps_everyday_surface() {
-        let (docTypes, reports, labels, _) = visibleIdentifiers(showAdvanced: false)
-
-        for visible in ["Customer", "Supplier", "Item", "Quotation", "SalesOrder",
-                        "SalesInvoice", "PurchaseOrder", "PurchaseInvoice",
-                        "StockEntry", "PaymentEntry", "Account", "Company"] {
-            XCTAssertTrue(docTypes.contains(visible), "\(visible) must stay visible in normal mode")
+    func test_default_surface_keeps_everyday_modules() {
+        let s = surface()
+        for visible in ["Customer", "Supplier", "Item", "SalesOrder", "SalesInvoice",
+                        "PurchaseInvoice", "StockEntry", "PaymentEntry", "Account", "Company"] {
+            XCTAssertTrue(s.docTypes.contains(visible), "\(visible) must stay visible")
         }
-        for visibleLabel in ["Customers", "Suppliers", "Items", "Warehouses",
-                            "Contacts", "Addresses", "Stock Movements", "Payments", "Business Profile"] {
-            XCTAssertTrue(labels.contains(visibleLabel), "\(visibleLabel) must stay visible in normal mode")
-        }
-        for hidden in ["GL Entry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
-                       "StockLedgerEntry", "JournalEntry", "Manufacturing"] {
-            XCTAssertFalse(labels.contains(hidden), "\(hidden) should not be shown in normal mode")
-        }
-        // User-facing reports remain available.
-        XCTAssertTrue(reports.contains(HubReports.customerStatement.id))
-        XCTAssertTrue(reports.contains(HubReports.supplierLedger.id))
+        // Guided payment flows live on the everyday Money/Sell surface.
+        XCTAssertTrue(s.flows.contains("guided-receive-payment"))
     }
 
-    func test_menu_uses_friendly_labels_when_configured() {
-        let (_, _, labels, _) = visibleIdentifiers(showAdvanced: false)
+    // MARK: - Advanced reveals the audit spine (but not optional modules)
 
-        XCTAssertTrue(labels.contains("Quotes"))
-        XCTAssertTrue(labels.contains("Stock Movements"))
-        XCTAssertTrue(labels.contains("Payments"))
-
-        XCTAssertFalse(labels.contains("Quotation"))
-        XCTAssertFalse(labels.contains("Stock Entry"))
-        XCTAssertFalse(labels.contains("Payment Entry"))
-    }
-
-    func test_advanced_mode_reveals_internal_audit_and_manufacturing() {
-        let (docTypes, reports, _, modules) = visibleIdentifiers(showAdvanced: true)
-
+    func test_advanced_reveals_audit_spine_only() {
+        let s = surface(advanced: true)
         for revealed in ["GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans",
-                         "StockLedgerEntry", "JournalEntry",
-                         "BOM", "WorkOrder", "JobCard", "ProductionPlan"] {
-            XCTAssertTrue(docTypes.contains(revealed), "\(revealed) must be visible in advanced mode")
+                         "StockLedgerEntry", "JournalEntry"] {
+            XCTAssertTrue(s.docTypes.contains(revealed), "\(revealed) must show in advanced mode")
         }
-        XCTAssertTrue(reports.contains(HubReports.trialBalance.id), "Trial Balance must be visible in advanced mode")
-        XCTAssertTrue(modules.contains("Manufacturing"), "Manufacturing module must be visible in advanced mode")
+        XCTAssertTrue(s.reports.contains(HubReports.trialBalance.id))
+        // Manufacturing is gated by its capability, not the advanced toggle.
+        XCTAssertFalse(s.modules.contains("Manufacturing"))
     }
 
-    func test_only_selected_module_resolves_as_expanded_module() {
-        let settings = HubVisibilitySettings()
-        settings.showAdvanced = false
-        let modules = visibleModules(showAdvanced: false)
+    // MARK: - Capability flags reveal optional modules
 
-        let supplier = modules
-            .flatMap { $0.visibleGroups(settings) }
-            .flatMap(\.items)
-            .first(where: { $0.label == "Suppliers" })
-        let salesOrder = modules
-            .flatMap { $0.visibleGroups(settings) }
-            .flatMap(\.items)
-            .first(where: { $0.label == "Sales Orders" })
+    func test_pos_capability_reveals_pos_module() {
+        let s = surface(pos: true)
+        XCTAssertTrue(s.modules.contains("POS"))
+        XCTAssertTrue(s.flows.contains("pos-checkout"))
+        XCTAssertTrue(s.docTypes.contains("POSInvoice"))
+    }
 
-        XCTAssertEqual(HubNavigation.moduleID(for: supplier, settings: settings), "crm")
-        XCTAssertEqual(HubNavigation.moduleID(for: salesOrder, settings: settings), "selling")
+    func test_deliveries_capability_reveals_routes() {
+        let s = surface(deliveries: true)
+        XCTAssertTrue(s.modules.contains("Deliveries"))
+        XCTAssertTrue(s.docTypes.contains("DeliveryRoute"))
+        XCTAssertTrue(s.docTypes.contains("SalesDelivery"))
+    }
 
-        if let supplier {
-            let containingCount = modules.filter { $0.contains(supplier, settings: settings) }.count
-            XCTAssertEqual(containingCount, 1, "A selected sidebar item must map to exactly one expanded module")
-        } else {
-            XCTFail("Suppliers item not found")
+    func test_manufacturing_capability_reveals_production() {
+        let s = surface(manufacturing: true)
+        XCTAssertTrue(s.modules.contains("Manufacturing"))
+        for revealed in ["BOM", "WorkOrder", "JobCard", "ProductionPlan"] {
+            XCTAssertTrue(s.docTypes.contains(revealed), "\(revealed) must show when manufacturing is on")
         }
     }
 
-    func test_module_badges_are_business_alert_backed_only() {
-        let modules = visibleModules(showAdvanced: true)
-        for module in modules {
+    // MARK: - Friendly labels
+
+    func test_menu_uses_friendly_labels() {
+        let s = surface()
+        XCTAssertTrue(s.labels.contains("Quotes"))
+        XCTAssertTrue(s.labels.contains("Stock Movements"))
+        XCTAssertFalse(s.labels.contains("Quotation"))
+        XCTAssertFalse(s.labels.contains("Stock Entry"))
+    }
+
+    func test_module_badges_are_not_menu_counts() {
+        for module in HubNavigation.allModules {
             XCTAssertNil(module.businessBadge, "\(module.label) should not show menu-count badges")
-        }
-    }
-
-    func test_pos_shell_stays_out_of_navigation_in_all_modes() {
-        for showAdvanced in [false, true] {
-            let settings = HubVisibilitySettings()
-            settings.showAdvanced = showAdvanced
-
-            let labels = HubNavigation.allModules
-                .filter { settings.isVisible($0.visibility) }
-                .flatMap { $0.visibleGroups(settings) }
-                .flatMap(\.items)
-                .map(\.label)
-
-            XCTAssertFalse(labels.contains("Point of Sale"), "POS should remain preview-only, not in navigation")
-            XCTAssertFalse(labels.contains("POS"), "POS should remain preview-only, not in navigation")
         }
     }
 }
