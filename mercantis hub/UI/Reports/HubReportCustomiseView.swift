@@ -24,7 +24,8 @@ struct HubReportCustomiseView: View {
     }
 
     private var template: HubCustomReportCatalog.Template? {
-        draft.baseReportId.flatMap(HubCustomReportCatalog.template(forBaseReportId:))
+        guard let baseId = draft.baseReportId else { return nil }
+        return HubCustomReportCatalog.template(forBaseReportId: baseId)
     }
 
     var body: some View {

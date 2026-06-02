@@ -77,10 +77,10 @@ struct HubCustomReportsView: View {
     }
 
     private func baseLabel(for report: SavedReportDefinition) -> String {
-        let base = report.baseReportId
-            .flatMap(HubCustomReportCatalog.template(forBaseReportId:))?.name
-            ?? report.baseReportId
-            ?? "—"
+        let templateName = report.baseReportId.flatMap { id in
+            HubCustomReportCatalog.template(forBaseReportId: id)?.name
+        }
+        let base = templateName ?? report.baseReportId ?? "—"
         let visibleCount = report.visibleColumnsInOrder.count
         return "Based on \(base) · \(visibleCount) column\(visibleCount == 1 ? "" : "s")"
     }
