@@ -21,6 +21,9 @@ struct mercantis_hubApp: App {
     /// End-user customizations (ADR-021). Persisted in the `custom_fields`
     /// table so they survive app restarts and HubManifest reinstalls.
     let customFieldStore: CustomFieldStore
+    /// User-saved custom report variants. Persisted in `UserDefaults` (Hub is
+    /// single-user / offline) and observed by the Custom Reports UI.
+    @StateObject private var savedReportStore = HubSavedReportStore()
 
     /// App-wide workspace preferences (advanced view, business preset,
     /// optional-module flags, onboarding state). Owned at app scope so the
@@ -120,7 +123,8 @@ struct mercantis_hubApp: App {
                 reportEngine: reportEngine,
                 dashboardEngine: dashboardEngine,
                 customFieldStore: customFieldStore,
-                visibility: visibility
+                visibility: visibility,
+                savedReportStore: savedReportStore
             )
         }
         .defaultSize(width: 1100, height: 720)

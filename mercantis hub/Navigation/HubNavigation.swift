@@ -55,6 +55,8 @@ enum HubMenuItem: Identifiable {
     /// A bespoke guided workflow screen (e.g. Receive Payment / Pay Supplier),
     /// not backed by a single DocType list. `id` selects the concrete flow.
     case flow(id: String, label: String, systemImage: String)
+    /// The cross-module Custom Reports home (user-saved report variants).
+    case customReports(label: String)
 
     var id: String {
         switch self {
@@ -62,6 +64,7 @@ enum HubMenuItem: Identifiable {
         case .report(let id, _):    return "report:\(id)"
         case .dashboard(let id, _): return "dashboard:\(id)"
         case .flow(let id, _, _):   return "flow:\(id)"
+        case .customReports:        return "custom-reports"
         }
     }
 
@@ -72,6 +75,7 @@ enum HubMenuItem: Identifiable {
         case .report(_, let l):    return l
         case .dashboard(_, let l): return l
         case .flow(_, let l, _):   return l
+        case .customReports(let l): return l
         }
     }
 
@@ -85,6 +89,8 @@ enum HubMenuItem: Identifiable {
             return "rectangle.grid.2x2"
         case .flow(_, _, let systemImage):
             return systemImage
+        case .customReports:
+            return "slider.horizontal.3"
         }
     }
 
@@ -161,6 +167,8 @@ extension HubMenuItem: Hashable {
         case .flow(let id, _, _):
             hasher.combine("flow")
             hasher.combine(id)
+        case .customReports:
+            hasher.combine("custom-reports")
         }
     }
     static func == (lhs: HubMenuItem, rhs: HubMenuItem) -> Bool {
@@ -173,6 +181,8 @@ extension HubMenuItem: Hashable {
             return lid == rid
         case let (.flow(lid, _, _), .flow(rid, _, _)):
             return lid == rid
+        case (.customReports, .customReports):
+            return true
         default:
             return false
         }

@@ -853,6 +853,42 @@ The CLI's `mercantis new-doctype` scaffold output is also a working template.
 
 ---
 
+## Custom Reports (User Report Customisation)
+
+Hub lets users customise selected built-in reports without code, built on
+Core's generic saved-report infrastructure (Core ADR-050). The Core/Hub
+split is deliberate:
+
+| Core (`mercantis.core.app`) | Hub (`mercantis.hub.app`) |
+|---|---|
+| `SavedReportDefinition` model + column/filter/sort value types | `HubCustomReportCatalog` — *which* reports are customisable + friendly ERP labels |
+| Generic execution + field validation (`SavedReportEngine`) | `HubSavedReportRunner` — re-runs the Hub report computer, then projects the saved columns/filters |
+| Visibility / ownership semantics | `HubSavedReportStore` — local (UserDefaults) persistence of a user's saved reports |
+| — | Custom Reports navigation, "Save as Custom Report" action, editor UI |
+
+Hub does **not** reimplement the saved-report model or a second generic
+engine. Because several Hub reports (Customer Aging, VAT Summary, Supplier
+Ledger) need Hub-side aggregation that the generic engine can't reproduce,
+the runner re-runs the base report via `HubReports.runResult(...)` to get a
+fully-computed `ReportResult`, then layers the user's column show/hide,
+reordering, relabelling, and stored filter defaults on top.
+
+**Customisable reports** (safe, user-facing): Sales Register, Purchase
+Register, Stock on Hand, Customer Aging, Supplier Ledger, VAT Summary,
+Open Deliveries, Today's Routes. The raw Stock Ledger View is gated to the
+Advanced/Accountant view; Trial Balance, Customer Statement and the
+GL/CustTrans/VendTrans dumps are intentionally not customisable so normal
+users never touch the audit spine by accident.
+
+Built-in reports are unchanged — a custom report is a separate, user-owned
+variant that lives under **Custom Reports** in the sidebar.
+
+> **Dependency:** this feature compiles against Core's saved-report types,
+> which land on Core `main` via the Saved Report Infrastructure work
+> (Core ADR-050). Hub picks them up on its next Core dependency resolve.
+
+---
+
 ## UX/Product Direction
 
 Hub's UX strategy and product evolution plan are documented in [`Docs/HUB-UX-DIRECTION.md`](HUB-UX-DIRECTION.md). Key points:
