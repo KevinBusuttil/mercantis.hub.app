@@ -119,6 +119,17 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + buyingRoles
     )
 
+    /// Today's Routes — Phase 7. Delivery Routes dated today, with stop and
+    /// delivered counts derived from each route's stops.
+    public static let todaysRoutes = ReportDefinition(
+        id: "todays-routes",
+        name: "Today's Routes",
+        docType: "DeliveryRoute",
+        columns: ["Route", "Driver", "Vehicle", "Status", "Stops", "Delivered"],
+        filters: [],
+        allowedRoles: financeRoles + salesRoles + stockRoles
+    )
+
     /// Customer Aging — outstanding receivables bucketed by age.
     /// The `columns` here describe the **output** shape produced by
     /// `runResult`, not the underlying SalesInvoice columns.
@@ -200,7 +211,7 @@ public enum HubReports: Sendable {
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
-        openDeliveries, pendingReceipts,
+        openDeliveries, pendingReceipts, todaysRoutes,
         customerAging, trialBalance,
         customerStatement, supplierLedger,
         vatSummary,
@@ -232,6 +243,8 @@ public enum HubReports: Sendable {
             return try runOpenDeliveries(engine: engine, filters: filters)
         case "pending-receipts":
             return try runPendingReceipts(engine: engine, filters: filters)
+        case "todays-routes":
+            return try runTodaysRoutes(engine: engine)
         case "customer-aging":
             return try runCustomerAging(engine: engine, filters: filters)
         case "trial-balance":
@@ -417,6 +430,34 @@ public enum HubReports: Sendable {
 
     private static func statusLabel(docType: String, state: String) -> String {
         HubWorkflowDisplayPolicy.policy.statusDisplay(docTypeId: docType, state: state).label
+    }
+
+    /// Delivery Routes dated today, with live stop / delivered counts.
+    private static func runTodaysRoutes(engine: DocumentEngine) throws -> ReportResult {
+        let routes = try engine.list(docType: "DeliveryRoute", applyRowAccess: false)
+        let driverNames = displayNames(engine: engine, docType: "Driver")
+        let vehicleNames = displayNames(engine: engine, docType: "Vehicle")
+
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+
+        let rows: [[String?]] = routes.compactMap { route in
+            guard let date = asDate(route.fields["route_date"]), date >= start, date < end else { return nil }
+            let stops = route.children["stops"] ?? []
+            let delivered = stops.filter { asString($0.fields["status"]) == "Delivered" }.count
+            let driverID = asString(route.fields["driver"]) ?? ""
+            let vehicleID = asString(route.fields["vehicle"]) ?? ""
+            return [
+                asString(route.fields["route_name"]) ?? route.id,
+                driverNames[driverID] ?? (driverID.isEmpty ? "—" : driverID),
+                vehicleNames[vehicleID] ?? (vehicleID.isEmpty ? "—" : vehicleID),
+                asString(route.fields["status"]) ?? "Draft",
+                String(stops.count),
+                String(delivered),
+            ]
+        }
+        return ReportResult(columns: todaysRoutes.columns, rows: rows)
     }
 
     // MARK: - Customer Aging
