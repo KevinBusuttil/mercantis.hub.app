@@ -54,6 +54,10 @@ struct HubSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 420)
+        // Resizable: give a comfortable minimum + ideal size but let the
+        // user grow the window (paired with `.windowResizability(.contentMinSize)`
+        // on the Settings scene).
+        .frame(minWidth: 420, idealWidth: 480, maxWidth: .infinity,
+               minHeight: 460, idealHeight: 560, maxHeight: .infinity)
     }
 }

@@ -132,6 +132,9 @@ struct mercantis_hubApp: App {
         Settings {
             HubSettingsView(settings: visibility)
         }
+        // Let the user grow the Settings window instead of pinning it to a
+        // fixed size; it can't shrink below the content's minimum.
+        .windowResizability(.contentMinSize)
     }
 
     // MARK: - Bootstrap helpers
