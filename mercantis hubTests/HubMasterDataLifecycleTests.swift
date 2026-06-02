@@ -21,11 +21,12 @@ final class HubMasterDataLifecycleTests: XCTestCase {
         "CostCenter", "PriceList", "Workstation", "Operation",
         "FiscalYear", "NumberingSeries", "TaxCategory", "TaxCode",
         "POSProfile", "POSSession",
+        "Driver", "Vehicle", "DeliveryRoute",
     ]
 
     private static let auditDocTypes = [
         "GLEntry", "CustTrans", "VendTrans", "Settlement", "TaxTrans", "StockLedgerEntry",
-        "Bin",
+        "Bin", "DeliveryStatusEvent",
     ]
 
     private static let submittableDocTypes = [

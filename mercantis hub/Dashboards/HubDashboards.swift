@@ -166,11 +166,48 @@ public enum HubDashboards: Sendable {
         ]
     )
 
+    // MARK: - Deliveries Overview
+
+    public static let deliveriesOverview = DashboardDefinition(
+        id: "deliveries-overview",
+        name: "Deliveries Overview",
+        widgets: [
+            DashboardWidget(
+                type: "count", title: "Delivery Routes",
+                docType: "DeliveryRoute", parameters: [:]
+            ),
+            DashboardWidget(
+                type: "count", title: "Dispatched Routes",
+                docType: "DeliveryRoute",
+                parameters: ["where.status__eq": "Dispatched"]
+            ),
+            DashboardWidget(
+                type: "count", title: "Sales Deliveries",
+                docType: "SalesDelivery", parameters: [:]
+            ),
+            DashboardWidget(
+                type: "list", title: "Recent Routes",
+                docType: "DeliveryRoute",
+                parameters: ["columns": "id,route_date,driver,status",
+                             "limit": "10"]
+            ),
+            DashboardWidget(
+                type: "shortcut", title: "Today's Routes",
+                parameters: ["target": "report:todays-routes"]
+            ),
+            DashboardWidget(
+                type: "shortcut", title: "Open Deliveries",
+                parameters: ["target": "report:open-deliveries"]
+            ),
+        ]
+    )
+
     public static let allDashboards: [DashboardDefinition] = [
         salesOverview,
         inventoryOverview,
         manufacturingOverview,
         accountingOverview,
+        deliveriesOverview,
     ]
 
     public static func dashboard(forId id: String) -> DashboardDefinition? {

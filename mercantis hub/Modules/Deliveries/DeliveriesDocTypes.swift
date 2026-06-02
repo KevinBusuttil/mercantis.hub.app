@@ -89,6 +89,14 @@ enum Deliveries {
                             type: .text, required: false, allowOnSubmit: true),
             FieldDefinition(key: "vehicle", label: "Vehicle",
                             type: .text, required: false, allowOnSubmit: true),
+            // Set by DeliveryRouteService when this delivery is added to a
+            // route as a stop (Phase 7). allowOnSubmit so they update on the
+            // already-submitted delivery.
+            FieldDefinition(key: "delivery_route", label: "Delivery Route",
+                            type: .link, required: false, linkedDocType: "DeliveryRoute",
+                            allowOnSubmit: true),
+            FieldDefinition(key: "route_status", label: "Route Status",
+                            type: .text, required: false, allowOnSubmit: true),
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "SalesDeliveryItem"),
             FieldDefinition(key: "total_qty", label: "Total Qty",
@@ -118,7 +126,8 @@ enum Deliveries {
                 title: "Fulfilment",
                 helpText: "Scheduling and driver details. The delivery status tracks the journey from Scheduled to Delivered.",
                 columns: 2,
-                fieldKeys: ["set_warehouse", "scheduled_date", "driver", "vehicle"]
+                fieldKeys: ["set_warehouse", "scheduled_date", "driver", "vehicle",
+                            "delivery_route", "route_status"]
             ),
             FormLayoutSection(
                 key: "items",
@@ -142,5 +151,5 @@ enum Deliveries {
     static let allDocTypes: [DocType] = [
         salesDeliveryItem,
         salesDelivery
-    ]
+    ] + routeDocTypes
 }

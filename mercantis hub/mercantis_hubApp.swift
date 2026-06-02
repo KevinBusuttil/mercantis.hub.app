@@ -12,6 +12,9 @@ struct mercantis_hubApp: App {
     /// Manufacturing rollups + Stock Entry on WO completion. Same
     /// lifecycle / strong-retention contract as `ledgerDerivation`.
     let manufacturingDerivation: ManufacturingDerivationService
+    /// Phase 7 — mirrors Delivery Route stop status onto Sales Deliveries
+    /// and appends the status-event history. Same retention contract.
+    let deliveryRouteService: DeliveryRouteService
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
@@ -67,6 +70,12 @@ struct mercantis_hubApp: App {
         // Shares the same `emitter` so it sees the same submit /
         // transition events as the ledger derivation.
         self.manufacturingDerivation = ManufacturingDerivationService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Phase 7: Delivery Route → Sales Delivery status mirroring + the
+        // append-only Delivery Status Event history. Shares the same bus.
+        self.deliveryRouteService = DeliveryRouteService(
             engine: documentEngine,
             emitter: emitter
         )
