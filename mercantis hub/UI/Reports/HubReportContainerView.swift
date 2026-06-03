@@ -139,7 +139,6 @@ struct HubReportContainerView: View {
                     #endif
                 }
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if let errorMessage {
             ContentUnavailableView {
                 Label("\(reportLabel) has nothing to show yet", systemImage: "doc.text.magnifyingglass")

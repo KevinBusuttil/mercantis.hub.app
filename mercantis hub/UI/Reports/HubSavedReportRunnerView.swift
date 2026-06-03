@@ -75,18 +75,16 @@ struct HubSavedReportRunnerView: View {
     @ViewBuilder
     private func content(for report: SavedReportDefinition) -> some View {
         if let result {
-            // The navigation bar already shows the report name, so the
-            // in-view header is title-less here — it keeps the row count,
-            // Refresh and Export actions without repeating the title.
-            // `maxHeight: .infinity, alignment: .top` pins the table just
-            // under the header instead of letting it float.
+            // The navigation bar already shows the report name, so suppress
+            // the in-view title to avoid duplicating it; the header keeps the
+            // row count + Refresh/Export actions. (Core top-aligns the table.)
             GenericReportView(
-                title: "",
+                title: report.name,
                 result: result,
+                showsTitle: false,
                 onRefresh: { load() },
                 onExportCSV: { exportCSV(report: report, result: result) }
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if let errorMessage {
             ContentUnavailableView {
                 Label("\(report.name) has nothing to show yet", systemImage: "doc.text.magnifyingglass")

@@ -306,26 +306,7 @@ final class HubCustomReportFoundationTests: XCTestCase {
         XCTAssertEqual(report.visibleColumnsInOrder.count, min(3, report.columns.count))
     }
 
-    // MARK: - CSV export
-
-    func test_csv_export_escapes_fields() {
-        let result = ReportResult(
-            columns: ["Name", "Note"],
-            rows: [
-                ["Acme, Inc.", "He said \"hi\""],
-                ["Beta", nil],
-            ]
-        )
-        let csv = HubReportCSV.string(from: result)
-        let lines = csv.components(separatedBy: "\n")
-
-        XCTAssertEqual(lines.count, 3)
-        XCTAssertEqual(lines[0], "Name,Note")
-        // Comma forces quoting; embedded quotes are doubled.
-        XCTAssertEqual(lines[1], "\"Acme, Inc.\",\"He said \"\"hi\"\"\"")
-        // A nil cell becomes an empty field.
-        XCTAssertEqual(lines[2], "Beta,")
-    }
+    // MARK: - CSV export (filename only; serialisation is tested in Core)
 
     func test_csv_filename_is_sanitised() {
         XCTAssertEqual(HubReportCSV.fileName(for: "Customers Report"), "Customers Report.csv")

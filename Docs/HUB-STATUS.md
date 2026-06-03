@@ -884,10 +884,13 @@ engine. Two execution paths share one model:
   grouping numbers, and formatting dates — using DocType metadata so each
   column is treated correctly.
 
-Both report viewers top-align their table and offer **Export CSV**
-(RFC-4180 escaping, macOS save panel). Row drill-through (open the underlying
-record from a row) is a planned fast-follow; it needs the runner to expose a
-row→record-id mapping the flat `ReportResult` doesn't carry today.
+Both report viewers offer **Export CSV** (Core's `ReportResult.csvString()`,
+RFC-4180, behind a macOS save panel) and rely on Core's `GenericReportView`
+for the top-aligned table and the `showsTitle` option (so the custom-report
+view doesn't duplicate the nav-bar title) — Core ADR-049 polish, rather than
+Hub-side workarounds. Row drill-through (open the underlying record from a
+row) is a planned fast-follow; it needs the runner to expose a row→record-id
+mapping the flat `ReportResult` doesn't carry today.
 
 **Customisable built-ins** (safe, user-facing): Sales Register, Purchase
 Register, Stock on Hand, Customer Aging, Supplier Ledger, VAT Summary,
