@@ -314,6 +314,38 @@ final class HubCustomReportFoundationTests: XCTestCase {
         XCTAssertEqual(HubReportCSV.fileName(for: "   "), "report.csv")
     }
 
+    func test_csv_write_produces_file_with_headers_and_rows() throws {
+        // The filesystem-write path is isolated from the save panel so it can be
+        // exercised directly. Serialisation itself is Core's concern (and tested
+        // there); here we only assert that what Core produces lands on disk.
+        let result = ReportResult(
+            columns: ["id", "customer", "grand_total"],
+            rows: [
+                ["INV-1", "Acme", "100.00"],
+                ["INV-2", "Beta", "50.00"],
+            ]
+        )
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hub-report-\(UUID().uuidString).csv")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try HubReportCSV.write(result, to: url)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let written = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertEqual(written, result.csvString())
+        XCTAssertTrue(written.contains("customer"), "headers should be present")
+        XCTAssertTrue(written.contains("INV-1"), "rows should be present")
+    }
+
+    func test_csv_write_surfaces_error_for_unwritable_location() {
+        let result = ReportResult(columns: ["id"], rows: [["INV-1"]])
+        // A path under a non-existent directory cannot be written, so the write
+        // must throw rather than silently fail.
+        let bogus = URL(fileURLWithPath: "/this-directory-does-not-exist/nope/report.csv")
+        XCTAssertThrowsError(try HubReportCSV.write(result, to: bogus))
+    }
+
     func test_blank_report_runs_through_core_engine_path() throws {
         // A from-scratch report must route to the Core engine; without one the
         // runner reports that cleanly rather than falling through to HubReports.

@@ -13,6 +13,7 @@ struct HubSavedReportRunnerView: View {
 
     @State private var result: ReportResult?
     @State private var errorMessage: String?
+    @State private var exportErrorMessage: String?
     @State private var editing: SavedReportDefinition?
     @State private var showDeleteConfirm = false
 
@@ -68,6 +69,17 @@ struct HubSavedReportRunnerView: View {
         } message: {
             Text("The built-in report it was based on is not affected.")
         }
+        .alert(
+            "Couldn’t export CSV",
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { exportErrorMessage = nil }
+        } message: {
+            Text(exportErrorMessage ?? "")
+        }
         .onAppear(perform: load)
         .onChange(of: reportId) { _, _ in load() }
     }
@@ -122,7 +134,13 @@ struct HubSavedReportRunnerView: View {
 
     private func exportCSV(report: SavedReportDefinition, result: ReportResult) {
         #if os(macOS)
-        HubReportCSV.export(result, named: report.name)
+        do {
+            // Cancelling the save panel returns `.cancelled` and shows nothing;
+            // only a real write failure surfaces an error to the user.
+            _ = try HubReportCSV.export(result, named: report.name)
+        } catch {
+            exportErrorMessage = String(describing: error)
+        }
         #endif
     }
 }
