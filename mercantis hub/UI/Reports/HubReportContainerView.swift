@@ -132,8 +132,14 @@ struct HubReportContainerView: View {
             GenericReportView(
                 title: reportLabel,
                 result: result,
-                onRefresh: { load() }
+                onRefresh: { load() },
+                onExportCSV: {
+                    #if os(macOS)
+                    HubReportCSV.export(result, named: reportLabel)
+                    #endif
+                }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if let errorMessage {
             ContentUnavailableView {
                 Label("\(reportLabel) has nothing to show yet", systemImage: "doc.text.magnifyingglass")

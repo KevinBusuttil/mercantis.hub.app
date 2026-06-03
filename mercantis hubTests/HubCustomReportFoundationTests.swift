@@ -306,6 +306,33 @@ final class HubCustomReportFoundationTests: XCTestCase {
         XCTAssertEqual(report.visibleColumnsInOrder.count, min(3, report.columns.count))
     }
 
+    // MARK: - CSV export
+
+    func test_csv_export_escapes_fields() {
+        let result = ReportResult(
+            columns: ["Name", "Note"],
+            rows: [
+                ["Acme, Inc.", "He said \"hi\""],
+                ["Beta", nil],
+            ]
+        )
+        let csv = HubReportCSV.string(from: result)
+        let lines = csv.components(separatedBy: "\n")
+
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertEqual(lines[0], "Name,Note")
+        // Comma forces quoting; embedded quotes are doubled.
+        XCTAssertEqual(lines[1], "\"Acme, Inc.\",\"He said \"\"hi\"\"\"")
+        // A nil cell becomes an empty field.
+        XCTAssertEqual(lines[2], "Beta,")
+    }
+
+    func test_csv_filename_is_sanitised() {
+        XCTAssertEqual(HubReportCSV.fileName(for: "Customers Report"), "Customers Report.csv")
+        XCTAssertEqual(HubReportCSV.fileName(for: "A/B:C"), "A-B-C.csv")
+        XCTAssertEqual(HubReportCSV.fileName(for: "   "), "report.csv")
+    }
+
     func test_blank_report_runs_through_core_engine_path() throws {
         // A from-scratch report must route to the Core engine; without one the
         // runner reports that cleanly rather than falling through to HubReports.
