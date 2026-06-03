@@ -306,6 +306,14 @@ final class HubCustomReportFoundationTests: XCTestCase {
         XCTAssertEqual(report.visibleColumnsInOrder.count, min(3, report.columns.count))
     }
 
+    // MARK: - CSV export (filename only; serialisation is tested in Core)
+
+    func test_csv_filename_is_sanitised() {
+        XCTAssertEqual(HubReportCSV.fileName(for: "Customers Report"), "Customers Report.csv")
+        XCTAssertEqual(HubReportCSV.fileName(for: "A/B:C"), "A-B-C.csv")
+        XCTAssertEqual(HubReportCSV.fileName(for: "   "), "report.csv")
+    }
+
     func test_blank_report_runs_through_core_engine_path() throws {
         // A from-scratch report must route to the Core engine; without one the
         // runner reports that cleanly rather than falling through to HubReports.

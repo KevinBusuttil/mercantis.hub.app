@@ -879,7 +879,18 @@ engine. Two execution paths share one model:
   field against DocType metadata, enforces row permissions, and emits a flat
   `ReportResult`. `HubReportBuilder` seeds a blank report's columns from the
   chosen DocType's metadata; `HubReportableDocTypes` curates which record
-  types are offered (audit/ledger types gated to Advanced view).
+  types are offered (audit/ledger types gated to Advanced view). The runner
+  then *humanizes* the raw result — resolving link ids to record names,
+  grouping numbers, and formatting dates — using DocType metadata so each
+  column is treated correctly.
+
+Both report viewers offer **Export CSV** (Core's `ReportResult.csvString()`,
+RFC-4180, behind a macOS save panel) and rely on Core's `GenericReportView`
+for the top-aligned table and the `showsTitle` option (so the custom-report
+view doesn't duplicate the nav-bar title) — Core ADR-049 polish, rather than
+Hub-side workarounds. Row drill-through (open the underlying record from a
+row) is a planned fast-follow; it needs the runner to expose a row→record-id
+mapping the flat `ReportResult` doesn't carry today.
 
 **Customisable built-ins** (safe, user-facing): Sales Register, Purchase
 Register, Stock on Hand, Customer Aging, Supplier Ledger, VAT Summary,

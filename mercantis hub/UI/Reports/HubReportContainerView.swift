@@ -132,7 +132,12 @@ struct HubReportContainerView: View {
             GenericReportView(
                 title: reportLabel,
                 result: result,
-                onRefresh: { load() }
+                onRefresh: { load() },
+                onExportCSV: {
+                    #if os(macOS)
+                    HubReportCSV.export(result, named: reportLabel)
+                    #endif
+                }
             )
         } else if let errorMessage {
             ContentUnavailableView {

@@ -75,10 +75,15 @@ struct HubSavedReportRunnerView: View {
     @ViewBuilder
     private func content(for report: SavedReportDefinition) -> some View {
         if let result {
+            // The navigation bar already shows the report name, so suppress
+            // the in-view title to avoid duplicating it; the header keeps the
+            // row count + Refresh/Export actions. (Core top-aligns the table.)
             GenericReportView(
                 title: report.name,
                 result: result,
-                onRefresh: { load() }
+                showsTitle: false,
+                onRefresh: { load() },
+                onExportCSV: { exportCSV(report: report, result: result) }
             )
         } else if let errorMessage {
             ContentUnavailableView {
@@ -111,5 +116,13 @@ struct HubSavedReportRunnerView: View {
             result = nil
             errorMessage = String(describing: error)
         }
+    }
+
+    // MARK: - CSV export
+
+    private func exportCSV(report: SavedReportDefinition, result: ReportResult) {
+        #if os(macOS)
+        HubReportCSV.export(result, named: report.name)
+        #endif
     }
 }
