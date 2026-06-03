@@ -853,11 +853,11 @@ The CLI's `mercantis new-doctype` scaffold output is also a working template.
 
 ---
 
-## Custom Reports (User Report Customisation)
+## Custom Reports (User Report Customisation + From-Scratch)
 
-Hub lets users customise selected built-in reports without code, built on
-Core's generic saved-report infrastructure (Core ADR-050). The Core/Hub
-split is deliberate:
+Hub lets users both **customise** selected built-in reports and **build their
+own reports from scratch** — no code — on Core's generic saved-report
+infrastructure (Core ADR-050). The Core/Hub split is deliberate:
 
 | Core (`mercantis.core.app`) | Hub (`mercantis.hub.app`) |
 |---|---|
@@ -867,18 +867,32 @@ split is deliberate:
 | — | Custom Reports navigation, "Save as Custom Report" action, editor UI |
 
 Hub does **not** reimplement the saved-report model or a second generic
-engine. Because several Hub reports (Customer Aging, VAT Summary, Supplier
-Ledger) need Hub-side aggregation that the generic engine can't reproduce,
-the runner re-runs the base report via `HubReports.runResult(...)` to get a
-fully-computed `ReportResult`, then layers the user's column show/hide,
-reordering, relabelling, and stored filter defaults on top.
+engine. Two execution paths share one model:
 
-**Customisable reports** (safe, user-facing): Sales Register, Purchase
+- **Customised built-in** (`baseReportId != nil`): because several Hub
+  reports (Customer Aging, VAT Summary, Supplier Ledger) need Hub-side
+  aggregation the generic engine can't reproduce, `HubSavedReportRunner`
+  re-runs the base report via `HubReports.runResult(...)` and projects the
+  user's column show/hide, reorder, relabel, and stored filter defaults on top.
+- **From-scratch** (`baseReportId == nil`): the runner executes the saved
+  report directly through Core's `SavedReportEngine`, which validates every
+  field against DocType metadata, enforces row permissions, and emits a flat
+  `ReportResult`. `HubReportBuilder` seeds a blank report's columns from the
+  chosen DocType's metadata; `HubReportableDocTypes` curates which record
+  types are offered (audit/ledger types gated to Advanced view).
+
+**Customisable built-ins** (safe, user-facing): Sales Register, Purchase
 Register, Stock on Hand, Customer Aging, Supplier Ledger, VAT Summary,
 Open Deliveries, Today's Routes. The raw Stock Ledger View is gated to the
 Advanced/Accountant view; Trial Balance, Customer Statement and the
-GL/CustTrans/VendTrans dumps are intentionally not customisable so normal
-users never touch the audit spine by accident.
+GL/CustTrans/VendTrans dumps are intentionally not customisable.
+
+**From-scratch reportable types**: Customers, Suppliers, Items, Contacts,
+Leads, Quotes, Sales/Purchase Orders & Invoices, Payments, Accounts,
+Warehouses, Price Lists (normal); the GL/CustTrans/VendTrans/Tax/Stock-ledger
+spine is offered only in Advanced view. From-scratch reports are flat,
+field-backed lists with column selection, safe-operator filters, and sorting —
+aggregated/computed reports stay customise-only.
 
 Built-in reports are unchanged — a custom report is a separate, user-owned
 variant that lives under **Custom Reports** in the sidebar.

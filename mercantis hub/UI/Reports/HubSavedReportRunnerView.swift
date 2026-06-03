@@ -9,6 +9,7 @@ struct HubSavedReportRunnerView: View {
     let reportId: String
     @ObservedObject var store: HubSavedReportStore
     let engine: DocumentEngine
+    let savedReportEngine: SavedReportEngine
 
     @State private var result: ReportResult?
     @State private var errorMessage: String?
@@ -98,7 +99,13 @@ struct HubSavedReportRunnerView: View {
             return
         }
         do {
-            result = try HubSavedReportRunner.run(savedReport: report, engine: engine)
+            result = try HubSavedReportRunner.run(
+                savedReport: report,
+                engine: engine,
+                savedReportEngine: savedReportEngine,
+                requestingUserId: HubIdentity.userId(),
+                userRoles: ["System Manager"]
+            )
             errorMessage = nil
         } catch {
             result = nil
