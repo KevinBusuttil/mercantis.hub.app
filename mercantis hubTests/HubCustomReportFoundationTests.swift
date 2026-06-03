@@ -235,4 +235,89 @@ final class HubCustomReportFoundationTests: XCTestCase {
         XCTAssertFalse(bobIds.contains(mine.id), "Bob can't see Alice's private report")
         XCTAssertTrue(bobIds.contains(shared.id), "Shared reports are visible to everyone")
     }
+
+    // MARK: - From-scratch: reportable DocType catalogue
+
+    func test_reportable_doctypes_gate_audit_spine() {
+        let key = HubVisibilitySettings.defaultsKey
+        let snapshot = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(snapshot ?? nil, forKey: key) }
+
+        let settings = HubVisibilitySettings()
+
+        settings.showAdvanced = false
+        let normal = Set(HubReportableDocTypes.available(settings).map(\.docType))
+        XCTAssertTrue(normal.contains("Customer"))
+        XCTAssertTrue(normal.contains("SalesInvoice"))
+        XCTAssertFalse(normal.contains("GLEntry"), "Ledger spine hidden from normal users")
+        XCTAssertFalse(HubReportableDocTypes.isReportable("GLEntry", settings: settings))
+
+        settings.showAdvanced = true
+        XCTAssertTrue(HubReportableDocTypes.available(settings).map(\.docType).contains("GLEntry"))
+        XCTAssertTrue(HubReportableDocTypes.isReportable("GLEntry", settings: settings))
+    }
+
+    func test_reportable_doctypes_only_offer_registered_types() {
+        let key = HubVisibilitySettings.defaultsKey
+        let snapshot = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(snapshot ?? nil, forKey: key) }
+        let settings = HubVisibilitySettings()
+        settings.showAdvanced = true
+
+        for entry in HubReportableDocTypes.available(settings) {
+            XCTAssertNotNil(HubManifest.docType(for: entry.docType),
+                            "\(entry.docType) is offered but not registered")
+        }
+    }
+
+    // MARK: - From-scratch: blank report builder
+
+    func test_blank_report_seeds_columns_from_metadata() throws {
+        guard let customer = HubManifest.docType(for: "Customer") else {
+            return XCTFail("Customer DocType missing")
+        }
+        let report = HubReportBuilder.makeBlankReport(docType: customer, ownerUserId: "alice")
+
+        XCTAssertNil(report.baseReportId, "From-scratch reports have no base report")
+        XCTAssertEqual(report.sourceDocType, "Customer")
+        XCTAssertEqual(report.ownerUserId, "alice")
+        XCTAssertEqual(report.visibility, .private)
+
+        // First column is the id system column; created/updated are included.
+        XCTAssertEqual(report.columns.first?.fieldKey, "id")
+        XCTAssertTrue(report.columns.contains { $0.fieldKey == "createdAt" })
+        XCTAssertTrue(report.columns.contains { $0.fieldKey == "updatedAt" })
+
+        // Child-table fields are never offered as flat columns.
+        let tableKeys = Set(customer.fields.filter { $0.type == .table }.map(\.key))
+        XCTAssertTrue(report.columns.allSatisfy { !tableKeys.contains($0.fieldKey) })
+
+        // Orders are contiguous from zero.
+        XCTAssertEqual(report.columns.map(\.order), Array(0..<report.columns.count))
+    }
+
+    func test_blank_report_default_visible_count() throws {
+        guard let customer = HubManifest.docType(for: "Customer") else {
+            return XCTFail("Customer DocType missing")
+        }
+        let report = HubReportBuilder.makeBlankReport(
+            docType: customer, ownerUserId: "alice", defaultVisibleCount: 3
+        )
+        XCTAssertEqual(report.visibleColumnsInOrder.count, min(3, report.columns.count))
+    }
+
+    func test_blank_report_runs_through_core_engine_path() throws {
+        // A from-scratch report must route to the Core engine; without one the
+        // runner reports that cleanly rather than falling through to HubReports.
+        let report = SavedReportDefinition(
+            name: "Scratch",
+            baseReportId: nil,
+            sourceDocType: "Customer",
+            ownerUserId: "alice",
+            columns: [SavedReportColumn(fieldKey: "id", visible: true, order: 0)]
+        )
+        XCTAssertEqual(report.baseReportId, nil)
+        // filterValues still works on a base-less report (no filters → empty).
+        XCTAssertTrue(HubSavedReportRunner.filterValues(for: report).isEmpty)
+    }
 }

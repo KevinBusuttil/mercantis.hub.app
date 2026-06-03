@@ -18,6 +18,9 @@ struct mercantis_hubApp: App {
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
+    /// Core's generic saved-report engine, used to execute user-built
+    /// (from-scratch) custom reports directly against DocType metadata.
+    let savedReportEngine: SavedReportEngine
     /// End-user customizations (ADR-021). Persisted in the `custom_fields`
     /// table so they survive app restarts and HubManifest reinstalls.
     let customFieldStore: CustomFieldStore
@@ -107,6 +110,14 @@ struct mercantis_hubApp: App {
         }
         self.dashboardEngine = dashboardEngine
 
+        // Generic saved-report engine (Core ADR-050). Shares the same registry
+        // so from-scratch reports validate their fields against the installed
+        // DocType metadata and run through the same document-access rules.
+        self.savedReportEngine = SavedReportEngine(
+            documentEngine: documentEngine,
+            registry: registry
+        )
+
         // End-user customizations. The MigrationRunner has already created
         // the `custom_fields` table by the time we reach here; this just
         // hands the same database to the store so workspaces can read/write
@@ -124,6 +135,7 @@ struct mercantis_hubApp: App {
                 dashboardEngine: dashboardEngine,
                 customFieldStore: customFieldStore,
                 savedReportStore: savedReportStore,
+                savedReportEngine: savedReportEngine,
                 visibility: visibility
             )
         }

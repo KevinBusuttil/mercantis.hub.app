@@ -13,6 +13,8 @@ struct RootView: View {
     let customFieldStore: CustomFieldStore
     /// User-saved custom report variants (Hub user report customisation).
     @ObservedObject var savedReportStore: HubSavedReportStore
+    /// Core engine used to run from-scratch custom reports.
+    let savedReportEngine: SavedReportEngine
     /// Shared with the Settings (⌘,) window so toggling a preset / module
     /// there updates the sidebar live.
     @ObservedObject var visibility: HubVisibilitySettings
@@ -203,6 +205,7 @@ struct RootView: View {
                 HubCustomReportsView(
                     store: savedReportStore,
                     engine: engine,
+                    savedReportEngine: savedReportEngine,
                     visibility: visibility
                 )
                 .id("custom-reports")

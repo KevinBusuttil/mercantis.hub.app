@@ -428,6 +428,12 @@ Business Setup Foundation
 
 **Suggested labels:** `enhancement`, `roadmap`, `hub`, `small-business-erp`, `reports`
 
+> **Status: Implemented** — `HubReportableDocTypes`, `HubReportBuilder`, the
+> base-less branch in `HubSavedReportRunner` (via Core `SavedReportEngine`),
+> the "New Report" flow in `HubCustomReportsView`, and the from-scratch filter
+> + sort builder in `HubReportCustomiseView`. Aggregated reports remain
+> customise-only as scoped below.
+
 ### Product goal
 Let a small-business user build a brand-new report from scratch — pick a
 business record type, choose its columns, set filters and sorting, and save

@@ -17,20 +17,42 @@ enum HubSavedReportRunner {
 
     enum RunError: Error, LocalizedError, Equatable {
         case unknownBaseReport(String?)
+        case noEngineForCustomReport
 
         var errorDescription: String? {
             switch self {
             case .unknownBaseReport(let id):
                 return "This custom report points at a built-in report (\(id ?? "—")) that no longer exists."
+            case .noEngineForCustomReport:
+                return "This from-scratch report can't be run because the report engine is unavailable."
             }
         }
     }
 
-    /// Execute the saved report and return its projected `ReportResult`.
+    /// Execute the saved report and return its `ReportResult`.
+    ///
+    /// Two paths:
+    /// - **Customised built-in** (`baseReportId != nil`): re-run the Hub report
+    ///   computer and project the saved columns/filters onto its result.
+    /// - **From-scratch** (`baseReportId == nil`): run directly through Core's
+    ///   generic `SavedReportEngine`, which validates fields against DocType
+    ///   metadata and enforces row permissions.
     static func run(
         savedReport: SavedReportDefinition,
-        engine: DocumentEngine
+        engine: DocumentEngine,
+        savedReportEngine: SavedReportEngine? = nil,
+        requestingUserId: String? = nil,
+        userRoles: Set<String> = []
     ) throws -> ReportResult {
+        if savedReport.baseReportId == nil {
+            guard let savedReportEngine else { throw RunError.noEngineForCustomReport }
+            return try savedReportEngine.execute(
+                savedReport: savedReport,
+                requestingUserId: requestingUserId,
+                userRoles: userRoles
+            )
+        }
+
         guard let baseId = savedReport.baseReportId,
               HubReports.report(forId: baseId) != nil else {
             throw RunError.unknownBaseReport(savedReport.baseReportId)
