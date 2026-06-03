@@ -421,3 +421,102 @@ Business Setup Foundation
 - Preserve simple UX defaults for micro/small-business users.
 - Keep advanced/accountant internals hidden unless explicitly enabled.
 - Avoid hard-coding business data into presets.
+
+---
+
+## 9) Enhancement: User-Built Reports (From Scratch)
+
+**Suggested labels:** `enhancement`, `roadmap`, `hub`, `small-business-erp`, `reports`
+
+### Product goal
+Let a small-business user build a brand-new report from scratch — pick a
+business record type, choose its columns, set filters and sorting, and save
+it — without code. Extends the existing **User Report Customisation** work
+(which only clones/customises built-in reports) to fully user-authored
+reports.
+
+### User outcome
+A user who needs a view that no built-in report provides (e.g. "all
+Customers in Malta with an email", "Items below reorder level") can assemble
+it themselves from a safe set of record types and fields, save it, and find
+it under **Custom Reports** alongside their customised built-ins.
+
+### Background / current state
+The Custom Reports feature already ships:
+- Core owns the generic `SavedReportDefinition` model + `SavedReportEngine`
+  (executes a saved report directly against a DocType's metadata, with field
+  allow-listing, no SQL/script, and row-permission enforcement). Core ADR-050.
+- Hub owns `HubCustomReportCatalog`, `HubSavedReportRunner`,
+  `HubSavedReportStore`, and the Custom Reports UI.
+
+Crucially, the foundation for from-scratch already exists in Core:
+`SavedReportDefinition.baseReportId` is **optional**, and
+`SavedReportEngine.execute(...)` runs a base-less report straight off a
+DocType. Hub simply doesn't use that path yet — `HubSavedReportRunner.run`
+currently *requires* a `baseReportId` and routes through `HubReports`.
+
+### Scope
+- A curated list of **reportable DocTypes** with friendly labels (Customer,
+  Supplier, Item, Sales Invoice, Purchase Invoice, Quotation, Sales Order,
+  Payment Entry, …) — Hub decides which types are safe to expose.
+- A friendly **field/column picker** sourced from DocType metadata (label,
+  type) plus the common system columns (id, status, created/updated).
+- A **filter builder** over the existing safe operator set
+  (`SavedReportFilterOperator`): equals / comparisons / contains / is-null,
+  with link-aware value pickers where the field is a link.
+- Basic **sort** configuration (the `SavedReportSort` model already exists).
+- A "New Report" entry point in the Custom Reports screen (distinct from
+  "Customise a Report").
+- Execution: when `baseReportId == nil`, `HubSavedReportRunner` calls Core's
+  `SavedReportEngine.execute(...)` (flat field output) instead of
+  `HubReports.runResult(...)`.
+- Reuse the existing editor (`HubReportCustomiseView`) for show/hide,
+  reorder, relabel, and filter defaults.
+
+### Out of scope
+- Aggregated / computed reports (Customer Aging, VAT Summary, Trial Balance
+  shapes) — those stay customise-only because they need Hub-side computation.
+- Joins / cross-DocType reports, calculated columns, grouping/subtotals.
+- Pivot tables, charts, scheduled/email reports.
+- Arbitrary SQL or scripting (explicitly forbidden by Core's rules).
+- Cross-company security model; advanced sharing/permissions.
+
+### Implementation checklist
+- [ ] Add a `HubReportableDocTypes` catalogue (which DocTypes + friendly
+      labels + advanced/normal gating, mirroring `HubCustomReportCatalog`).
+- [ ] Field/column picker driven by `HubManifest.docType(for:)` field metadata
+      + allowed system columns.
+- [ ] Filter builder UI over `SavedReportFilterOperator`, with link pickers.
+- [ ] "New Report" flow that builds a base-less `SavedReportDefinition`
+      (`baseReportId = nil`, `sourceDocType` set) and opens the editor.
+- [ ] Branch `HubSavedReportRunner.run` on `baseReportId == nil` →
+      `SavedReportEngine.execute(savedReport:requestingUserId:userRoles:)`.
+- [ ] Respect advanced/audit gating so users can't report on the raw
+      ledger/audit DocTypes by accident.
+- [ ] Tests: catalogue gating, base-less runner path, field allow-listing
+      (unknown field rejected), editor round-trip.
+- [ ] Docs: extend the Custom Reports section in `HUB-STATUS.md`.
+
+### Acceptance criteria
+- [ ] User can start a new report from scratch and pick a record type.
+- [ ] User can choose, reorder, hide/show, and relabel columns from that
+      type's fields.
+- [ ] User can add filters (with defaults) and a sort order.
+- [ ] User can run the report and see a normal result table.
+- [ ] The new report is saved under Custom Reports and persists across launches.
+- [ ] Audit/ledger DocTypes are not reportable unless Advanced view is on.
+- [ ] No arbitrary code execution; field references are validated against
+      DocType metadata (enforced by Core's `SavedReportEngine`).
+- [ ] Built-in reports and existing customised reports are unaffected.
+
+### Dependencies
+- User Report Customisation (shipped — Hub PR #84).
+- Core Saved Report Infrastructure (Core ADR-050 / PR #137) — already provides
+  the base-less execution path; no further Core change should be required.
+
+### AI handoff notes
+- Reuse Core's `SavedReportEngine` for base-less execution — do **not**
+  reimplement a generic engine in Hub.
+- Keep aggregated reports on the customise-only path; only flat,
+  field-backed reports are buildable from scratch.
+- Mirror the existing advanced/audit gating in `HubCustomReportCatalog`.
