@@ -30,7 +30,7 @@ private let captureSystemManagerPermission = PermissionRule(
     canAmend: false
 )
 
-nonisolated enum Capture {
+enum Capture {
 
     // MARK: - Constants (mirror Flutter CaptureModule)
 

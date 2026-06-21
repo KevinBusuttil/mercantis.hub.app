@@ -308,20 +308,24 @@ public final class CompanySync: ObservableObject {
         guard status.connected, status.autoEnabled else { return }
 
         let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.autoSync() }
+            guard let self else { return }
+            Task { @MainActor in self.autoSync() }
         }
         self.timer = timer
 
         // A submit fans out into many ledger saves; debounce so a burst of
         // local writes coalesces into a single background sync.
         tokens.append(emitter.subscribe(DocumentSavedEvent.self) { [weak self] _ in
-            Task { @MainActor in self?.scheduleAuto() }
+            guard let self else { return }
+            Task { @MainActor in self.scheduleAuto() }
         })
         tokens.append(emitter.subscribe(DocumentSubmittedEvent.self) { [weak self] _ in
-            Task { @MainActor in self?.scheduleAuto() }
+            guard let self else { return }
+            Task { @MainActor in self.scheduleAuto() }
         })
         tokens.append(emitter.subscribe(DocumentCancelledEvent.self) { [weak self] _ in
-            Task { @MainActor in self?.scheduleAuto() }
+            guard let self else { return }
+            Task { @MainActor in self.scheduleAuto() }
         })
 
         // App foreground → opportunistic sync (mirrors Flutter's onResume).
@@ -330,7 +334,8 @@ public final class CompanySync: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.autoSync() }
+            guard let self else { return }
+            Task { @MainActor in self.autoSync() }
         }
     }
 
@@ -353,7 +358,8 @@ public final class CompanySync: ObservableObject {
         guard status.autoEnabled, status.connected else { return }
         debounce?.invalidate()
         debounce = Timer.scheduledTimer(withTimeInterval: Self.debounceDelay, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.autoSync() }
+            guard let self else { return }
+            Task { @MainActor in self.autoSync() }
         }
     }
 
