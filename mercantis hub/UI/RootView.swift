@@ -609,18 +609,6 @@ private struct HubRecordWorkspaceView: View {
             .first(where: { $0.isDefault })?
             .name ?? ""
 
-        // Default required date/time fields to "now". A DatePicker always shows
-        // today, so without this the field looks filled but saves empty and
-        // fails the required-field check (e.g. Stock Entry "Posting Date").
-        var fields: [String: FieldValue] = [:]
-        for field in docType.fields where field.required {
-            switch field.type {
-            case .date:     fields[field.key] = .date(now)
-            case .datetime: fields[field.key] = .dateTime(now)
-            default:        break
-            }
-        }
-
         let draft = Document(
             id: "",
             docType: docType.id,
@@ -630,7 +618,7 @@ private struct HubRecordWorkspaceView: View {
             updatedAt: now,
             syncVersion: 0,
             syncState: .local,
-            fields: fields,
+            fields: [:],
             children: [:]
         )
 
