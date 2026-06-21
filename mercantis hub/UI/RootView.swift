@@ -500,6 +500,18 @@ private struct HubRecordWorkspaceView: View {
                 try? engine.fetch(docType: targetDocType, id: id)
             },
             childDocTypeProvider: { HubManifest.docType(for: $0) },
+            linkCreateProvider: { targetDocType in
+                let now = Date()
+                return Document(
+                    id: "", docType: targetDocType, company: "", status: "",
+                    createdAt: now, updatedAt: now, syncVersion: 0, syncState: .local,
+                    fields: [:], children: [:]
+                )
+            },
+            linkCommitProvider: { document in
+                let saved = try engine.save(document)
+                return (try? engine.fetch(docType: document.docType, id: saved.id)) ?? saved
+            },
             detailEditor: { composedDocType, binding in
                 AnyView(
                     HubDocumentEditor(
@@ -788,7 +800,19 @@ private struct HubDocumentEditor: View {
                     linkResolveProvider: { targetDocType, id in
                         try? engine.fetch(docType: targetDocType, id: id)
                     },
-                    childDocTypeProvider: { HubManifest.docType(for: $0) }
+                    childDocTypeProvider: { HubManifest.docType(for: $0) },
+                    linkCreateProvider: { targetDocType in
+                        let now = Date()
+                        return Document(
+                            id: "", docType: targetDocType, company: "", status: "",
+                            createdAt: now, updatedAt: now, syncVersion: 0, syncState: .local,
+                            fields: [:], children: [:]
+                        )
+                    },
+                    linkCommitProvider: { document in
+                        let saved = try engine.save(document)
+                        return (try? engine.fetch(docType: document.docType, id: saved.id)) ?? saved
+                    }
                 )
                 // Phase 3: surface current stock-on-hand on the Item
                 // workspace, derived from Stock Balance (Bin) rows.
@@ -839,7 +863,19 @@ private struct HubDocumentEditor: View {
                 linkResolveProvider: { targetDocType, id in
                     try? engine.fetch(docType: targetDocType, id: id)
                 },
-                childDocTypeProvider: { HubManifest.docType(for: $0) }
+                childDocTypeProvider: { HubManifest.docType(for: $0) },
+                linkCreateProvider: { targetDocType in
+                    let now = Date()
+                    return Document(
+                        id: "", docType: targetDocType, company: "", status: "",
+                        createdAt: now, updatedAt: now, syncVersion: 0, syncState: .local,
+                        fields: [:], children: [:]
+                    )
+                },
+                linkCommitProvider: { document in
+                    let saved = try engine.save(document)
+                    return (try? engine.fetch(docType: document.docType, id: saved.id)) ?? saved
+                }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
