@@ -306,10 +306,83 @@ enum CRM {
         ])
     )
 
+    /// Opportunity — a qualified deal in the sales pipeline, linked to a
+    /// Customer / Lead / Contact. Previously "Opportunity" existed only as a
+    /// status string on the Lead; this promotes it to a first-class DocType
+    /// mirroring the Flutter `_opportunity()` (`modules/crm/crm_module.dart`).
+    ///
+    /// Note: Core has no `.percent` field type, so `probability` is a plain
+    /// `.number` (0–100); everything else maps 1:1 onto the Flutter fields.
+    static let opportunity = DocType(
+        id: "Opportunity",
+        name: "Opportunity",
+        module: "CRM",
+        appId: HubManifest.appID,
+        isChildTable: false,
+        fields: [
+            FieldDefinition(key: "opportunity_name", label: "Opportunity Name", type: .text,
+                            required: true, isSearchable: true),
+            FieldDefinition(key: "customer", label: "Customer", type: .link,
+                            required: false, linkedDocType: "Customer"),
+            FieldDefinition(key: "lead", label: "Lead", type: .link,
+                            required: false, linkedDocType: "Lead"),
+            FieldDefinition(key: "contact", label: "Contact", type: .link,
+                            required: false, linkedDocType: "Contact"),
+            FieldDefinition(key: "opportunity_type", label: "Opportunity Type", type: .select,
+                            required: false,
+                            options: ["Sales", "Support", "Maintenance"]),
+            FieldDefinition(key: "status", label: "Status", type: .select,
+                            required: true,
+                            options: ["Open", "Quotation", "Nurturing",
+                                      "Converted", "Lost", "Closed"],
+                            defaultValue: .string("Open")),
+            FieldDefinition(key: "expected_closing", label: "Expected Closing", type: .date,
+                            required: false),
+            FieldDefinition(key: "opportunity_amount", label: "Opportunity Amount", type: .currency,
+                            required: false),
+            FieldDefinition(key: "probability", label: "Probability (%)", type: .number,
+                            required: false),
+            FieldDefinition(key: "notes", label: "Notes", type: .longText, required: false)
+        ],
+        permissions: [systemManagerPermission],
+        autoname: "naming_series:CRM-OPP-.YYYY.-.####",
+        syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
+        indexes: [],
+        searchFields: ["opportunity_name"],
+        titleField: "opportunity_name",
+        formLayout: FormLayout(sections: [
+            FormLayoutSection(
+                key: "identity",
+                title: "Opportunity",
+                columns: 2,
+                fieldKeys: ["opportunity_name", "opportunity_type", "status"]
+            ),
+            FormLayoutSection(
+                key: "parties",
+                title: "Linked To",
+                helpText: "The customer, lead, or contact this opportunity belongs to.",
+                columns: 2,
+                fieldKeys: ["customer", "lead", "contact"]
+            ),
+            FormLayoutSection(
+                key: "forecast",
+                title: "Forecast",
+                helpText: "Expected value and likelihood of winning this deal.",
+                columns: 2,
+                fieldKeys: ["opportunity_amount", "probability", "expected_closing"]
+            ),
+            FormLayoutSection(
+                key: "notes",
+                title: "Notes",
+                fieldKeys: ["notes"]
+            )
+        ])
+    )
+
     static let allDocTypes: [DocType] = [
         // Child DocTypes first so install ordering matches reference order.
         dynamicLink,
         // Parents
-        customer, contact, address, lead
+        customer, contact, address, lead, opportunity
     ]
 }

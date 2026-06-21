@@ -194,6 +194,7 @@ enum HubNavigation {
         CRM.module,
         Selling.module,
         Buying.module,
+        Capture.module,
         POS.module,
         Stock.module,
         Deliveries.module,

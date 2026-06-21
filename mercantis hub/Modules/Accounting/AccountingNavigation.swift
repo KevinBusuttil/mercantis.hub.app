@@ -28,7 +28,9 @@ extension Accounting {
             ]),
             HubMenuGroup(label: "Payables", items: [
                 .report(id: HubReports.supplierLedger.id,
-                        label: "Supplier Ledger")
+                        label: "Supplier Ledger"),
+                .report(id: HubReports.supplierAging.id,
+                        label: "Supplier Aging")
             ]),
             HubMenuGroup(label: "Tax", items: [
                 .report(id: HubReports.vatSummary.id,

@@ -18,9 +18,16 @@ struct RootView: View {
     /// Shared with the Settings (⌘,) window so toggling a preset / module
     /// there updates the sidebar live.
     @ObservedObject var visibility: HubVisibilitySettings
+    /// Shared attachment manager for the Document Capture flow.
+    let attachmentManager: AttachmentManager
+    /// Serverless cross-device company sync engine.
+    @ObservedObject var companySync: CompanySync
 
     @State private var selection: HubMenuItem?
     @State private var collapsedGroups: Set<String> = []
+    /// The capture currently being reviewed (drives the Capture flow's
+    /// list ⇄ review sub-routing).
+    @State private var reviewCaptureId: String?
 
     var body: some View {
         NavigationSplitView {
@@ -219,15 +226,7 @@ struct RootView: View {
                 }
                 .id("dashboard:\(id)")
             case .flow(let id, _, _):
-                if id == "pos-checkout" {
-                    HubPOSCheckoutView(engine: engine, workflowEngine: workflowEngine)
-                        .id("flow:\(id)")
-                } else if let mode = guidedPaymentMode(for: id) {
-                    GuidedPaymentFlowView(mode: mode, engine: engine, workflowEngine: workflowEngine)
-                        .id("flow:\(id)")
-                } else {
-                    HubHomeView(engine: engine) { item in selection = item }
-                }
+                flowDetail(id: id)
             case .none:
                 HubHomeView(engine: engine) { item in
                     selection = item
@@ -235,6 +234,91 @@ struct RootView: View {
             }
         }
         .navigationTitle(selection?.label ?? "Mercantis Hub")
+    }
+
+    /// Resolve a `.flow` nav id to its bespoke screen. Covers POS / guided
+    /// payments, Document Capture, Company Sync, and the operational screens.
+    @ViewBuilder
+    private func flowDetail(id: String) -> some View {
+        if id == "pos-checkout" {
+            HubPOSCheckoutView(engine: engine, workflowEngine: workflowEngine)
+                .id("flow:\(id)")
+        } else if let mode = guidedPaymentMode(for: id) {
+            GuidedPaymentFlowView(mode: mode, engine: engine, workflowEngine: workflowEngine)
+                .id("flow:\(id)")
+
+        // ── Document Capture (ADR-049) ──
+        } else if id == Capture.Flow.captures {
+            if let captureId = reviewCaptureId {
+                CaptureReviewView(
+                    engine: engine,
+                    attachments: attachmentManager,
+                    captureId: captureId,
+                    onDraftCreated: { _ in
+                        reviewCaptureId = nil
+                        if let invoice = HubManifest.docType(for: "PurchaseInvoice") {
+                            selection = .docType(invoice)
+                        }
+                    }
+                )
+                .id("flow:capture-review:\(captureId)")
+            } else {
+                CapturesView(
+                    engine: engine,
+                    userRoles: ["System Manager"],
+                    onScan: {
+                        selection = .flow(id: Capture.Flow.scan, label: "Scan Receipt",
+                                          systemImage: "doc.text.viewfinder")
+                    },
+                    onOpenAISettings: {
+                        selection = .flow(id: Capture.Flow.aiSettings, label: "Smart Capture (AI)",
+                                          systemImage: "sparkles")
+                    },
+                    onReview: { capId in
+                        reviewCaptureId = capId
+                        selection = .flow(id: Capture.Flow.captures, label: "Captures",
+                                          systemImage: "tray.full")
+                    }
+                )
+                .id("flow:capture-list")
+            }
+        } else if id == Capture.Flow.scan {
+            ScanReceiptView(
+                engine: engine,
+                attachments: attachmentManager,
+                onCaptured: { capId in
+                    reviewCaptureId = capId
+                    selection = .flow(id: Capture.Flow.captures, label: "Captures",
+                                      systemImage: "tray.full")
+                }
+            )
+            .id("flow:capture-scan")
+        } else if id == Capture.Flow.aiSettings {
+            CaptureAISettingsView()
+                .id("flow:capture-ai-settings")
+
+        // ── Company Sync (ADR-047) ──
+        } else if id == "company-sync" {
+            CompanySyncView(sync: companySync)
+                .id("flow:company-sync")
+
+        // ── Operational screens ──
+        } else if id == "work-order-complete" {
+            WorkOrderCompleteView(engine: engine, workflowEngine: workflowEngine)
+                .id("flow:\(id)")
+        } else if id == "driver-today" {
+            DriverTodayView(engine: engine).id("flow:\(id)")
+        } else if id == "delivery-route" {
+            DeliveryRouteView(engine: engine).id("flow:\(id)")
+        } else if id == "customer-account" {
+            CustomerAccountView(engine: engine).id("flow:\(id)")
+        } else if id == "low-stock" {
+            LowStockView(engine: engine).id("flow:\(id)")
+        } else if id == "sales-orders" {
+            SalesOrdersView(engine: engine).id("flow:\(id)")
+        } else {
+            HubHomeView(engine: engine) { item in selection = item }
+        }
     }
 
     /// Map a guided-flow nav id to its concrete payment mode.

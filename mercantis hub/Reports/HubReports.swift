@@ -148,6 +148,25 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + salesRoles
     )
 
+    /// Supplier Aging (Accounts Payable) — outstanding payables bucketed by
+    /// age. Symmetric to `customerAging` but over PurchaseInvoice / supplier;
+    /// the Swift app previously shipped only the AR (customer) aging. Mirrors
+    /// the Flutter `ap_aging` report (`reports/aggregating_reports.dart`).
+    public static let supplierAging = ReportDefinition(
+        id: "supplier-aging",
+        name: "Supplier Aging",
+        docType: "PurchaseInvoice",
+        columns: [
+            "supplier",
+            "0-30 days", "31-60 days", "61-90 days", "90+ days",
+            "Outstanding"
+        ],
+        filters: [
+            ReportFilter(fieldKey: "supplier", label: "Supplier"),
+        ],
+        allowedRoles: financeRoles + buyingRoles
+    )
+
     /// Trial Balance — GL Entry rolled up per Account, sorted by root_type.
     public static let trialBalance = ReportDefinition(
         id: "trial-balance",
@@ -212,7 +231,7 @@ public enum HubReports: Sendable {
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
         openDeliveries, pendingReceipts, todaysRoutes,
-        customerAging, trialBalance,
+        customerAging, supplierAging, trialBalance,
         customerStatement, supplierLedger,
         vatSummary,
     ]
@@ -246,7 +265,21 @@ public enum HubReports: Sendable {
         case "todays-routes":
             return try runTodaysRoutes(engine: engine)
         case "customer-aging":
-            return try runCustomerAging(engine: engine, filters: filters)
+            return try runAging(
+                report: customerAging,
+                docType: "SalesInvoice",
+                partyField: "customer",
+                engine: engine,
+                filters: filters
+            )
+        case "supplier-aging":
+            return try runAging(
+                report: supplierAging,
+                docType: "PurchaseInvoice",
+                partyField: "supplier",
+                engine: engine,
+                filters: filters
+            )
         case "trial-balance":
             return try runTrialBalance(engine: engine)
         case "customer-statement":
@@ -460,54 +493,74 @@ public enum HubReports: Sendable {
         return ReportResult(columns: todaysRoutes.columns, rows: rows)
     }
 
-    // MARK: - Customer Aging
+    // MARK: - AR / AP Aging
 
-    private static func runCustomerAging(
+    /// Aging buckets for one party across its open invoices.
+    private struct AgingBuckets {
+        var b0_30:  Double = 0
+        var b31_60: Double = 0
+        var b61_90: Double = 0
+        var b91:    Double = 0
+        var total:  Double { b0_30 + b31_60 + b61_90 + b91 }
+
+        mutating func add(days: Int, amount: Double) {
+            switch days {
+            case ...30:    b0_30  += amount
+            case 31...60:  b31_60 += amount
+            case 61...90:  b61_90 += amount
+            default:       b91    += amount
+            }
+        }
+
+        mutating func merge(_ other: AgingBuckets) {
+            b0_30  += other.b0_30
+            b31_60 += other.b31_60
+            b61_90 += other.b61_90
+            b91    += other.b91
+        }
+    }
+
+    /// Generic receivables / payables aging. Sums each submitted invoice's
+    /// `outstanding_amount` into 0-30 / 31-60 / 61-90 / 90+ buckets keyed by
+    /// `partyField` ("customer" for AR, "supplier" for AP), then appends a
+    /// grand-total row. Symmetric to the Flutter `_aging` routine.
+    private static func runAging(
+        report: ReportDefinition,
+        docType: String,
+        partyField: String,
         engine: DocumentEngine,
         filters: [String: FieldValue]
     ) throws -> ReportResult {
         let invoices = try engine.list(
-            docType: "SalesInvoice",
+            docType: docType,
             filters: filters.isEmpty ? nil : filters,
             applyRowAccess: false
         )
 
-        struct Buckets {
-            var b0_30:  Double = 0
-            var b31_60: Double = 0
-            var b61_90: Double = 0
-            var b91:    Double = 0
-            var total:  Double { b0_30 + b31_60 + b61_90 + b91 }
-        }
-
         let today = Date()
-        var perCustomer: [String: Buckets] = [:]
+        var perParty: [String: AgingBuckets] = [:]
 
         for invoice in invoices {
             guard invoice.docStatus == 1 else { continue }
             let outstanding = asDouble(invoice.fields["outstanding_amount"]) ?? 0
             guard outstanding > 0 else { continue }
-            let customer = asString(invoice.fields["customer"]) ?? "(unknown)"
+            let party = asString(invoice.fields[partyField]) ?? "(unknown)"
             let dueDate  = asDate(invoice.fields["due_date"])
                 ?? asDate(invoice.fields["transaction_date"])
                 ?? today
             let days = max(0, Int(today.timeIntervalSince(dueDate) / 86400))
 
-            var bucket = perCustomer[customer] ?? Buckets()
-            switch days {
-            case ...30:    bucket.b0_30  += outstanding
-            case 31...60:  bucket.b31_60 += outstanding
-            case 61...90:  bucket.b61_90 += outstanding
-            default:       bucket.b91    += outstanding
-            }
-            perCustomer[customer] = bucket
+            var bucket = perParty[party] ?? AgingBuckets()
+            bucket.add(days: days, amount: outstanding)
+            perParty[party] = bucket
         }
 
-        let ordered = perCustomer
-            .sorted { $0.value.total > $1.value.total }
-        let rows: [[String?]] = ordered.map { (customer, b) in
-            [
-                customer,
+        let ordered = perParty.sorted { $0.value.total > $1.value.total }
+        var total = AgingBuckets()
+        var rows: [[String?]] = ordered.map { (party, b) in
+            total.merge(b)
+            return [
+                party,
                 formatCurrency(b.b0_30),
                 formatCurrency(b.b31_60),
                 formatCurrency(b.b61_90),
@@ -515,7 +568,18 @@ public enum HubReports: Sendable {
                 formatCurrency(b.total),
             ]
         }
-        return ReportResult(columns: customerAging.columns, rows: rows)
+        // Grand-total row, matching the Flutter aging report's trailing total.
+        if !rows.isEmpty {
+            rows.append([
+                "Total",
+                formatCurrency(total.b0_30),
+                formatCurrency(total.b31_60),
+                formatCurrency(total.b61_90),
+                formatCurrency(total.b91),
+                formatCurrency(total.total),
+            ])
+        }
+        return ReportResult(columns: report.columns, rows: rows)
     }
 
     // MARK: - Customer Statement / Supplier Ledger (Phase 5.7)

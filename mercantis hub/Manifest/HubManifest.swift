@@ -16,6 +16,7 @@ public enum HubManifest: Sendable {
         + Accounting.allDocTypes       // Account + JournalEntry / PaymentEntry
         + POS.allDocTypes              // POS Profile / Session / Invoice + Payment Tender
         + Manufacturing.allDocTypes    // BOM / WorkOrder / JobCard / ProductionPlan
+        + Capture.allDocTypes          // Captured Document + Capture Rule (ADR-049)
 
     public static func docType(for id: String) -> DocType? {
         allDocTypes.first { $0.id == id }
