@@ -964,22 +964,29 @@ private struct HubDocumentEditor: View {
         // "Active", etc. — rather than the raw internal "Submitted". The
         // operational workflow state (e.g. "Paid", "Overdue") is shown as a
         // second badge only when it adds information beyond the lifecycle.
-        let lifecycle = displayPolicy.lifecycleDisplay(
-            docTypeId: docType.id,
-            docStatus: document.docStatus
-        )
+        //
+        // Non-submittable master data (Item, UOM, Warehouse, …) has no
+        // Draft/Submitted lifecycle, so the lifecycle badge is suppressed for it
+        // — only a real workflow/status string (if any) is shown.
+        let lifecycle: DocumentStatusDisplay? = docType.isSubmittable
+            ? displayPolicy.lifecycleDisplay(docTypeId: docType.id, docStatus: document.docStatus)
+            : nil
 
         let workflowDisplay: DocumentStatusDisplay? = {
             let trimmed = document.status.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return nil }
             let display = displayPolicy.statusDisplay(docTypeId: docType.id, state: trimmed)
             // Hide the second badge when it would just repeat the lifecycle one.
-            guard display.label.lowercased() != lifecycle.label.lowercased() else { return nil }
+            if let lifecycle, display.label.lowercased() == lifecycle.label.lowercased() {
+                return nil
+            }
             return display
         }()
 
         return HStack(spacing: 6) {
-            MercantisStatusBadge(display: lifecycle)
+            if let lifecycle {
+                MercantisStatusBadge(display: lifecycle)
+            }
             if let workflowDisplay {
                 MercantisStatusBadge(display: workflowDisplay)
             }
