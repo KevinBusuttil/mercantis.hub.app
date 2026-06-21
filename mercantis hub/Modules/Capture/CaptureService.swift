@@ -184,7 +184,7 @@ final class CaptureService {
     @discardableResult
     func createDraftInvoice(capture: Document, supplierId: String? = nil) throws -> Document {
         var capture = capture
-        let supplier = supplierId ?? (try ensureUnspecifiedSupplier())
+        let supplier = try supplierId ?? ensureUnspecifiedSupplier()
         let grand = Self.doubleValue(capture.fields["grand_total"])
         let merchant = Self.nonEmpty(capture.fields["merchant_name"])
 
