@@ -1,3 +1,4 @@
+import Foundation
 import MercantisCore
 
 /// Document Capture (ADR-049). A lightweight intake record for a photographed
@@ -29,7 +30,7 @@ private let captureSystemManagerPermission = PermissionRule(
     canAmend: false
 )
 
-enum Capture {
+nonisolated enum Capture {
 
     // MARK: - Constants (mirror Flutter CaptureModule)
 
