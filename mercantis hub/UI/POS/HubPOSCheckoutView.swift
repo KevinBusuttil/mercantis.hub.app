@@ -494,8 +494,19 @@ struct HubPOSCheckoutView: View {
         if changeDue > 0 {
             lines.append("Change".padding(toLength: 26, withPad: " ", startingAt: 0) + money(changeDue))
         }
-        if let currency { lines.append("\nCurrency: \(currency)") }
+        if let currency, !currency.isEmpty {
+            lines.append("\nCurrency: \(currencyLabel(for: currency))")
+        }
         return lines.joined(separator: "\n")
+    }
+
+    /// Resolve a Currency link id to a human label (ISO code, then name),
+    /// falling back to the raw id if the record can't be loaded.
+    private func currencyLabel(for id: String) -> String {
+        guard let doc = try? engine.fetch(docType: "Currency", id: id) else { return id }
+        if case .string(let code)? = doc.fields["iso_code"], !code.isEmpty { return code }
+        if case .string(let name)? = doc.fields["currency_name"], !name.isEmpty { return name }
+        return id
     }
 
     // MARK: - Formatting / coercion
