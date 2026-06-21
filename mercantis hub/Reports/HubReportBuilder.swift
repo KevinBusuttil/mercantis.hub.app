@@ -30,9 +30,13 @@ enum HubReportBuilder {
         switch type {
         case .text, .longText, .richText, .email, .phone, .select, .multiselect,
              .status, .barcode, .formula, .link,
-             .number, .decimal, .currency, .boolean:
+             .number, .decimal, .currency, .boolean,
+             .percent, .rating, .duration, .code, .color, .geolocation,
+             .autocomplete, .dynamicLink, .tableMultiSelect:
             return true
-        case .date, .datetime, .table, .attachment, .image:
+        case .date, .datetime, .table, .attachment, .image,
+             .time, .password, .signature,
+             .heading, .sectionBreak, .columnBreak:
             return false
         }
     }
