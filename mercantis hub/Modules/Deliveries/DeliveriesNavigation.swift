@@ -16,7 +16,11 @@ extension Deliveries {
             HubMenuGroup(label: "Routes", items: [
                 .docType(Deliveries.deliveryRoute, label: "Delivery Routes"),
                 .report(id: HubReports.todaysRoutes.id,
-                        label: HubReports.todaysRoutes.name)
+                        label: HubReports.todaysRoutes.name),
+                .flow(id: "driver-today", label: "Driver Today",
+                      systemImage: "truck.box"),
+                .flow(id: "delivery-route", label: "Route Stops",
+                      systemImage: "map")
             ]),
             HubMenuGroup(label: "Fleet", items: [
                 .docType(Deliveries.driver, label: "Drivers"),

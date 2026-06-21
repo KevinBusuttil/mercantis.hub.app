@@ -14,7 +14,8 @@ extension CRM {
                 .docType(CRM.address, label: "Addresses")
             ]),
             HubMenuGroup(label: "Sales Pipeline", items: [
-                .docType(CRM.lead, label: "Leads")
+                .docType(CRM.lead, label: "Leads"),
+                .docType(CRM.opportunity, label: "Opportunities")
             ])
         ]
     )

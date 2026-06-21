@@ -20,7 +20,9 @@ extension Stock {
             HubMenuGroup(label: "Availability", items: [
                 .docType(Stock.bin, label: "Stock Balance"),
                 .report(id: HubReports.stockOnHand.id,
-                        label: HubReports.stockOnHand.name)
+                        label: HubReports.stockOnHand.name),
+                .flow(id: "low-stock", label: "Low Stock",
+                      systemImage: "exclamationmark.triangle")
             ]),
             // The Stock Ledger is the internal append-only audit table; it
             // powers the Stock Ledger View report, so it's hidden from the

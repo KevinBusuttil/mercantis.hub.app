@@ -35,6 +35,10 @@ extension Setup {
             HubMenuGroup(label: "Taxes", items: [
                 .docType(Tax.taxCode, label: "Tax Codes"),
                 .docType(Tax.taxCategory, label: "Tax Categories")
+            ]),
+            HubMenuGroup(label: "Sync", items: [
+                .flow(id: "company-sync", label: "Company Sync",
+                      systemImage: "arrow.triangle.2.circlepath")
             ])
         ]
     )

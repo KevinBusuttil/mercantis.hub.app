@@ -15,6 +15,12 @@ extension Selling {
                 .flow(id: "guided-receive-payment", label: "Receive Payment",
                       systemImage: "tray.and.arrow.down")
             ]),
+            HubMenuGroup(label: "Operations", items: [
+                .flow(id: "sales-orders", label: "Sales Order Board",
+                      systemImage: "cart"),
+                .flow(id: "customer-account", label: "Customer Accounts",
+                      systemImage: "person.2")
+            ]),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.salesRegister.id,
                         label: HubReports.salesRegister.name),

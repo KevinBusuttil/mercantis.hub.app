@@ -24,6 +24,9 @@ struct mercantis_hubApp: App {
     /// End-user customizations (ADR-021). Persisted in the `custom_fields`
     /// table so they survive app restarts and HubManifest reinstalls.
     let customFieldStore: CustomFieldStore
+    /// Shared attachment store/manager. Backs the Document Capture flow
+    /// (receipt images are synced attachments, ADR-048).
+    let attachmentManager: AttachmentManager
     /// User-saved custom report variants. Persisted in `UserDefaults` (Hub is
     /// single-user / offline) and observed by the Custom Reports UI.
     @StateObject private var savedReportStore = HubSavedReportStore()
@@ -32,6 +35,16 @@ struct mercantis_hubApp: App {
     /// optional-module flags, onboarding state). Owned at app scope so the
     /// main window and the Settings (⌘,) window share one instance.
     @StateObject private var visibility = HubVisibilitySettings()
+
+    /// Multi-operator local auth. Gates the app behind a passcode lock; the
+    /// active operator will drive the audit identity once Core grows a session
+    /// hook (see `HubIdentity`).
+    @StateObject private var authStore = AuthStore()
+
+    /// Serverless cross-device company sync over a shared folder (ADR-047).
+    /// Held at app scope so its background timer / event subscriptions live for
+    /// the app's lifetime.
+    @StateObject private var companySync: CompanySync
 
     init() {
         let databaseURL = Self.makeDatabaseURL()
@@ -124,20 +137,45 @@ struct mercantis_hubApp: App {
         // their own fields without colliding with the HubManifest reinstall
         // that runs above.
         self.customFieldStore = CustomFieldStore(database: database)
+
+        // Shared attachment store/manager (receipt capture + any record
+        // attachments). Stored beside the database in Application Support.
+        let attachmentStore = try! AttachmentStore(rootURL: Self.makeAttachmentsURL())
+        self.attachmentManager = AttachmentManager(
+            database: database,
+            store: attachmentStore,
+            auditWriter: AuditLogWriter(database: database)
+        )
+
+        // Company sync engine (built on Core's FileSystemCloudAdapter + SyncEngine).
+        // Built as a StateObject from init so its lifetime matches the app. The
+        // pending-changes badge defaults to 0 (sync correctness never depends on
+        // it — SyncEngine reads the queue itself).
+        _companySync = StateObject(wrappedValue: CompanySync(
+            database: database,
+            documentEngine: documentEngine,
+            registry: registry,
+            emitter: emitter,
+            deviceId: Self.deviceId()
+        ))
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView(
-                engine: documentEngine,
-                workflowEngine: workflowEngine,
-                reportEngine: reportEngine,
-                dashboardEngine: dashboardEngine,
-                customFieldStore: customFieldStore,
-                savedReportStore: savedReportStore,
-                savedReportEngine: savedReportEngine,
-                visibility: visibility
-            )
+            AuthGate(store: authStore) {
+                RootView(
+                    engine: documentEngine,
+                    workflowEngine: workflowEngine,
+                    reportEngine: reportEngine,
+                    dashboardEngine: dashboardEngine,
+                    customFieldStore: customFieldStore,
+                    savedReportStore: savedReportStore,
+                    savedReportEngine: savedReportEngine,
+                    visibility: visibility,
+                    attachmentManager: attachmentManager,
+                    companySync: companySync
+                )
+            }
         }
         .defaultSize(width: 1100, height: 720)
         .commands { HubCommands() }
@@ -166,6 +204,22 @@ struct mercantis_hubApp: App {
         let dir = appSupport.appendingPathComponent("MercantisHub", isDirectory: true)
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("hub.sqlite")
+    }
+
+    /// Directory that holds attachment blobs, beside the database.
+    private static func makeAttachmentsURL() -> URL {
+        let fm = FileManager.default
+        let appSupport = try! fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let dir = appSupport
+            .appendingPathComponent("MercantisHub", isDirectory: true)
+            .appendingPathComponent("Attachments", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
 
     private static func deviceId() -> String {

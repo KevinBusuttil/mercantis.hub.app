@@ -16,7 +16,9 @@ extension Manufacturing {
             HubMenuGroup(label: "Production", items: [
                 .docType(Manufacturing.productionPlan),
                 .docType(Manufacturing.workOrder),
-                .docType(Manufacturing.jobCard)
+                .docType(Manufacturing.jobCard),
+                .flow(id: "work-order-complete", label: "Complete Work Order",
+                      systemImage: "hammer")
             ]),
             HubMenuGroup(label: "Dashboards", items: [
                 .dashboard(id: HubDashboards.manufacturingOverview.id,
