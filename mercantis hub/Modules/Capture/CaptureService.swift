@@ -59,14 +59,14 @@ final class CaptureService {
     @discardableResult
     func captureFromImage(imagePath: String,
                           sourceType: String = "Camera",
-                          intendedRole: String = Capture.roleAnyone) async throws -> Document {
+                          intendedRole: String? = nil) async throws -> Document {
         // Create the intake record first so the attachment has a parent id.
         let created = try engine.save(makeDocument(
             docType: "Captured Document",
             fields: [
                 "status": .string(Capture.statusReceived),
                 "source_type": .string(sourceType),
-                "intended_role": .string(intendedRole)
+                "intended_role": .string(intendedRole ?? Capture.roleAnyone)
             ]
         ))
 

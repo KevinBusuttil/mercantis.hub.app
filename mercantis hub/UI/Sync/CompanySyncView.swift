@@ -209,7 +209,7 @@ struct CompanySyncView: View {
         id.count > 8 ? "\(id.prefix(8))…" : id
     }
 
-    private static func formatTime(_ date: Date) -> String {
+    nonisolated private static func formatTime(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: date)
