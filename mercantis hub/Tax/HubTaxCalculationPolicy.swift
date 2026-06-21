@@ -137,7 +137,7 @@ enum HubTaxCalculationPolicy {
             if let account = row.account, !account.isEmpty {
                 fields["tax_account"] = .string(account)
             }
-            return ChildRow(id: "tax-row-\(index)", rowIndex: index, fields: fields)
+            return ChildRow(id: UUID().uuidString, rowIndex: index, fields: fields)
         }
     }
 

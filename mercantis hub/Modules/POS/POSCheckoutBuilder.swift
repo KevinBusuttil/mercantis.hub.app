@@ -93,7 +93,7 @@ enum POSCheckoutBuilder {
             ]
             if let taxCode = line.taxCode, !taxCode.isEmpty { f["tax_code"] = .string(taxCode) }
             if let wh = line.warehouse, !wh.isEmpty { f["warehouse"] = .string(wh) }
-            return ChildRow(id: "pos-item-\(index)", rowIndex: index, fields: f)
+            return ChildRow(id: UUID().uuidString, rowIndex: index, fields: f)
         }
 
         let tenderRows: [ChildRow] = tenders.enumerated().map { index, tender in
@@ -102,7 +102,7 @@ enum POSCheckoutBuilder {
                 "amount":      .double(tender.amount),
             ]
             if let ref = tender.reference, !ref.isEmpty { f["reference"] = .string(ref) }
-            return ChildRow(id: "pos-tender-\(index)", rowIndex: index, fields: f)
+            return ChildRow(id: UUID().uuidString, rowIndex: index, fields: f)
         }
 
         return Document(
