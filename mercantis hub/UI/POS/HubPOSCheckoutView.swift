@@ -184,8 +184,11 @@ struct HubPOSCheckoutView: View {
                 Text("\(money(line.wrappedValue.rate)) each").font(.system(size: 10)).foregroundStyle(.secondary)
             }
             Spacer()
+            Text(qtyText(line.wrappedValue.qty))
+                .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                .frame(minWidth: 28, alignment: .trailing)
             Stepper(value: line.qty, in: 0...9999, step: 1) {
-                Text(qtyText(line.wrappedValue.qty)).font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                EmptyView()
             }
             .labelsHidden()
             .onChange(of: line.wrappedValue.qty) { _, newValue in
