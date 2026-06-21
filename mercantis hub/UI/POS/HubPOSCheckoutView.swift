@@ -1,6 +1,11 @@
 import SwiftUI
 import MercantisCore
 import MercantisCoreUI
+#if os(macOS)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 
 /// Phase 6 — POS v1. The real, wired point-of-sale till (the old
 /// `HubPOSView` remains a preview-only design shell). It uses real `Item`
@@ -102,9 +107,18 @@ struct HubPOSCheckoutView: View {
         } label: {
             MercantisCard(padding: .compact) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Image(systemName: "cube.box")
-                        .font(.system(size: 20))
-                        .frame(maxWidth: .infinity).frame(height: 36)
+                    Group {
+                        if let image = itemImage(item) {
+                            image.resizable().scaledToFit()
+                        } else {
+                            Image(systemName: "cube.box")
+                                .font(.system(size: 20))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                     Text(itemName(item)).font(.system(size: 12, weight: .medium)).lineLimit(2)
                     Text(money(price(of: item))).font(.system(size: 12, weight: .semibold)).monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -112,6 +126,21 @@ struct HubPOSCheckoutView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// The item's stored image (FieldType.image → FieldValue.data), if any, as a
+    /// SwiftUI `Image`. Falls back to `nil` so the tile shows its placeholder.
+    private func itemImage(_ item: Document) -> Image? {
+        guard case .data(let data)? = item.fields["image"] else { return nil }
+        #if os(macOS)
+        guard let ns = NSImage(data: data) else { return nil }
+        return Image(nsImage: ns)
+        #elseif canImport(UIKit)
+        guard let ui = UIImage(data: data) else { return nil }
+        return Image(uiImage: ui)
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - Cart + payment
