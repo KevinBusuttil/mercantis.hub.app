@@ -18,6 +18,10 @@ struct HubPOSCheckoutView: View {
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
 
+    /// Phase 2 — posts the POS Invoice (stock issue + COGS + cash/income/VAT)
+    /// inside the submit transaction. Injected at app scope; nil in previews.
+    @Environment(\.postingCoordinator) private var posting
+
     @State private var items: [Document] = []
     @State private var taxRates: [String: HubTaxEngine.TaxRateInfo] = [:]
     @State private var profile: Document?
@@ -452,7 +456,12 @@ struct HubPOSCheckoutView: View {
     private func saveSubmit(_ sale: Document) throws -> String {
         var doc = try engine.save(sale)
         if let refreshed = try engine.fetch(docType: "POSInvoice", id: doc.id) { doc = refreshed }
-        try engine.submit(&doc)
+        // Phase 2: post the sale atomically inside the submit transaction.
+        if let posting, let closure = posting.submitClosure(for: doc) {
+            try engine.submit(&doc, inTransaction: closure)
+        } else {
+            try engine.submit(&doc)
+        }
         if let refreshed = try engine.fetch(docType: "POSInvoice", id: doc.id) { doc = refreshed }
         if let workflow = HubWorkflows.workflow(forDocTypeId: "POSInvoice"),
            let transition = (try? workflowEngine.availableTransitions(
