@@ -122,4 +122,53 @@ public nonisolated enum StockBalanceCalculator {
 
     static func round2(_ value: Double) -> Double { (value * 100).rounded() / 100 }
     static func round3(_ value: Double) -> Double { (value * 1000).rounded() / 1000 }
+
+    // MARK: - FIFO valuation
+
+    /// FIFO unit cost for issuing `issueQty` of (item, warehouse). Replays the
+    /// ledger `rows` into FIFO layers (receipts add a layer at their rate;
+    /// issues consume the oldest layers), skips `alreadyConsumed` units already
+    /// taken by earlier lines of the same document, then consumes `issueQty`,
+    /// returning the blended cost ÷ `issueQty`. When stock runs short the last
+    /// known rate is used for the shortfall (mirrors the moving-average
+    /// fallback). Use this instead of `Balance.valuationRate` for FIFO items.
+    public static func fifoUnitCost(
+        item: String, warehouse: String, rows: [Row],
+        alreadyConsumed: Double = 0, issueQty: Double
+    ) -> Double {
+        guard issueQty > 0 else { return 0 }
+        let scoped = rows
+            .filter { $0.item == item && $0.warehouse == warehouse }
+            .sorted { ($0.postingDate ?? .distantPast) < ($1.postingDate ?? .distantPast) }
+
+        var layers: [(qty: Double, rate: Double)] = []
+        func consume(_ amount: Double) -> Double {
+            var remaining = amount
+            var cost = 0.0
+            while remaining > 0.0000001, !layers.isEmpty {
+                let take = Swift.min(remaining, layers[0].qty)
+                cost += take * layers[0].rate
+                layers[0].qty -= take
+                remaining -= take
+                if layers[0].qty <= 0.0000001 { layers.removeFirst() }
+            }
+            if remaining > 0.0000001 {
+                let lastRate = layers.last?.rate ?? scoped.last(where: { $0.qtyChange > 0 })?.valuationRate ?? 0
+                cost += remaining * lastRate
+            }
+            return cost
+        }
+
+        // Rebuild current on-hand layers from the full prior ledger.
+        for row in scoped {
+            if row.qtyChange > 0 {
+                layers.append((row.qtyChange, row.valuationRate ?? 0))
+            } else {
+                _ = consume(-row.qtyChange)
+            }
+        }
+        // Earlier lines of this same document already took from the front.
+        if alreadyConsumed > 0 { _ = consume(alreadyConsumed) }
+        return consume(issueQty) / issueQty
+    }
 }

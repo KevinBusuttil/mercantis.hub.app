@@ -121,6 +121,10 @@ enum Selling {
                             type: .link, required: false, linkedDocType: "Warehouse"),
             FieldDefinition(key: "is_stock_item", label: "Track Stock",
                             type: .boolean, required: false, defaultValue: .bool(true)),
+            FieldDefinition(key: "valuation_method", label: "Valuation Method",
+                            type: .select, required: false,
+                            options: ["Moving Average", "FIFO"],
+                            defaultValue: .string("Moving Average")),
             FieldDefinition(key: "is_sales_item", label: "Sales Item",
                             type: .boolean, required: false, defaultValue: .bool(true)),
             FieldDefinition(key: "is_purchase_item", label: "Purchase Item",
@@ -330,7 +334,9 @@ enum Selling {
             FieldDefinition(key: "income_account", label: "Income Account",
                             type: .link, required: true, linkedDocType: "Account"),
             FieldDefinition(key: "cost_center", label: "Cost Center",
-                            type: .link, required: false, linkedDocType: "CostCenter")
+                            type: .link, required: false, linkedDocType: "CostCenter"),
+            FieldDefinition(key: "sales_order", label: "Sales Order",
+                            type: .link, required: false, linkedDocType: "SalesOrder")
         ],
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-invoice",

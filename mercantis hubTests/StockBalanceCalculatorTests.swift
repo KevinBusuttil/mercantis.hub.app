@@ -97,4 +97,39 @@ final class StockBalanceCalculatorTests: XCTestCase {
         XCTAssertEqual(balance.actualQty, 7, accuracy: 0.0001)
         XCTAssertEqual(balance.stockValue, 0, accuracy: 0.0001)
     }
+
+    // MARK: - FIFO
+
+    func test_fifo_consumes_oldest_layers_first() {
+        let rows = [
+            row("A", "W1", qty: 10, rate: 5, day: 1),   // layer 1: 10 @ 5
+            row("A", "W1", qty: 10, rate: 8, day: 2),   // layer 2: 10 @ 8
+        ]
+        // Issue 12: 10@5 + 2@8 = 66 → unit 5.5 (FIFO, not the 6.5 moving average).
+        let unit = StockBalanceCalculator.fifoUnitCost(item: "A", warehouse: "W1", rows: rows, issueQty: 12)
+        XCTAssertEqual(unit, 5.5, accuracy: 0.0001)
+    }
+
+    func test_fifo_skips_layers_already_consumed_by_earlier_lines() {
+        let rows = [
+            row("A", "W1", qty: 10, rate: 5, day: 1),
+            row("A", "W1", qty: 10, rate: 8, day: 2),
+        ]
+        // An earlier line took all 10 of layer 1; this line of 4 draws from
+        // layer 2 only: 4 @ 8 = 8.0/unit.
+        let unit = StockBalanceCalculator.fifoUnitCost(
+            item: "A", warehouse: "W1", rows: rows, alreadyConsumed: 10, issueQty: 4)
+        XCTAssertEqual(unit, 8.0, accuracy: 0.0001)
+    }
+
+    func test_fifo_prior_issues_deplete_oldest_layer() {
+        let rows = [
+            row("A", "W1", qty: 10, rate: 5, day: 1),
+            row("A", "W1", qty: 10, rate: 8, day: 2),
+            row("A", "W1", qty: -10, rate: 5, day: 3),  // earlier issue drained layer 1
+        ]
+        // Layer 1 gone; next issue of 5 draws from layer 2: 8.0/unit.
+        let unit = StockBalanceCalculator.fifoUnitCost(item: "A", warehouse: "W1", rows: rows, issueQty: 5)
+        XCTAssertEqual(unit, 8.0, accuracy: 0.0001)
+    }
 }
