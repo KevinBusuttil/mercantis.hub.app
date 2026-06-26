@@ -199,6 +199,9 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             ?? nonEmptyString(doc.fields["warehouse"])
 
         var affected: [String: (item: String, warehouse: String)] = [:]
+        // Phase 2: cost of goods issued, accumulated across the lines of an
+        // outgoing (Sales Delivery / POS) document for the COGS GL below.
+        var cogsTotal = 0.0
         for row in rows {
             let item = row.fields["item"]
             guard let itemId = nonEmptyString(item) else { continue }
@@ -207,7 +210,27 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             // Receipt: +qty normally, -qty on reversal. Delivery: -qty
             // normally, +qty on reversal.
             let signedQty = negate(qty, when: incoming ? reversal : !reversal)
-            let rate = row.fields["valuation_rate"] ?? row.fields["rate"]
+
+            // Valuation rate for the SLE:
+            // - Receipt: the document's stated cost (purchase price).
+            // - Issue: the warehouse MOVING-AVERAGE cost, never the selling
+            //   `rate`. On reversal, the ORIGINAL issue cost (read back from the
+            //   issue SLE) so the cancellation's stock value and COGS net to zero.
+            let rate: FieldValue
+            if incoming {
+                rate = row.fields["valuation_rate"] ?? row.fields["rate"]
+            } else {
+                let unitCost: Double
+                if reversal {
+                    let origRate = (try? engine.fetch(docType: "StockLedgerEntry", id: "SLE-\(doc.id)-\(row.rowIndex)"))?.fields["valuation_rate"]
+                    unitCost = asDouble(origRate) ?? 0
+                } else {
+                    let bin = (try? stockBalance.balance(item: itemId, warehouse: whId)) ?? nil
+                    unitCost = bin?.valuationRate ?? asDouble(row.fields["valuation_rate"]) ?? 0
+                }
+                rate = .double(unitCost)
+                cogsTotal += (asDouble(qty) ?? 0) * unitCost
+            }
 
             try writeSLE(
                 id: "SLE-\(doc.id)-\(row.rowIndex)\(reversal ? "-reversal" : "")",
@@ -220,6 +243,31 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
                 company: doc.company
             )
             affected["\(itemId)|\(whId)"] = (itemId, whId)
+        }
+
+        // Phase 2: inventory GL for outgoing stock — Dr COGS / Cr Inventory at
+        // moving-average cost (reversal flips). Uses the company-default COGS
+        // (expense) and Stock (inventory) accounts. Incoming receipts get their
+        // own inventory/GRNI GL in a follow-up increment.
+        if !incoming, abs(cogsTotal) > 0.0001,
+           let cogsAccount = companyDefault("default_expense_account"),
+           let inventoryAccount = companyDefault("default_stock_account") {
+            let amount = FieldValue.double(cogsTotal)
+            let zero = FieldValue.double(0)
+            try writeGLEntry(
+                id: "GL-\(doc.id)-cogs\(reversal ? "-reversal" : "")",
+                postingDate: postingDate, account: .string(cogsAccount),
+                debit: reversal ? zero : amount, credit: reversal ? amount : zero,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: voucherType, voucherNo: doc.id, isReversal: reversal, company: doc.company
+            )
+            try writeGLEntry(
+                id: "GL-\(doc.id)-inventory\(reversal ? "-reversal" : "")",
+                postingDate: postingDate, account: .string(inventoryAccount),
+                debit: reversal ? amount : zero, credit: reversal ? zero : amount,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: voucherType, voucherNo: doc.id, isReversal: reversal, company: doc.company
+            )
         }
 
         // Roll each affected (item, warehouse) up into its Stock Balance
