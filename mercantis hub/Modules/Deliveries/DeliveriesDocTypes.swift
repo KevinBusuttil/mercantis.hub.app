@@ -105,7 +105,8 @@ enum Deliveries {
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "SalesDeliveryItem"),
             FieldDefinition(key: "total_qty", label: "Total Qty",
-                            type: .decimal, required: false),
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "remarks", label: "Remarks",
                             type: .longText, required: false, allowOnSubmit: true)
         ],

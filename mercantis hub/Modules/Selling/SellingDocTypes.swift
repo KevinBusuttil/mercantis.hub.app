@@ -249,10 +249,13 @@ enum Selling {
         fields.append(contentsOf: [
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "SalesItem"),
+            // Derived on save by HubTaxCalculationPolicy — display only.
             FieldDefinition(key: "total_qty", label: "Total Qty",
-                            type: .decimal, required: false),
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "grand_total", label: "Grand Total",
-                            type: .currency, required: false),
+                            type: .currency, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "notes", label: "Notes",
                             type: .longText, required: false,
                             allowOnSubmit: true)
