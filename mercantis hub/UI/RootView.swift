@@ -738,6 +738,10 @@ private struct HubDocumentEditor: View {
     /// lifecycle actions handled below (submit/cancel/amend/workflow).
     let onPersist: () -> Void
 
+    /// Phase 1 — posts atomic-posting DocTypes (Journal Entry) inside the
+    /// submit/cancel transaction. Injected at app scope; nil in previews.
+    @Environment(\.postingCoordinator) private var posting
+
     @State private var errorMessage: String?
     /// A pending action awaiting confirmation (Post / Cancel of a
     /// ledger- or stock-affecting document). Drives the confirmation dialog.
@@ -1652,8 +1656,14 @@ private struct HubDocumentEditor: View {
                 document = refreshed
             }
             // 2. Flip docStatus 0 → 1 through Core's submit pipeline so
-            //    immutability + audit + workflow-history rows fire.
-            try engine.submit(&document)
+            //    immutability + audit + workflow-history rows fire. For
+            //    atomic-posting DocTypes, posting runs inside this same
+            //    transaction (Phase 1) — a posting failure rolls the submit back.
+            if let posting, let closure = posting.submitClosure(for: document) {
+                try engine.submit(&document, inTransaction: closure)
+            } else {
+                try engine.submit(&document)
+            }
             // Refetch so the in-memory copy carries the timestamp `submit`'s
             // save just wrote; the workflow transition below saves again and
             // would otherwise hit the optimistic-concurrency check with a stale
@@ -1692,7 +1702,13 @@ private struct HubDocumentEditor: View {
 
     private func cancel() {
         do {
-            try engine.cancel(&document)
+            // Atomic-posting DocTypes write their reversal rows inside the
+            // cancel transaction (Phase 1); others reverse via the event path.
+            if let posting, let closure = posting.cancelClosure(for: document) {
+                try engine.cancel(&document, inTransaction: closure)
+            } else {
+                try engine.cancel(&document)
+            }
             // Refetch so the workflow transition's save below sees the
             // timestamp `cancel`'s save just wrote (optimistic concurrency).
             if let refreshed = try engine.fetch(docType: docType.id, id: document.id) {

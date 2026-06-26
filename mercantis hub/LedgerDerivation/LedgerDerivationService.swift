@@ -51,10 +51,15 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
     /// guaranteed to run *after* the ledger rows it reads are written.
     private let stockBalance: StockBalanceService
     private var tokens: [SubscriptionToken] = []
+    /// DocTypes posted atomically inside the submit transaction by
+    /// PostingCoordinator; this legacy event path skips them so they are not
+    /// double-posted. (Phase 1 cutover)
+    private let atomicDocTypes: Set<String>
 
-    public init(engine: DocumentEngine, emitter: EventEmitter) {
+    public init(engine: DocumentEngine, emitter: EventEmitter, atomicDocTypes: Set<String> = []) {
         self.engine = engine
         self.emitter = emitter
+        self.atomicDocTypes = atomicDocTypes
         self.stockBalance = StockBalanceService(engine: engine)
         wire()
     }
@@ -77,6 +82,8 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
     }
 
     private func handleSubmit(document: Document) {
+        // Posted atomically in the submit transaction by PostingCoordinator.
+        guard !atomicDocTypes.contains(document.docType) else { return }
         do {
             switch document.docType {
             case "StockEntry":      try deriveStockEntry(document, reversal: false)
@@ -99,6 +106,8 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
     }
 
     private func handleCancel(document: Document) {
+        // Reversed atomically in the cancel transaction by PostingCoordinator.
+        guard !atomicDocTypes.contains(document.docType) else { return }
         do {
             switch document.docType {
             case "StockEntry":      try deriveStockEntry(document, reversal: true)

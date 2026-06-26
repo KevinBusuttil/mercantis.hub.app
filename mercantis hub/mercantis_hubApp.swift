@@ -6,6 +6,9 @@ struct mercantis_hubApp: App {
 
     let documentEngine: DocumentEngine
     let workflowEngine: WorkflowEngine
+    /// Phase 1 — posts the DocTypes it owns (Journal Entry today) inside the
+    /// submit/cancel transaction. Routed from RootView's submit/cancel actions.
+    let postingCoordinator: PostingCoordinator
     /// Wall 7 — retained so its event subscriptions stay alive for the
     /// lifetime of the app. Held via a strong reference at app scope.
     let ledgerDerivation: LedgerDerivationService
@@ -113,9 +116,13 @@ struct mercantis_hubApp: App {
         // Wall 7: LedgerDerivationService listens for transactional
         // submit / cancel events and writes append-only Stock Ledger
         // Entry / GL Entry rows with deterministic ids.
+        self.postingCoordinator = PostingCoordinator(engine: documentEngine)
         self.ledgerDerivation = LedgerDerivationService(
             engine: documentEngine,
-            emitter: emitter
+            emitter: emitter,
+            // Skip the DocTypes posted atomically by PostingCoordinator so they
+            // are not double-posted by this legacy event path. (Phase 1 cutover)
+            atomicDocTypes: PostingCoordinator.atomicDocTypes
         )
         // Manufacturing: BOM cost rollup on save, Stock Entry on Work
         // Order completion, Work Order generation from Production Plan.
@@ -203,6 +210,9 @@ struct mercantis_hubApp: App {
                     attachmentManager: attachmentManager,
                     companySync: companySync
                 )
+                // Phase 1: make the posting coordinator available to the form's
+                // submit/cancel actions without threading it through every view.
+                .environment(\.postingCoordinator, postingCoordinator)
             }
         }
         .defaultSize(width: 1100, height: 720)
