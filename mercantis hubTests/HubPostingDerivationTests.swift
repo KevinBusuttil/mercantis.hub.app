@@ -42,6 +42,19 @@ final class HubPostingDerivationTests: XCTestCase {
         return nil
     }
 
+    /// Assert an optional amount equals `expected`; a missing value (nil) fails
+    /// rather than silently coalescing — `XCTAssertEqual(_:_:accuracy:)` itself
+    /// can't take a `Double?`.
+    private func assertAmount(
+        _ actual: Double?, _ expected: Double, accuracy: Double = 0.001,
+        _ message: String = "", file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let actual else {
+            return XCTFail("expected \(expected) but the value was missing. \(message)", file: file, line: line)
+        }
+        XCTAssertEqual(actual, expected, accuracy: accuracy, file: file, line: line)
+    }
+
     private func gl(_ rows: [Document]) -> [Document] { rows.filter { $0.docType == "GLEntry" } }
     private func sle(_ rows: [Document]) -> [Document] { rows.filter { $0.docType == "StockLedgerEntry" } }
     private func totalDebit(_ rows: [Document]) -> Double { gl(rows).reduce(0) { $0 + (dbl($1.fields["debit"]) ?? 0) } }
@@ -66,8 +79,8 @@ final class HubPostingDerivationTests: XCTestCase {
         let reversed = PostingCoordinator.journalEntryRows(je, reversal: true)
         // Reversal swaps debit/credit, so the Cash leg flips Dr 100 → Cr 100.
         let cashRev = glFor(reversed, account: "Cash")
-        XCTAssertEqual(dbl(cashRev?.fields["credit"]), 100, accuracy: 0.001)
-        XCTAssertEqual(dbl(cashRev?.fields["debit"]), 0, accuracy: 0.001)
+        assertAmount(dbl(cashRev?.fields["credit"]), 100)
+        assertAmount(dbl(cashRev?.fields["debit"]), 0)
         XCTAssertEqual(totalDebit(reversed), 100, accuracy: 0.001)
         XCTAssertEqual(totalCredit(reversed), 100, accuracy: 0.001)
         // Reversal rows are id-suffixed so they never collide with the originals.
@@ -90,12 +103,12 @@ final class HubPostingDerivationTests: XCTestCase {
 
         let rows = PostingCoordinator.salesInvoiceRows(si, reversal: false, fallbackVatAccount: nil)
         XCTAssertEqual(totalDebit(rows), totalCredit(rows), accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(rows, account: "AR")?.fields["debit"]), 115, accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(rows, account: "Sales")?.fields["credit"]), 100, accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(rows, account: "VAT")?.fields["credit"]), 15, accuracy: 0.001)
+        assertAmount(dbl(glFor(rows, account: "AR")?.fields["debit"]), 115)
+        assertAmount(dbl(glFor(rows, account: "Sales")?.fields["credit"]), 100)
+        assertAmount(dbl(glFor(rows, account: "VAT")?.fields["credit"]), 15)
         // Customer subledger row is booked at gross.
         let custTrans = rows.first { $0.docType == "CustTrans" }
-        XCTAssertEqual(dbl(custTrans?.fields["amount"]), 115, accuracy: 0.001)
+        assertAmount(dbl(custTrans?.fields["amount"]), 115)
     }
 
     // MARK: - COGS at moving-average cost, never the selling rate
@@ -112,11 +125,11 @@ final class HubPostingDerivationTests: XCTestCase {
             costBasis: [0: 8], cogsAccount: "COGS", inventoryAccount: "Stock"
         )
         let issue = sle(rows).first
-        XCTAssertEqual(dbl(issue?.fields["qty_change"]), -5, accuracy: 0.001)   // stock leaves
-        XCTAssertEqual(dbl(issue?.fields["valuation_rate"]), 8, accuracy: 0.001)
+        assertAmount(dbl(issue?.fields["qty_change"]), -5)        // stock leaves
+        assertAmount(dbl(issue?.fields["valuation_rate"]), 8)
         // 5 × 8 = 40, NOT 5 × 50 (the selling rate).
-        XCTAssertEqual(dbl(glFor(rows, account: "COGS")?.fields["debit"]), 40, accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(rows, account: "Stock")?.fields["credit"]), 40, accuracy: 0.001)
+        assertAmount(dbl(glFor(rows, account: "COGS")?.fields["debit"]), 40)
+        assertAmount(dbl(glFor(rows, account: "Stock")?.fields["credit"]), 40)
         XCTAssertEqual(totalDebit(rows), totalCredit(rows), accuracy: 0.001)
     }
 
@@ -151,9 +164,9 @@ final class HubPostingDerivationTests: XCTestCase {
         let receipt = PostingCoordinator.purchaseReceiptRows(
             pr, reversal: false, stockItemFlags: ["ITEM-1": true],
             inventoryAccount: "Stock", grniAccount: "GRNI")
-        XCTAssertEqual(dbl(glFor(receipt, account: "Stock")?.fields["debit"]), 30, accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(receipt, account: "GRNI")?.fields["credit"]), 30, accuracy: 0.001)
-        XCTAssertEqual(dbl(sle(receipt).first?.fields["qty_change"]), 10, accuracy: 0.001) // stock in
+        assertAmount(dbl(glFor(receipt, account: "Stock")?.fields["debit"]), 30)
+        assertAmount(dbl(glFor(receipt, account: "GRNI")?.fields["credit"]), 30)
+        assertAmount(dbl(sle(receipt).first?.fields["qty_change"]), 10)   // stock in
 
         // Invoice for the same goods clears GRNI (Dr GRNI / Cr AP), no expense.
         let pi = doc("PI-1", "PurchaseInvoice", fields: [
@@ -169,8 +182,8 @@ final class HubPostingDerivationTests: XCTestCase {
         let invoice = PostingCoordinator.purchaseInvoiceRows(
             pi, reversal: false, fallbackVatAccount: nil,
             grniAccount: "GRNI", stockItemFlags: ["ITEM-1": true])
-        XCTAssertEqual(dbl(glFor(invoice, account: "GRNI")?.fields["debit"]), 30, accuracy: 0.001)
-        XCTAssertEqual(dbl(glFor(invoice, account: "AP")?.fields["credit"]), 30, accuracy: 0.001)
+        assertAmount(dbl(glFor(invoice, account: "GRNI")?.fields["debit"]), 30)
+        assertAmount(dbl(glFor(invoice, account: "AP")?.fields["credit"]), 30)
         XCTAssertNil(glFor(invoice, account: "Expense"))   // pure-stock invoice → no expense leg
         XCTAssertEqual(totalDebit(invoice), totalCredit(invoice), accuracy: 0.001)
 
@@ -209,7 +222,7 @@ final class HubPostingDerivationTests: XCTestCase {
         let invoice = PostingCoordinator.purchaseInvoiceRows(
             pi, reversal: false, fallbackVatAccount: nil,
             grniAccount: "GRNI", stockItemFlags: ["SVC-1": false])
-        XCTAssertEqual(dbl(glFor(invoice, account: "Expense")?.fields["debit"]), 40, accuracy: 0.001)
+        assertAmount(dbl(glFor(invoice, account: "Expense")?.fields["debit"]), 40)
         XCTAssertNil(glFor(invoice, account: "GRNI"))    // nothing to clear
         XCTAssertEqual(totalDebit(invoice), totalCredit(invoice), accuracy: 0.001)
     }
@@ -230,8 +243,8 @@ final class HubPostingDerivationTests: XCTestCase {
         XCTAssertEqual(legs.count, 2)
         let out = legs.first { str($0.fields["warehouse"]) == "WH-A" }
         let into = legs.first { str($0.fields["warehouse"]) == "WH-B" }
-        XCTAssertEqual(dbl(out?.fields["qty_change"]), -4, accuracy: 0.001)   // leaves source
-        XCTAssertEqual(dbl(into?.fields["qty_change"]), 4, accuracy: 0.001)   // enters target
-        XCTAssertEqual(str(out?.fields["trans_type"]), "Transfer")
+        assertAmount(dbl(out?.fields["qty_change"]), -4)    // leaves source
+        assertAmount(dbl(into?.fields["qty_change"]), 4)    // enters target
+        XCTAssertEqual(str(out?.fields["trans_type"]) ?? "", "Transfer")
     }
 }
