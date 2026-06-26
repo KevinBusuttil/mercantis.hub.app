@@ -567,7 +567,7 @@ nonisolated final class PostingCoordinator {
     /// and GRNI accounts are mapped; otherwise the receipt moves stock only,
     /// exactly as the legacy event path did. The matching Purchase Invoice
     /// clears GRNI for the same lines so the loop nets to Dr Inventory / Cr AP.
-    private static func purchaseReceiptRows(
+    static func purchaseReceiptRows(
         _ doc: Document, reversal: Bool, stockItemFlags: [String: Bool],
         inventoryAccount: String?, grniAccount: String?
     ) -> [Document] {
