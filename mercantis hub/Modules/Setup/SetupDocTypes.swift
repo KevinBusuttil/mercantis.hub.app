@@ -49,6 +49,8 @@ enum Setup {
                             type: .link, required: false, linkedDocType: "Account"),
             FieldDefinition(key: "default_stock_account", label: "Default Stock Account",
                             type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_grni_account", label: "Default GRNI Account",
+                            type: .link, required: false, linkedDocType: "Account"),
             FieldDefinition(key: "default_vat_account", label: "Default VAT Account",
                             type: .link, required: false, linkedDocType: "Account")
         ],
@@ -90,7 +92,7 @@ enum Setup {
                 fieldKeys: ["default_receivable_account", "default_payable_account",
                             "default_income_account", "default_expense_account",
                             "default_cash_bank_account", "default_stock_account",
-                            "default_vat_account"]
+                            "default_grni_account", "default_vat_account"]
             )
         ])
     )
