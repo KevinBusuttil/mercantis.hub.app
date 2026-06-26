@@ -216,7 +216,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             // - Issue: the warehouse MOVING-AVERAGE cost, never the selling
             //   `rate`. On reversal, the ORIGINAL issue cost (read back from the
             //   issue SLE) so the cancellation's stock value and COGS net to zero.
-            let rate: FieldValue
+            let rate: FieldValue?
             if incoming {
                 rate = row.fields["valuation_rate"] ?? row.fields["rate"]
             } else {
