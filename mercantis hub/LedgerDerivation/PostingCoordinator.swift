@@ -361,7 +361,10 @@ nonisolated final class PostingCoordinator {
         // remainder hits Expense; without it the whole net is Dr Expense, so
         // the books are byte-for-byte the legacy behaviour. `stockNet` is
         // clamped to `net` so a discount can never over-clear GRNI.
-        let stockNet = grniAccount == nil ? 0 : min(net, stockLineNet(doc, stockItemFlags: stockItemFlags))
+        // Floor at 0 so a negative stock line (a return / credit line on the
+        // invoice) can never flip the GRNI leg to a credit; clamp to `net` so a
+        // discount can never over-clear it.
+        let stockNet = grniAccount == nil ? 0 : max(0, min(net, stockLineNet(doc, stockItemFlags: stockItemFlags)))
         let expenseNet = net - stockNet
         if let grniAccount, stockNet > 0.0001 {
             docs.append(glRow(
@@ -927,8 +930,13 @@ nonisolated final class PostingCoordinator {
     }
 
     private static func nonEmptyString(_ value: FieldValue?) -> String? {
-        guard let s = asString(value), !s.isEmpty else { return nil }
-        return s
+        // Trim to match LedgerDerivationService / StockBalanceService, which
+        // store and key Bin / SLE warehouse and account ids on the trimmed
+        // value. Without trimming, a warehouse like "WH-1 " would write an SLE
+        // the post-commit Bin recompute and moving-average lookup never match.
+        guard let s = asString(value) else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
