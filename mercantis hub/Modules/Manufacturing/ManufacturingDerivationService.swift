@@ -259,20 +259,35 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
         let source = workOrder.fields["source_warehouse"]
         let target = workOrder.fields["target_warehouse"]
         let producedItem = workOrder.fields["item"] ?? .null
-        let producedQty  = workOrder.fields["produced_qty"]
+        let producedQty  = asDouble(workOrder.fields["produced_qty"]
             ?? workOrder.fields["qty_to_produce"]
-            ?? .double(0)
+            ?? .double(0))
+
+        let stockBalance = StockBalanceService(engine: engine)
+        let sourceWarehouse: String? = {
+            if case .string(let s)? = source, !s.isEmpty { return s }
+            return nil
+        }()
 
         var rows: [ChildRow] = []
+        var totalRawCost = 0.0
 
-        // Outbound: one row per required raw material (source warehouse
-        // consumes the required qty).
+        // Outbound: one row per required raw material (source warehouse consumes
+        // the required qty), valued at its moving-average cost so the consumed
+        // value transfers into the finished good rather than vanishing.
         for required in workOrder.children["required_items"] ?? [] {
             guard let item = required.fields["item"] else { continue }
             let qty = required.fields["required_qty"] ?? .double(0)
+            var unitCost = 0.0
+            if case .string(let itemId)? = item, let warehouse = sourceWarehouse {
+                let bin = (try? stockBalance.balance(item: itemId, warehouse: warehouse)) ?? nil
+                unitCost = bin?.valuationRate ?? 0
+            }
+            totalRawCost += asDouble(qty) * unitCost
             var fields: [String: FieldValue] = [
                 "item": item,
-                "qty":  qty
+                "qty":  qty,
+                "valuation_rate": .double(unitCost)
             ]
             if let source { fields["source_warehouse"] = source }
             rows.append(ChildRow(
@@ -282,11 +297,14 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
             ))
         }
 
-        // Inbound: one row for the finished good (target warehouse
-        // receives `produced_qty`).
+        // Inbound: one row for the finished good (target warehouse receives
+        // `produced_qty`), valued at the production cost (sum of consumed raw
+        // costs) so inventory value is conserved through manufacturing.
+        let finishedRate = producedQty > 0 ? totalRawCost / producedQty : 0
         var finishedFields: [String: FieldValue] = [
             "item": producedItem,
-            "qty":  producedQty
+            "qty":  .double(producedQty),
+            "valuation_rate": .double(finishedRate)
         ]
         if let target { finishedFields["target_warehouse"] = target }
         rows.append(ChildRow(
