@@ -165,7 +165,7 @@ nonisolated final class PostingCoordinator {
             inputs.cogsAccount = companyDefault("default_expense_account", engine: engine)
             inputs.inventoryAccount = companyDefault("default_stock_account", engine: engine)
             inputs.uomFactors = uomFactors(for: doc, engine: engine)
-            inputs.stockCostBasis = stockCostBasis(for: doc, reversal: reversal, engine: engine)
+            inputs.stockCostBasis = stockCostBasis(for: doc, reversal: reversal, engine: engine, uomFactors: inputs.uomFactors)
         }
         // Per-line stock/service classification for the GRNI loop: Purchase
         // Receipt accrues to GRNI for stock-item lines; Purchase Invoice clears
@@ -309,26 +309,78 @@ nonisolated final class PostingCoordinator {
     /// the selling rate); on cancel the ORIGINAL issue cost (read back from the
     /// issue SLE) so the reversal's stock value and COGS net to zero. Keyed by
     /// child `rowIndex`.
-    private static func stockCostBasis(for doc: Document, reversal: Bool, engine: DocumentEngine) -> [Int: Double] {
+    private static func stockCostBasis(for doc: Document, reversal: Bool, engine: DocumentEngine, uomFactors: [Int: Double]) -> [Int: Double] {
         guard doc.docType == "SalesDelivery" || doc.docType == "POSInvoice" else { return [:] }
         let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
             ?? nonEmptyString(doc.fields["warehouse"])
         let stockBalance = StockBalanceService(engine: engine)
         var basis: [Int: Double] = [:]
+        // Caches so a multi-line document reads each item's method / ledger once,
+        // and FIFO layers are consumed across lines of the same (item, warehouse).
+        var isFIFOByItem: [String: Bool] = [:]
+        var fifoRowsByKey: [String: [StockBalanceCalculator.Row]] = [:]
+        var fifoConsumedByKey: [String: Double] = [:]
         for row in doc.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
             guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
             let unitCost: Double
             if reversal {
+                // Reversal uses the ORIGINAL issue cost (read back from the issue
+                // SLE) so the cancellation's stock value and COGS net to zero —
+                // method-independent.
                 let origRate = (try? engine.fetch(docType: "StockLedgerEntry", id: "SLE-\(doc.id)-\(row.rowIndex)"))?.fields["valuation_rate"]
                 unitCost = asDouble(origRate) ?? 0
             } else {
-                let bin = (try? stockBalance.balance(item: itemId, warehouse: whId)) ?? nil
-                unitCost = bin?.valuationRate ?? asDouble(row.fields["valuation_rate"]) ?? 0
+                let isFIFO: Bool
+                if let cached = isFIFOByItem[itemId] {
+                    isFIFO = cached
+                } else {
+                    let item = try? engine.fetch(docType: "Item", id: itemId)
+                    isFIFO = asString(item?.fields["valuation_method"]) == "FIFO"
+                    isFIFOByItem[itemId] = isFIFO
+                }
+                if isFIFO {
+                    let key = "\(itemId)|\(whId)"
+                    let ledgerRows: [StockBalanceCalculator.Row]
+                    if let cached = fifoRowsByKey[key] {
+                        ledgerRows = cached
+                    } else {
+                        ledgerRows = stockLedgerRows(item: itemId, warehouse: whId, engine: engine)
+                        fifoRowsByKey[key] = ledgerRows
+                    }
+                    let stockQty = (asDouble(row.fields["qty"]) ?? 0) * (uomFactors[row.rowIndex] ?? 1)
+                    let consumed = fifoConsumedByKey[key] ?? 0
+                    unitCost = StockBalanceCalculator.fifoUnitCost(
+                        item: itemId, warehouse: whId, rows: ledgerRows,
+                        alreadyConsumed: consumed, issueQty: stockQty)
+                    fifoConsumedByKey[key] = consumed + stockQty
+                } else {
+                    let bin = (try? stockBalance.balance(item: itemId, warehouse: whId)) ?? nil
+                    unitCost = bin?.valuationRate ?? asDouble(row.fields["valuation_rate"]) ?? 0
+                }
             }
             basis[row.rowIndex] = unitCost
         }
         return basis
+    }
+
+    /// Read the Stock Ledger rows for one (item, warehouse) and map them into the
+    /// calculator's `Row` shape, for the FIFO cost replay. Read OUTSIDE the write
+    /// transaction.
+    private static func stockLedgerRows(item: String, warehouse: String, engine: DocumentEngine) -> [StockBalanceCalculator.Row] {
+        let entries = (try? engine.list(
+            docType: "StockLedgerEntry",
+            filters: ["item": .string(item), "warehouse": .string(warehouse)],
+            applyRowAccess: false
+        )) ?? []
+        return entries.map { entry in
+            StockBalanceCalculator.Row(
+                item: item, warehouse: warehouse,
+                qtyChange: asDouble(entry.fields["qty_change"]) ?? 0,
+                valuationRate: asDouble(entry.fields["valuation_rate"]),
+                postingDate: asDate(entry.fields["posting_date"])
+            )
+        }
     }
 
     // MARK: - Posting
