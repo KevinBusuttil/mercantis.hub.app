@@ -43,11 +43,11 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery", "PurchaseReceipt", "POSInvoice"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery", "PurchaseReceipt", "POSInvoice", "StockEntry"]
 
     /// Atomic DocTypes that move stock — LedgerDerivationService recomputes their
     /// Stock Balance (Bin) post-commit (posting itself is done in-transaction).
-    static let atomicStockDocTypes: Set<String> = ["SalesDelivery", "PurchaseReceipt", "POSInvoice"]
+    static let atomicStockDocTypes: Set<String> = ["SalesDelivery", "PurchaseReceipt", "POSInvoice", "StockEntry"]
 
     /// Tolerance for the balanced-GL check (currency rounding).
     private static let balanceTolerance = 0.005
@@ -190,6 +190,7 @@ nonisolated final class PostingCoordinator {
         case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount)
         case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount)
         case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount)
+        case "StockEntry":      ledgerDocs = stockEntryRows(doc, reversal: reversal)
         default:                return
         }
 
@@ -501,6 +502,59 @@ nonisolated final class PostingCoordinator {
         ))
         docs += taxRowDocs(doc, rows: taxRowsChildren, party: customer, partyTypeValue: "Customer", isOutput: true, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
         return docs
+    }
+
+    /// Stock Entry moves material between warehouses with no GL: an outbound
+    /// Stock Ledger leg from each line's source warehouse (-qty on submit,
+    /// +qty on reversal) and an inbound leg into its target warehouse (+qty on
+    /// submit, -qty on reversal), at the line's stated valuation rate. A line
+    /// may have only one of the two (a pure receipt or issue). The trans_type
+    /// follows the entry's purpose; the Bin cache is recomputed post-commit.
+    private static func stockEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
+        let postingDate = doc.fields["posting_date"] ?? .date(Date())
+        let postingTime = doc.fields["posting_time"]
+        let transType = stockLedgerTransType(forPurpose: doc.fields["purpose"])
+
+        var docs: [Document] = []
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            let qty = row.fields["qty"] ?? .double(0)
+            let rate = row.fields["valuation_rate"]
+
+            if let sourceWh = nonEmptyString(row.fields["source_warehouse"]) {
+                docs.append(sleRow(
+                    id: "SLE-\(doc.id)-\(row.rowIndex)-out\(suffix(reversal))",
+                    transType: transType, item: .string(itemId), warehouse: .string(sourceWh),
+                    postingDate: postingDate, postingTime: postingTime,
+                    voucherType: "StockEntry", voucherNo: doc.id,
+                    qtyChange: signed(qty, negate: !reversal), rate: rate, reversal: reversal, company: doc.company
+                ))
+            }
+            if let targetWh = nonEmptyString(row.fields["target_warehouse"]) {
+                docs.append(sleRow(
+                    id: "SLE-\(doc.id)-\(row.rowIndex)-in\(suffix(reversal))",
+                    transType: transType, item: .string(itemId), warehouse: .string(targetWh),
+                    postingDate: postingDate, postingTime: postingTime,
+                    voucherType: "StockEntry", voucherNo: doc.id,
+                    qtyChange: signed(qty, negate: reversal), rate: rate, reversal: reversal, company: doc.company
+                ))
+            }
+        }
+        return docs
+    }
+
+    /// Map a Stock Entry `purpose` to the StockLedgerEntry `trans_type`
+    /// (mirrors LedgerDerivationService.stockLedgerTransType).
+    private static func stockLedgerTransType(forPurpose purpose: FieldValue?) -> String {
+        guard case .string(let p)? = purpose else { return "Issue" }
+        switch p {
+        case "Material Receipt":                        return "Receipt"
+        case "Material Issue":                          return "Issue"
+        case "Material Transfer":                       return "Transfer"
+        case "Repack":                                  return "Adjustment"
+        case "Manufacturing", "Send to Subcontractor":  return "Production"
+        default:                                        return "Issue"
+        }
     }
 
     /// Purchase Receipt brings goods IN: a Stock Ledger Receipt row per line at
