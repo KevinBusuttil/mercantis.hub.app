@@ -16,7 +16,8 @@
 //  not a ledger — is recomputed post-commit by LedgerDerivationService from the
 //  committed rows. Perpetual inventory (GRNI) is opt-in: the accrual posts only
 //  when a GRNI account is mapped, and the Purchase Invoice then clears GRNI for
-//  its stock lines. POS / Stock Entry are converted later.
+//  its stock lines. POS Invoice (cash sale: stock issue + COGS + Dr Cash /
+//  Cr Income / Cr VAT) shares the outgoing-stock derivation. Stock Entry later.
 //
 //  The DocTypes posted here are listed in `atomicDocTypes`, which
 //  LedgerDerivationService skips so there is no double-posting.
@@ -42,11 +43,11 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery", "PurchaseReceipt"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery", "PurchaseReceipt", "POSInvoice"]
 
     /// Atomic DocTypes that move stock — LedgerDerivationService recomputes their
     /// Stock Balance (Bin) post-commit (posting itself is done in-transaction).
-    static let atomicStockDocTypes: Set<String> = ["SalesDelivery", "PurchaseReceipt"]
+    static let atomicStockDocTypes: Set<String> = ["SalesDelivery", "PurchaseReceipt", "POSInvoice"]
 
     /// Tolerance for the balanced-GL check (currency rounding).
     private static let balanceTolerance = 0.005
@@ -77,6 +78,10 @@ nonisolated final class PostingCoordinator {
         /// can size the inventory accrual (Receipt) and the clearing leg
         /// (Invoice) to the stock-item portion only.
         var stockItemFlags: [String: Bool] = [:]
+        /// Company-default fallbacks for the POS cash sale legs (the document's
+        /// own cash_account / income_account take precedence when set).
+        var incomeAccount: String?
+        var cashAccount: String?
     }
 
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
@@ -113,6 +118,10 @@ nonisolated final class PostingCoordinator {
         if doc.docType == "PurchaseReceipt" || doc.docType == "PurchaseInvoice" {
             inputs.stockItemFlags = stockItemFlags(for: doc, engine: engine)
         }
+        if doc.docType == "POSInvoice" {
+            inputs.incomeAccount = companyDefault("default_income_account", engine: engine)
+            inputs.cashAccount = companyDefault("default_cash_bank_account", engine: engine)
+        }
         return inputs
     }
 
@@ -139,7 +148,7 @@ nonisolated final class PostingCoordinator {
     /// issue SLE) so the reversal's stock value and COGS net to zero. Keyed by
     /// child `rowIndex`.
     private static func stockCostBasis(for doc: Document, reversal: Bool, engine: DocumentEngine) -> [Int: Double] {
-        guard doc.docType == "SalesDelivery" else { return [:] }
+        guard doc.docType == "SalesDelivery" || doc.docType == "POSInvoice" else { return [:] }
         let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
             ?? nonEmptyString(doc.fields["warehouse"])
         let stockBalance = StockBalanceService(engine: engine)
@@ -180,6 +189,7 @@ nonisolated final class PostingCoordinator {
         case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: inputs.referencedInvoices)
         case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount)
         case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount)
+        case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount)
         default:                return
         }
 
@@ -391,6 +401,21 @@ nonisolated final class PostingCoordinator {
         _ doc: Document, reversal: Bool, costBasis: [Int: Double],
         cogsAccount: String?, inventoryAccount: String?
     ) -> [Document] {
+        stockIssueRows(doc, voucherType: "SalesDelivery", reversal: reversal,
+                       costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount)
+    }
+
+    /// Shared outgoing-stock derivation for Sales Delivery and POS Invoice: a
+    /// Stock Ledger Issue row per line (-qty on submit, +qty on reversal)
+    /// carrying the pre-resolved `costBasis` as `valuation_rate`, plus the
+    /// inventory GL — Dr COGS / Cr Inventory at moving-average cost (reversal
+    /// flips). Skipped when the COGS / Stock accounts are unset (mirrors the
+    /// legacy event path). The derived Stock Balance (Bin) is recomputed
+    /// post-commit by LedgerDerivationService from the committed ledger rows.
+    private static func stockIssueRows(
+        _ doc: Document, voucherType: String, reversal: Bool, costBasis: [Int: Double],
+        cogsAccount: String?, inventoryAccount: String?
+    ) -> [Document] {
         let postingDate = doc.fields["posting_date"] ?? doc.fields["transaction_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
         let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
@@ -409,15 +434,12 @@ nonisolated final class PostingCoordinator {
                 id: "SLE-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
                 transType: "Issue", item: .string(itemId), warehouse: .string(whId),
                 postingDate: postingDate, postingTime: postingTime,
-                voucherType: "SalesDelivery", voucherNo: doc.id,
+                voucherType: voucherType, voucherNo: doc.id,
                 qtyChange: signedQty, rate: .double(unitCost), reversal: reversal, company: doc.company
             ))
             cogsTotal += (asDouble(qty) ?? 0) * unitCost
         }
 
-        // Inventory GL for outgoing stock — Dr COGS / Cr Inventory at
-        // moving-average cost (reversal flips). Skipped when the company-default
-        // COGS / Stock accounts are unset (mirrors the legacy event path).
         if abs(cogsTotal) > 0.0001, let cogsAccount, let inventoryAccount {
             let amount = FieldValue.double(cogsTotal)
             let zero = FieldValue.double(0)
@@ -425,15 +447,59 @@ nonisolated final class PostingCoordinator {
                 id: "GL-\(doc.id)-cogs\(suffix(reversal))", postingDate: postingDate, account: .string(cogsAccount),
                 debit: reversal ? zero : amount, credit: reversal ? amount : zero,
                 partyType: nil, party: nil, costCenter: nil,
-                voucherType: "SalesDelivery", voucherNo: doc.id, reversal: reversal, company: doc.company
+                voucherType: voucherType, voucherNo: doc.id, reversal: reversal, company: doc.company
             ))
             docs.append(glRow(
                 id: "GL-\(doc.id)-inventory\(suffix(reversal))", postingDate: postingDate, account: .string(inventoryAccount),
                 debit: reversal ? amount : zero, credit: reversal ? zero : amount,
                 partyType: nil, party: nil, costCenter: nil,
-                voucherType: "SalesDelivery", voucherNo: doc.id, reversal: reversal, company: doc.company
+                voucherType: voucherType, voucherNo: doc.id, reversal: reversal, company: doc.company
             ))
         }
+        return docs
+    }
+
+    /// POS Invoice is a cash sale: the outgoing stock + COGS (shared with Sales
+    /// Delivery) plus the financial legs — Dr Cash (gross) / Cr Income (net) /
+    /// Cr Output VAT (+ TaxTrans). No AR / CustTrans, since it is paid at the
+    /// till. The document's own cash / income accounts take precedence over the
+    /// company-default fallbacks. Reversal flips every leg.
+    private static func posInvoiceRows(
+        _ doc: Document, reversal: Bool, costBasis: [Int: Double],
+        cogsAccount: String?, inventoryAccount: String?,
+        incomeAccount: String?, cashAccount: String?, fallbackVatAccount: String?
+    ) -> [Document] {
+        var docs = stockIssueRows(doc, voucherType: "POSInvoice", reversal: reversal,
+                                  costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount)
+
+        let postingDate = doc.fields["transaction_date"] ?? doc.fields["posting_date"] ?? .date(Date())
+        let taxRowsChildren = doc.children["taxes"] ?? []
+        let grand = asDouble(doc.fields["grand_total"]) ?? 0
+        let net   = asDouble(doc.fields["net_total"]) ?? (grand - totalTax(taxRowsChildren))
+        let customer = doc.fields["customer"]
+
+        // Skip the financial legs when the accounts aren't configured (stock
+        // still posts) — mirrors the legacy derivePOSInvoice guard.
+        guard let cash = nonEmptyString(doc.fields["cash_account"]) ?? cashAccount,
+              let income = nonEmptyString(doc.fields["income_account"]) ?? incomeAccount
+        else { return docs }
+
+        let zero = FieldValue.double(0)
+        // Dr Cash / Bank — gross received.
+        docs.append(glRow(
+            id: "GL-\(doc.id)-cash\(suffix(reversal))", postingDate: postingDate, account: .string(cash),
+            debit: reversal ? zero : .double(grand), credit: reversal ? .double(grand) : zero,
+            partyType: nil, party: nil, costCenter: nil,
+            voucherType: "POSInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        // Cr Income — net of tax.
+        docs.append(glRow(
+            id: "GL-\(doc.id)-income\(suffix(reversal))", postingDate: postingDate, account: .string(income),
+            debit: reversal ? .double(net) : zero, credit: reversal ? zero : .double(net),
+            partyType: nil, party: nil, costCenter: nil,
+            voucherType: "POSInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        docs += taxRowDocs(doc, rows: taxRowsChildren, party: customer, partyTypeValue: "Customer", isOutput: true, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
         return docs
     }
 
