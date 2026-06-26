@@ -13,6 +13,9 @@ struct mercantis_hubApp: App {
     /// can show operators every atomic-posting batch (posted / reversed / and,
     /// in the unlikely event the atomic path is ever bypassed, pending / failed).
     let postingBatchStore: PostingBatchStore
+    /// ADR-044 print engine, holding every registered print format. Injected
+    /// into the environment so document headers can offer the Print menu.
+    let printService: PrintService
     /// Wall 7 — retained so its event subscriptions stay alive for the
     /// lifetime of the app. Held via a strong reference at app scope.
     let ledgerDerivation: LedgerDerivationService
@@ -133,6 +136,13 @@ struct mercantis_hubApp: App {
         // retired once posting moved into the transaction).
         self.postingCoordinator = PostingCoordinator(engine: documentEngine)
         self.postingBatchStore = PostingBatchStore(database: database)
+        // ADR-044 print engine: register a Standard format for every DocType plus
+        // the curated sales / purchase formats, so any record can be printed/PDF'd.
+        let printService = PrintService()
+        for format in HubPrintFormats.all() {
+            printService.register(format: format)
+        }
+        self.printService = printService
         self.ledgerDerivation = LedgerDerivationService(
             engine: documentEngine,
             emitter: emitter
@@ -232,6 +242,7 @@ struct mercantis_hubApp: App {
                 // submit/cancel actions without threading it through every view.
                 .environment(\.postingCoordinator, postingCoordinator)
                 .environment(\.postingBatchStore, postingBatchStore)
+                .environment(\.printService, printService)
             }
         }
         .defaultSize(width: 1100, height: 720)

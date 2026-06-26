@@ -777,6 +777,9 @@ private struct HubDocumentEditor: View {
     /// Phase 1 — posts atomic-posting DocTypes (Journal Entry) inside the
     /// submit/cancel transaction. Injected at app scope; nil in previews.
     @Environment(\.postingCoordinator) private var posting
+    /// ADR-044 print engine, injected at app scope; drives the header Print
+    /// menu (per-DocType formats, default first). Nil in previews / tests.
+    @Environment(\.printService) private var printService
 
     @State private var errorMessage: String?
     /// A transient success note (e.g. after converting a Sales Order into a
@@ -1109,6 +1112,16 @@ private struct HubDocumentEditor: View {
                 }
 
                 Spacer(minLength: 12)
+
+                if let printService, !document.id.isEmpty {
+                    PrintRecordButton(
+                        document: document,
+                        printService: printService,
+                        formatsResolver: { doc in printService.orderedFormats(forDocType: doc.docType) }
+                    )
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+                }
 
                 if inspectorAvailable {
                     Button {
@@ -2229,5 +2242,20 @@ struct HubCommands: Commands {
             .keyboardShortcut("s", modifiers: [.control, .command])
         }
         #endif
+    }
+}
+
+// MARK: - Print service environment injection
+
+private struct PrintServiceKey: EnvironmentKey {
+    static let defaultValue: PrintService? = nil
+}
+
+extension EnvironmentValues {
+    /// The app's print service (ADR-044), injected at app scope so any document
+    /// header can offer the Print menu. Nil in previews / tests.
+    var printService: PrintService? {
+        get { self[PrintServiceKey.self] }
+        set { self[PrintServiceKey.self] = newValue }
     }
 }
