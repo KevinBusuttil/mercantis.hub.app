@@ -15,6 +15,10 @@ struct GuidedPaymentFlowView: View {
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
 
+    /// Phase 1 — posts Payment Entry inside the submit transaction. Injected at
+    /// app scope; nil in previews.
+    @Environment(\.postingCoordinator) private var posting
+
     @State private var parties: [Document] = []
     @State private var accounts: [Document] = []
     @State private var businessProfile: Document?
@@ -302,7 +306,12 @@ struct GuidedPaymentFlowView: View {
         if let refreshed = try engine.fetch(docType: "PaymentEntry", id: doc.id) {
             doc = refreshed
         }
-        try engine.submit(&doc)
+        // Phase 1: post the payment atomically inside the submit transaction.
+        if let posting, let closure = posting.submitClosure(for: doc) {
+            try engine.submit(&doc, inTransaction: closure)
+        } else {
+            try engine.submit(&doc)
+        }
         if let refreshed = try engine.fetch(docType: "PaymentEntry", id: doc.id) {
             doc = refreshed
         }
