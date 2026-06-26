@@ -2,15 +2,18 @@
 //  PostingCoordinator.swift
 //  mercantis hub
 //
-//  Phase 1 (cutover increment 2) — posts selected DocTypes INSIDE the submit
+//  Phase 1 cutover — posts selected DocTypes INSIDE the submit/cancel
 //  transaction via the Core UnitOfWork seam, so the source document and its
 //  ledger rows commit together (or roll back together). This replaces the
 //  post-commit event derivation for those DocTypes; everything else stays on the
 //  legacy LedgerDerivationService event path until later increments.
 //
-//  This increment handles Journal Entry. The DocTypes posted here are listed in
-//  `atomicDocTypes`, which LedgerDerivationService skips so there is no
-//  double-posting.
+//  Increment 2 added Journal Entry. Increment 3a adds the GL-only invoices
+//  (Sales Invoice, Purchase Invoice) — no stock movement, so no in-transaction
+//  Bin recompute is needed. Stock / POS / Payment DocTypes are converted later.
+//
+//  The DocTypes posted here are listed in `atomicDocTypes`, which
+//  LedgerDerivationService skips so there is no double-posting.
 //
 
 import Foundation
@@ -33,7 +36,10 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice"]
+
+    /// Tolerance for the balanced-GL check (currency rounding).
+    private static let balanceTolerance = 0.005
 
     private let engine: DocumentEngine
 
@@ -46,73 +52,98 @@ nonisolated final class PostingCoordinator {
     func submitClosure(for doc: Document) -> ((UnitOfWork) throws -> Void)? {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
-        return { uow in try Self.post(doc, reversal: false, engine: engine, in: uow) }
+        // Resolve company-default accounts OUTSIDE the write transaction (a read
+        // inside the write would be reentrant); capture them for posting.
+        let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
+        return { uow in try Self.post(doc, reversal: false, fallbackVatAccount: fallbackVat, engine: engine, in: uow) }
     }
 
     /// The `inTransaction` closure for cancelling `doc` (writes reversal rows).
     func cancelClosure(for doc: Document) -> ((UnitOfWork) throws -> Void)? {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
-        return { uow in try Self.post(doc, reversal: true, engine: engine, in: uow) }
+        let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
+        return { uow in try Self.post(doc, reversal: true, fallbackVatAccount: fallbackVat, engine: engine, in: uow) }
     }
 
     // MARK: - Posting
 
-    private static func post(_ doc: Document, reversal: Bool, engine: DocumentEngine, in uow: UnitOfWork) throws {
-        switch doc.docType {
-        case "JournalEntry":
-            try postJournalEntry(doc, reversal: reversal, engine: engine, in: uow)
-        default:
-            break
-        }
-    }
-
-    /// Mirrors `LedgerDerivationService.deriveJournalEntry`, but builds the GL /
-    /// subledger rows, validates the batch balances, and writes everything plus
-    /// the PostingBatch inside `uow` — so a JE that doesn't balance (or any write
-    /// failure) rolls the whole submit back and the document stays Draft.
-    private static func postJournalEntry(_ doc: Document, reversal: Bool, engine: DocumentEngine, in uow: UnitOfWork) throws {
-        // Distinct batch ids for post (v1) vs reverse (v2) so cancel doesn't
-        // collide with the original, and a re-fire is idempotent.
+    private static func post(_ doc: Document, reversal: Bool, fallbackVatAccount: String?, engine: DocumentEngine, in uow: UnitOfWork) throws {
+        // Idempotency: one batch per (source, direction). Post is v1, reverse v2,
+        // so cancel doesn't collide with the original and a re-fire is a no-op.
         let version = reversal ? 2 : 1
         let batchId = PostingBatch.makeID(sourceId: doc.id, version: version)
         if try uow.postingBatchExists(id: batchId) { return }
 
-        let postingDate = doc.fields["posting_date"] ?? .date(Date())
-        let currency = doc.fields["company_currency"]
-        let rows = doc.children["accounts"] ?? []
+        let ledgerDocs: [Document]
+        switch doc.docType {
+        case "JournalEntry":    ledgerDocs = journalEntryRows(doc, reversal: reversal)
+        case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
+        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
+        default:                return
+        }
 
+        try commit(ledgerDocs, sourceType: doc.docType, source: doc, reversal: reversal, version: version, engine: engine, in: uow)
+    }
+
+    /// Validate the GL legs balance, then write every ledger row and the
+    /// PostingBatch in the unit of work. A failed balance (or any write) throws,
+    /// rolling the whole submit/cancel back.
+    private static func commit(
+        _ ledgerDocs: [Document],
+        sourceType: String,
+        source: Document,
+        reversal: Bool,
+        version: Int,
+        engine: DocumentEngine,
+        in uow: UnitOfWork
+    ) throws {
         var totalDebit = 0.0
         var totalCredit = 0.0
-        var ledgerDocs: [Document] = []
+        for row in ledgerDocs where row.docType == "GLEntry" {
+            totalDebit  += asDouble(row.fields["debit"]) ?? 0
+            totalCredit += asDouble(row.fields["credit"]) ?? 0
+        }
+        guard abs(totalDebit - totalCredit) < balanceTolerance else {
+            throw PostingError.unbalanced(debit: totalDebit, credit: totalCredit)
+        }
 
-        for row in rows {
+        for row in ledgerDocs {
+            try engine.writeDocument(row, action: reversal ? "reverse" : "post", in: uow)
+        }
+
+        try uow.recordPostingBatch(PostingBatch(
+            id: PostingBatch.makeID(sourceId: source.id, version: version),
+            sourceType: sourceType,
+            sourceId: source.id,
+            status: reversal ? .reversed : .posted,
+            version: version,
+            postedAt: Date(),
+            reversalOfBatch: reversal ? PostingBatch.makeID(sourceId: source.id, version: 1) : nil
+        ))
+    }
+
+    // MARK: - Row builders (mirror LedgerDerivationService.derive*)
+
+    private static func journalEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
+        let postingDate = doc.fields["posting_date"] ?? .date(Date())
+        let currency = doc.fields["company_currency"]
+        var docs: [Document] = []
+
+        for row in doc.children["accounts"] ?? [] {
             guard let account = row.fields["account"] else { continue }
-            // Reversal swaps debit and credit.
             let debit  = reversal ? (row.fields["credit"] ?? .double(0)) : (row.fields["debit"]  ?? .double(0))
             let credit = reversal ? (row.fields["debit"]  ?? .double(0)) : (row.fields["credit"] ?? .double(0))
-            totalDebit  += asDouble(debit) ?? 0
-            totalCredit += asDouble(credit) ?? 0
 
-            var glFields: [String: FieldValue] = [
-                "posting_date": postingDate,
-                "account":      account,
-                "debit":        debit,
-                "credit":       credit,
-                "voucher_type": .string("JournalEntry"),
-                "voucher_no":   .string(doc.id),
-                "is_reversal":  .bool(reversal),
-            ]
-            if let partyType = row.fields["party_type"]   { glFields["party_type"]  = partyType }
-            if let party = row.fields["party"]            { glFields["party"]       = party }
-            if let costCenter = row.fields["cost_center"] { glFields["cost_center"] = costCenter }
-            ledgerDocs.append(ledgerDoc(
-                id: "GL-\(doc.id)-\(row.rowIndex)\(reversal ? "-reversal" : "")",
-                docType: "GLEntry", company: doc.company, fields: glFields
+            docs.append(glRow(
+                id: "GL-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
+                postingDate: postingDate, account: account,
+                debit: debit, credit: credit,
+                partyType: asString(row.fields["party_type"]), party: row.fields["party"],
+                costCenter: row.fields["cost_center"],
+                voucherType: "JournalEntry", voucherNo: doc.id, reversal: reversal, company: doc.company
             ))
 
-            // Party-tagged rows adjust the customer / supplier subledger,
-            // mirroring deriveJournalEntry's sign conventions.
             guard case .string(let partyTypeValue)? = row.fields["party_type"],
                   case .string(let partyId)? = row.fields["party"], !partyId.isEmpty else { continue }
             let net = (asDouble(debit) ?? 0) - (asDouble(credit) ?? 0)
@@ -120,68 +151,247 @@ nonisolated final class PostingCoordinator {
 
             switch partyTypeValue {
             case "Customer":
-                var fields: [String: FieldValue] = [
-                    "trans_type":   .string("Adjustment"),
-                    "customer":     .string(partyId),
-                    "posting_date": postingDate,
-                    "amount":       .double(net),
-                    "voucher_type": .string("JournalEntry"),
-                    "voucher_no":   .string(doc.id),
-                    "is_reversal":  .bool(reversal),
-                ]
-                if let currency { fields["currency"] = currency }
-                ledgerDocs.append(ledgerDoc(
-                    id: "CT-\(doc.id)-\(row.rowIndex)\(reversal ? "-reversal" : "")",
-                    docType: "CustTrans", company: doc.company, fields: fields
+                docs.append(custTransRow(
+                    id: "CT-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
+                    transType: "Adjustment", customer: .string(partyId),
+                    postingDate: postingDate, dueDate: nil, amount: .double(net),
+                    currency: currency, voucherType: "JournalEntry", voucherNo: doc.id,
+                    reversal: reversal, company: doc.company
                 ))
             case "Supplier":
-                // Supplier sign convention is opposite (positive = we owe them).
-                var fields: [String: FieldValue] = [
-                    "trans_type":   .string("Adjustment"),
-                    "supplier":     .string(partyId),
-                    "posting_date": postingDate,
-                    "amount":       .double(-net),
-                    "voucher_type": .string("JournalEntry"),
-                    "voucher_no":   .string(doc.id),
-                    "is_reversal":  .bool(reversal),
-                ]
-                if let currency { fields["currency"] = currency }
-                ledgerDocs.append(ledgerDoc(
-                    id: "VT-\(doc.id)-\(row.rowIndex)\(reversal ? "-reversal" : "")",
-                    docType: "VendTrans", company: doc.company, fields: fields
+                docs.append(vendTransRow(
+                    id: "VT-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
+                    transType: "Adjustment", supplier: .string(partyId),
+                    postingDate: postingDate, dueDate: nil, amount: .double(-net),
+                    currency: currency, voucherType: "JournalEntry", voucherNo: doc.id,
+                    reversal: reversal, company: doc.company
                 ))
             default:
                 break
             }
         }
-
-        // Balanced-GL gate: a JE that does not balance must not post.
-        guard abs(totalDebit - totalCredit) < 0.005 else {
-            throw PostingError.unbalanced(debit: totalDebit, credit: totalCredit)
-        }
-
-        for ledger in ledgerDocs {
-            try engine.writeDocument(ledger, action: reversal ? "reverse" : "post", in: uow)
-        }
-
-        try uow.recordPostingBatch(PostingBatch(
-            id: batchId,
-            sourceType: "JournalEntry",
-            sourceId: doc.id,
-            status: reversal ? .reversed : .posted,
-            version: version,
-            postedAt: Date(),
-            reversalOfBatch: reversal ? PostingBatch.makeID(sourceId: doc.id, version: 1) : nil
-        ))
+        return docs
     }
 
-    private static func ledgerDoc(id: String, docType: String, company: String, fields: [String: FieldValue]) -> Document {
+    private static func salesInvoiceRows(_ doc: Document, reversal: Bool, fallbackVatAccount: String?) -> [Document] {
+        guard let receivable = doc.fields["debit_to"],
+              let income = doc.fields["income_account"] else { return [] }
+        let postingDate = doc.fields["transaction_date"] ?? .date(Date())
+        let amount   = doc.fields["grand_total"] ?? .double(0)
+        let costCenter = doc.fields["cost_center"]
+        let customer = doc.fields["customer"]
+        let currency = doc.fields["currency"]
+        let dueDate  = doc.fields["due_date"]
+        let taxRowsChildren = doc.children["taxes"] ?? []
+        let grand = asDouble(amount) ?? 0
+        let net   = asDouble(doc.fields["net_total"]) ?? (grand - totalTax(taxRowsChildren))
+
+        var docs: [Document] = []
+        // Dr AR (gross), Cr Income (net).
+        docs.append(glRow(
+            id: "GL-\(doc.id)-debit\(suffix(reversal))", postingDate: postingDate, account: receivable,
+            debit: .double(reversal ? 0 : grand), credit: .double(reversal ? grand : 0),
+            partyType: "Customer", party: customer, costCenter: costCenter,
+            voucherType: "SalesInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        docs.append(glRow(
+            id: "GL-\(doc.id)-credit\(suffix(reversal))", postingDate: postingDate, account: income,
+            debit: .double(reversal ? net : 0), credit: .double(reversal ? 0 : net),
+            partyType: nil, party: nil, costCenter: costCenter,
+            voucherType: "SalesInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        docs += taxRowDocs(doc, rows: taxRowsChildren, party: customer, partyTypeValue: "Customer", isOutput: true, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
+
+        if let customerValue = customer {
+            docs.append(custTransRow(
+                id: "CT-\(doc.id)\(suffix(reversal))", transType: reversal ? "CreditNote" : "Invoice",
+                customer: customerValue, postingDate: postingDate, dueDate: dueDate,
+                amount: signed(amount, negate: reversal), currency: currency,
+                voucherType: "SalesInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        return docs
+    }
+
+    private static func purchaseInvoiceRows(_ doc: Document, reversal: Bool, fallbackVatAccount: String?) -> [Document] {
+        guard let payable = doc.fields["credit_to"],
+              let expense = doc.fields["expense_account"] else { return [] }
+        let postingDate = doc.fields["transaction_date"] ?? .date(Date())
+        let amount   = doc.fields["grand_total"] ?? .double(0)
+        let costCenter = doc.fields["cost_center"]
+        let supplier = doc.fields["supplier"]
+        let currency = doc.fields["currency"]
+        let dueDate  = doc.fields["due_date"]
+        let taxRowsChildren = doc.children["taxes"] ?? []
+        let grand = asDouble(amount) ?? 0
+        let net   = asDouble(doc.fields["net_total"]) ?? (grand - totalTax(taxRowsChildren))
+
+        var docs: [Document] = []
+        // Cr AP (gross), Dr Expense (net).
+        docs.append(glRow(
+            id: "GL-\(doc.id)-credit\(suffix(reversal))", postingDate: postingDate, account: payable,
+            debit: .double(reversal ? grand : 0), credit: .double(reversal ? 0 : grand),
+            partyType: "Supplier", party: supplier, costCenter: costCenter,
+            voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        docs.append(glRow(
+            id: "GL-\(doc.id)-debit\(suffix(reversal))", postingDate: postingDate, account: expense,
+            debit: .double(reversal ? 0 : net), credit: .double(reversal ? net : 0),
+            partyType: nil, party: nil, costCenter: costCenter,
+            voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+        ))
+        docs += taxRowDocs(doc, rows: taxRowsChildren, party: supplier, partyTypeValue: "Supplier", isOutput: false, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
+
+        if let supplierValue = supplier {
+            docs.append(vendTransRow(
+                id: "VT-\(doc.id)\(suffix(reversal))", transType: reversal ? "CreditNote" : "Invoice",
+                supplier: supplierValue, postingDate: postingDate, dueDate: dueDate,
+                amount: signed(amount, negate: reversal), currency: currency,
+                voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        return docs
+    }
+
+    /// VAT GL leg (Cr output / Dr input) + TaxTrans row per tax child row.
+    private static func taxRowDocs(
+        _ doc: Document, rows: [ChildRow], party: FieldValue?, partyTypeValue: String,
+        isOutput: Bool, reversal: Bool, fallbackVatAccount: String?
+    ) -> [Document] {
+        guard !rows.isEmpty else { return [] }
+        let postingDate = doc.fields["transaction_date"] ?? doc.fields["posting_date"] ?? .date(Date())
+        let fallbackAccount = fallbackVatAccount
+        var docs: [Document] = []
+
+        for (idx, row) in rows.enumerated() {
+            let taxAmount = asDouble(row.fields["tax_amount"]) ?? 0
+            let taxable   = asDouble(row.fields["taxable_amount"]) ?? 0
+            let account   = nonEmptyString(row.fields["tax_account"]) ?? fallbackAccount
+
+            if taxAmount != 0, let account {
+                let amt = FieldValue.double(taxAmount)
+                let zero = FieldValue.double(0)
+                let debit:  FieldValue
+                let credit: FieldValue
+                if isOutput {
+                    debit  = reversal ? amt : zero
+                    credit = reversal ? zero : amt
+                } else {
+                    debit  = reversal ? zero : amt
+                    credit = reversal ? amt : zero
+                }
+                docs.append(glRow(
+                    id: "GL-\(doc.id)-tax-\(idx)\(suffix(reversal))", postingDate: postingDate,
+                    account: .string(account), debit: debit, credit: credit,
+                    partyType: nil, party: nil, costCenter: nil,
+                    voucherType: doc.docType, voucherNo: doc.id, reversal: reversal, company: doc.company
+                ))
+            }
+
+            var taxFields: [String: FieldValue] = [
+                "tax_type":     .string(asString(row.fields["tax_type"]) ?? "VAT"),
+                "posting_date": postingDate,
+                "base_amount":  signed(.double(taxable), negate: reversal),
+                "tax_amount":   signed(.double(taxAmount), negate: reversal),
+                "party_type":   .string(partyTypeValue),
+                "voucher_type": .string(doc.docType),
+                "voucher_no":   .string(doc.id),
+                "is_reversal":  .bool(reversal),
+            ]
+            if let taxCode = asString(row.fields["tax_code"]) { taxFields["tax"] = .string(taxCode) }
+            if let rate = row.fields["rate"] { taxFields["rate"] = rate }
+            if let party { taxFields["party"] = party }
+            docs.append(ledger(id: "TT-\(doc.id)-\(idx)\(suffix(reversal))", docType: "TaxTrans", company: doc.company, fields: taxFields))
+        }
+        return docs
+    }
+
+    // MARK: - Ledger document builders
+
+    private static func glRow(
+        id: String, postingDate: FieldValue, account: FieldValue,
+        debit: FieldValue, credit: FieldValue,
+        partyType: String?, party: FieldValue?, costCenter: FieldValue?,
+        voucherType: String, voucherNo: String, reversal: Bool, company: String
+    ) -> Document {
+        var fields: [String: FieldValue] = [
+            "posting_date": postingDate,
+            "account":      account,
+            "debit":        debit,
+            "credit":       credit,
+            "voucher_type": .string(voucherType),
+            "voucher_no":   .string(voucherNo),
+            "is_reversal":  .bool(reversal),
+        ]
+        if let partyType  { fields["party_type"]  = .string(partyType) }
+        if let party      { fields["party"]       = party }
+        if let costCenter { fields["cost_center"] = costCenter }
+        return ledger(id: id, docType: "GLEntry", company: company, fields: fields)
+    }
+
+    private static func custTransRow(
+        id: String, transType: String, customer: FieldValue, postingDate: FieldValue,
+        dueDate: FieldValue?, amount: FieldValue, currency: FieldValue?,
+        voucherType: String, voucherNo: String, reversal: Bool, company: String
+    ) -> Document {
+        var fields: [String: FieldValue] = [
+            "trans_type":   .string(transType),
+            "customer":     customer,
+            "posting_date": postingDate,
+            "amount":       amount,
+            "voucher_type": .string(voucherType),
+            "voucher_no":   .string(voucherNo),
+            "is_reversal":  .bool(reversal),
+        ]
+        if let dueDate  { fields["due_date"] = dueDate }
+        if let currency { fields["currency"] = currency }
+        return ledger(id: id, docType: "CustTrans", company: company, fields: fields)
+    }
+
+    private static func vendTransRow(
+        id: String, transType: String, supplier: FieldValue, postingDate: FieldValue,
+        dueDate: FieldValue?, amount: FieldValue, currency: FieldValue?,
+        voucherType: String, voucherNo: String, reversal: Bool, company: String
+    ) -> Document {
+        var fields: [String: FieldValue] = [
+            "trans_type":   .string(transType),
+            "supplier":     supplier,
+            "posting_date": postingDate,
+            "amount":       amount,
+            "voucher_type": .string(voucherType),
+            "voucher_no":   .string(voucherNo),
+            "is_reversal":  .bool(reversal),
+        ]
+        if let dueDate  { fields["due_date"] = dueDate }
+        if let currency { fields["currency"] = currency }
+        return ledger(id: id, docType: "VendTrans", company: company, fields: fields)
+    }
+
+    private static func ledger(id: String, docType: String, company: String, fields: [String: FieldValue]) -> Document {
         Document(
             id: id, docType: docType, company: company, status: "",
             createdAt: Date(), updatedAt: Date(),
             syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
+    }
+
+    // MARK: - Value helpers
+
+    private static func suffix(_ reversal: Bool) -> String { reversal ? "-reversal" : "" }
+
+    private static func totalTax(_ rows: [ChildRow]) -> Double {
+        rows.reduce(0) { $0 + (asDouble($1.fields["tax_amount"]) ?? 0) }
+    }
+
+    private static func signed(_ value: FieldValue, negate: Bool) -> FieldValue {
+        guard negate else { return value }
+        return .double(-(asDouble(value) ?? 0))
+    }
+
+    private static func companyDefault(_ key: String, engine: DocumentEngine) -> String? {
+        guard let company = (try? engine.list(docType: "Company"))?.first else { return nil }
+        return nonEmptyString(company.fields[key])
     }
 
     private static func asDouble(_ value: FieldValue?) -> Double? {
@@ -191,6 +401,16 @@ nonisolated final class PostingCoordinator {
         case .string(let s): return Double(s)
         default: return nil
         }
+    }
+
+    private static func asString(_ value: FieldValue?) -> String? {
+        if case .string(let s)? = value { return s }
+        return nil
+    }
+
+    private static func nonEmptyString(_ value: FieldValue?) -> String? {
+        guard let s = asString(value), !s.isEmpty else { return nil }
+        return s
     }
 }
 
