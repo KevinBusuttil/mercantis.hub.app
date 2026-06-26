@@ -118,6 +118,11 @@ nonisolated final class PostingCoordinator {
         /// resolved OUTSIDE the write transaction and thrown inside it so the
         /// submit rolls back. Only set on submit (never on reversal).
         var submitValidationError: PostingValidationError?
+        /// Per-line UOM → stock-UOM conversion factor, keyed by child rowIndex.
+        /// Absent entries mean factor 1 (line already in stock UOM). Stock
+        /// quantities and per-unit rates are converted to the stock UOM so bins
+        /// and valuation stay consistent.
+        var uomFactors: [Int: Double] = [:]
     }
 
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
@@ -146,6 +151,7 @@ nonisolated final class PostingCoordinator {
         if atomicStockDocTypes.contains(doc.docType) {
             inputs.cogsAccount = companyDefault("default_expense_account", engine: engine)
             inputs.inventoryAccount = companyDefault("default_stock_account", engine: engine)
+            inputs.uomFactors = uomFactors(for: doc, engine: engine)
             inputs.stockCostBasis = stockCostBasis(for: doc, reversal: reversal, engine: engine)
         }
         // Per-line stock/service classification for the GRNI loop: Purchase
@@ -165,7 +171,7 @@ nonisolated final class PostingCoordinator {
         // to unwind, and adding stock back can't go negative).
         if !reversal {
             inputs.submitValidationError = fiscalPeriodViolation(for: doc, engine: engine)
-                ?? stockAvailabilityViolation(for: doc, engine: engine)
+                ?? stockAvailabilityViolation(for: doc, engine: engine, uomFactors: inputs.uomFactors)
         }
         return inputs
     }
@@ -194,7 +200,7 @@ nonisolated final class PostingCoordinator {
     /// the company has opted into negative stock. Requested quantities are
     /// aggregated per (item, warehouse) across the lines and compared to the
     /// current on-hand balance (read OUTSIDE the write transaction).
-    private static func stockAvailabilityViolation(for doc: Document, engine: DocumentEngine) -> PostingValidationError? {
+    private static func stockAvailabilityViolation(for doc: Document, engine: DocumentEngine, uomFactors: [Int: Double]) -> PostingValidationError? {
         guard ["SalesDelivery", "POSInvoice", "StockEntry"].contains(doc.docType) else { return nil }
         if allowsNegativeStock(engine: engine) { return nil }
         let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
@@ -202,7 +208,8 @@ nonisolated final class PostingCoordinator {
         var requested: [String: (item: String, warehouse: String, qty: Double)] = [:]
         for row in doc.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
-            let qty = asDouble(row.fields["qty"]) ?? 0
+            // Compare on-hand (stock UOM) against the requested qty in stock UOM.
+            let qty = (asDouble(row.fields["qty"]) ?? 0) * (uomFactors[row.rowIndex] ?? 1)
             guard qty > 0 else { continue }
             // The warehouse stock LEAVES: the line / default warehouse for a
             // fulfilment doc, the source warehouse for a Stock Entry (the target
@@ -255,6 +262,35 @@ nonisolated final class PostingCoordinator {
         return flags
     }
 
+    /// Per-line conversion factor from the line UOM to the item's stock UOM,
+    /// keyed by child rowIndex, read OUTSIDE the write transaction. Only lines
+    /// whose UOM differs from the stock UOM and have a defined conversion get an
+    /// entry; everything else is treated as factor 1. `qty_in_stock = line_qty ×
+    /// factor`.
+    private static func uomFactors(for doc: Document, engine: DocumentEngine) -> [Int: Double] {
+        var factors: [Int: Double] = [:]
+        var itemCache: [String: Document?] = [:]
+        for row in doc.children["items"] ?? [] {
+            guard let lineUom = nonEmptyString(row.fields["uom"]),
+                  let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            let item: Document?
+            if let cached = itemCache[itemId] {
+                item = cached
+            } else {
+                item = try? engine.fetch(docType: "Item", id: itemId)
+                itemCache[itemId] = item
+            }
+            guard let item else { continue }
+            // Already in the stock UOM — no conversion.
+            if let stockUom = nonEmptyString(item.fields["stock_uom"]), stockUom == lineUom { continue }
+            if let conversion = (item.children["uoms"] ?? []).first(where: { nonEmptyString($0.fields["uom"]) == lineUom }),
+               let factor = asDouble(conversion.fields["conversion_factor"]), factor > 0 {
+                factors[row.rowIndex] = factor
+            }
+        }
+        return factors
+    }
+
     /// Per-line valuation rate for a Sales Delivery's stock issue, read OUTSIDE
     /// the write transaction. On submit the warehouse MOVING-AVERAGE cost (never
     /// the selling rate); on cancel the ORIGINAL issue cost (read back from the
@@ -305,10 +341,10 @@ nonisolated final class PostingCoordinator {
         case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
         case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount, grniAccount: inputs.grniAccount, stockItemFlags: inputs.stockItemFlags)
         case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: inputs.referencedInvoices)
-        case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount)
-        case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount)
-        case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount)
-        case "StockEntry":      ledgerDocs = stockEntryRows(doc, reversal: reversal)
+        case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, uomFactors: inputs.uomFactors)
+        case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount, uomFactors: inputs.uomFactors)
+        case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount, uomFactors: inputs.uomFactors)
+        case "StockEntry":      ledgerDocs = stockEntryRows(doc, reversal: reversal, uomFactors: inputs.uomFactors)
         default:                return
         }
 
@@ -521,10 +557,11 @@ nonisolated final class PostingCoordinator {
     /// LedgerDerivationService, since it reads the now-committed ledger rows.
     private static func salesDeliveryRows(
         _ doc: Document, reversal: Bool, costBasis: [Int: Double],
-        cogsAccount: String?, inventoryAccount: String?
+        cogsAccount: String?, inventoryAccount: String?, uomFactors: [Int: Double]
     ) -> [Document] {
         stockIssueRows(doc, voucherType: "SalesDelivery", reversal: reversal,
-                       costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount)
+                       costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount,
+                       uomFactors: uomFactors)
     }
 
     /// Shared outgoing-stock derivation for Sales Delivery and POS Invoice: a
@@ -536,7 +573,7 @@ nonisolated final class PostingCoordinator {
     /// post-commit by LedgerDerivationService from the committed ledger rows.
     static func stockIssueRows(
         _ doc: Document, voucherType: String, reversal: Bool, costBasis: [Int: Double],
-        cogsAccount: String?, inventoryAccount: String?
+        cogsAccount: String?, inventoryAccount: String?, uomFactors: [Int: Double] = [:]
     ) -> [Document] {
         let postingDate = doc.fields["posting_date"] ?? doc.fields["transaction_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
@@ -548,9 +585,11 @@ nonisolated final class PostingCoordinator {
         for row in doc.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
             guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
-            let qty = row.fields["qty"] ?? .double(0)
+            // Convert the line qty to the item's stock UOM; the cost basis is
+            // already per stock UOM (read from the bin).
+            let stockQty = (asDouble(row.fields["qty"]) ?? 0) * (uomFactors[row.rowIndex] ?? 1)
             // Issue: -qty on submit, +qty on reversal.
-            let signedQty = signed(qty, negate: !reversal)
+            let signedQty = signed(.double(stockQty), negate: !reversal)
             let unitCost = costBasis[row.rowIndex] ?? 0
             docs.append(sleRow(
                 id: "SLE-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
@@ -559,7 +598,7 @@ nonisolated final class PostingCoordinator {
                 voucherType: voucherType, voucherNo: doc.id,
                 qtyChange: signedQty, rate: .double(unitCost), reversal: reversal, company: doc.company
             ))
-            cogsTotal += (asDouble(qty) ?? 0) * unitCost
+            cogsTotal += stockQty * unitCost
         }
 
         if abs(cogsTotal) > 0.0001, let cogsAccount, let inventoryAccount {
@@ -589,10 +628,12 @@ nonisolated final class PostingCoordinator {
     private static func posInvoiceRows(
         _ doc: Document, reversal: Bool, costBasis: [Int: Double],
         cogsAccount: String?, inventoryAccount: String?,
-        incomeAccount: String?, cashAccount: String?, fallbackVatAccount: String?
+        incomeAccount: String?, cashAccount: String?, fallbackVatAccount: String?,
+        uomFactors: [Int: Double]
     ) -> [Document] {
         var docs = stockIssueRows(doc, voucherType: "POSInvoice", reversal: reversal,
-                                  costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount)
+                                  costBasis: costBasis, cogsAccount: cogsAccount, inventoryAccount: inventoryAccount,
+                                  uomFactors: uomFactors)
 
         let postingDate = doc.fields["transaction_date"] ?? doc.fields["posting_date"] ?? .date(Date())
         let taxRowsChildren = doc.children["taxes"] ?? []
@@ -631,7 +672,7 @@ nonisolated final class PostingCoordinator {
     /// submit, -qty on reversal), at the line's stated valuation rate. A line
     /// may have only one of the two (a pure receipt or issue). The trans_type
     /// follows the entry's purpose; the Bin cache is recomputed post-commit.
-    static func stockEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
+    static func stockEntryRows(_ doc: Document, reversal: Bool, uomFactors: [Int: Double] = [:]) -> [Document] {
         let postingDate = doc.fields["posting_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
         let transType = stockLedgerTransType(forPurpose: doc.fields["purpose"])
@@ -639,7 +680,8 @@ nonisolated final class PostingCoordinator {
         var docs: [Document] = []
         for row in doc.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
-            let qty = row.fields["qty"] ?? .double(0)
+            // Convert to stock UOM; the entry's valuation_rate is per stock UOM.
+            let stockQty = FieldValue.double((asDouble(row.fields["qty"]) ?? 0) * (uomFactors[row.rowIndex] ?? 1))
             let rate = row.fields["valuation_rate"]
 
             if let sourceWh = nonEmptyString(row.fields["source_warehouse"]) {
@@ -648,7 +690,7 @@ nonisolated final class PostingCoordinator {
                     transType: transType, item: .string(itemId), warehouse: .string(sourceWh),
                     postingDate: postingDate, postingTime: postingTime,
                     voucherType: "StockEntry", voucherNo: doc.id,
-                    qtyChange: signed(qty, negate: !reversal), rate: rate, reversal: reversal, company: doc.company
+                    qtyChange: signed(stockQty, negate: !reversal), rate: rate, reversal: reversal, company: doc.company
                 ))
             }
             if let targetWh = nonEmptyString(row.fields["target_warehouse"]) {
@@ -657,7 +699,7 @@ nonisolated final class PostingCoordinator {
                     transType: transType, item: .string(itemId), warehouse: .string(targetWh),
                     postingDate: postingDate, postingTime: postingTime,
                     voucherType: "StockEntry", voucherNo: doc.id,
-                    qtyChange: signed(qty, negate: reversal), rate: rate, reversal: reversal, company: doc.company
+                    qtyChange: signed(stockQty, negate: reversal), rate: rate, reversal: reversal, company: doc.company
                 ))
             }
         }
@@ -687,7 +729,7 @@ nonisolated final class PostingCoordinator {
     /// clears GRNI for the same lines so the loop nets to Dr Inventory / Cr AP.
     static func purchaseReceiptRows(
         _ doc: Document, reversal: Bool, stockItemFlags: [String: Bool],
-        inventoryAccount: String?, grniAccount: String?
+        inventoryAccount: String?, grniAccount: String?, uomFactors: [Int: Double] = [:]
     ) -> [Document] {
         let postingDate = doc.fields["transaction_date"] ?? doc.fields["posting_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
@@ -699,19 +741,24 @@ nonisolated final class PostingCoordinator {
         for row in doc.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
             guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
-            let qty = row.fields["qty"] ?? .double(0)
-            let rate = row.fields["valuation_rate"] ?? row.fields["rate"] ?? .double(0)
+            let factor = uomFactors[row.rowIndex] ?? 1
+            let lineQty = asDouble(row.fields["qty"]) ?? 0
+            let lineRate = asDouble(row.fields["valuation_rate"] ?? row.fields["rate"]) ?? 0
+            // Convert to stock UOM: qty scales up by the factor, the per-unit
+            // rate scales down by it, so the line VALUE (qty × rate) is invariant.
+            let stockQty = lineQty * factor
+            let stockRate = factor != 0 ? lineRate / factor : lineRate
             // Receipt: +qty on submit, -qty on reversal.
-            let signedQty = signed(qty, negate: reversal)
+            let signedQty = signed(.double(stockQty), negate: reversal)
             docs.append(sleRow(
                 id: "SLE-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
                 transType: "Receipt", item: .string(itemId), warehouse: .string(whId),
                 postingDate: postingDate, postingTime: postingTime,
                 voucherType: "PurchaseReceipt", voucherNo: doc.id,
-                qtyChange: signedQty, rate: rate, reversal: reversal, company: doc.company
+                qtyChange: signedQty, rate: .double(stockRate), reversal: reversal, company: doc.company
             ))
             if stockItemFlags[itemId] ?? true {
-                inventoryTotal += (asDouble(qty) ?? 0) * (asDouble(rate) ?? 0)
+                inventoryTotal += stockQty * stockRate
             }
         }
 
