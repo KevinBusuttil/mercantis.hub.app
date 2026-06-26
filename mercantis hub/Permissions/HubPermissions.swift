@@ -1,89 +1,114 @@
 // mercantis hub
 // Created by Kevin Busuttil on 12/04/2026.
 
-import Foundation
+import MercantisCore
 
-// Uses Core's PermissionRule — imported from MercantisCore when dependency is wired up.
+/// Hub role names. Operators carry a `Set<String>` of these on their
+/// `OperatorProfile`; Core's `PermissionEngine` matches them against each
+/// DocType's `PermissionRule`s. (ADR-004 / ADR-011)
+public enum HubRole {
+    public static let systemManager   = "System Manager"
+    public static let salesManager    = "Sales Manager"
+    public static let purchaseManager = "Purchase Manager"
+    public static let accountant      = "Accountant"
+    public static let stockManager    = "Stock Manager"
+    public static let posOperator     = "POS Operator"
 
-/// Stub namespace for Hub's default role-based permission templates.
+    public static let all: [String] = [
+        systemManager, salesManager, purchaseManager, accountant, stockManager, posOperator
+    ]
+}
+
+/// The functional area a group of DocTypes belongs to. Used to decorate each
+/// module's DocTypes with the roles that may act on them, without depending on
+/// fragile `DocType.module` string matching.
+public enum HubModuleScope {
+    case setup       // masters / configuration / capture intake
+    case sales       // CRM + Selling
+    case buying      // Purchasing
+    case stock       // Inventory / Deliveries / Manufacturing
+    case accounting  // GL / subledger / tax
+    case pos         // Point of sale
+}
+
+/// Hub's default role-based permission templates. (ADR-004 — declarative data.)
 ///
-/// Permission rules are declarative `PermissionRule` values (ADR-004) that specify
-/// which roles can read, write, submit, cancel, or delete each DocType.
-/// Core's `PermissionEngine` enforces them at runtime; Hub only provides the data.
-///
-/// - ADR-004: Permissions are declarative manifest data.
-/// - ADR-008: No dynamic code loading; permission rules are statically declared.
-public enum HubPermissions: Sendable {
+/// Previously these were `fatalError` stubs and `allRoles` was empty, so the
+/// permission rules Core needs were never produced. Combined with Hub never
+/// propagating operator roles, that meant no access control was enforced. This
+/// type now produces real `PermissionRule` values and decorates each module's
+/// DocTypes with the roles that may act on them. System Manager always has full
+/// access; other roles get full access to their own area and read access to
+/// adjacent financial documents.
+public enum HubPermissions {
 
-    // MARK: - System Manager
+    // MARK: - Rule builders
 
-    /// Full access to all DocTypes and settings.
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var systemManager: Never {
-        fatalError("systemManager is a stub — implement with Core's PermissionRule.")
+    static func full(_ role: String) -> PermissionRule {
+        PermissionRule(
+            role: role,
+            canRead: true, canWrite: true, canCreate: true,
+            canDelete: true, canSubmit: true, canAmend: true
+        )
     }
 
-    // MARK: - Sales Manager
-
-    /// Full access to CRM and Sales module DocTypes; read access to Inventory.
-    ///
-    /// DocTypes in scope: Customer, Contact, Address, Lead, Opportunity,
-    ///                    Quotation, SalesOrder, DeliveryNote, SalesInvoice, PricingRule
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var salesManager: Never {
-        fatalError("salesManager is a stub — implement with Core's PermissionRule.")
+    static func readOnly(_ role: String) -> PermissionRule {
+        PermissionRule(
+            role: role,
+            canRead: true, canWrite: false, canCreate: false,
+            canDelete: false, canSubmit: false, canAmend: false
+        )
     }
 
-    // MARK: - Accountant
-
-    /// Full access to Accounting module DocTypes; read access to Sales and Buying invoices.
-    ///
-    /// DocTypes in scope: Account, JournalEntry, GLEntry, PaymentEntry, FiscalYear, CostCenter,
-    ///                    SalesInvoice (read), PurchaseInvoice (read)
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var accountant: Never {
-        fatalError("accountant is a stub — implement with Core's PermissionRule.")
+    /// The roles (and their access) appropriate to a functional area. System
+    /// Manager is always included with full access.
+    static func rules(for scope: HubModuleScope) -> [PermissionRule] {
+        var rules = [full(HubRole.systemManager)]
+        switch scope {
+        case .setup:
+            // Masters/config: everyone reads; managers don't get blanket write
+            // here (System Manager configures the company).
+            rules += [
+                readOnly(HubRole.salesManager),
+                readOnly(HubRole.purchaseManager),
+                readOnly(HubRole.accountant),
+                readOnly(HubRole.stockManager),
+                readOnly(HubRole.posOperator)
+            ]
+        case .sales:
+            rules += [full(HubRole.salesManager), readOnly(HubRole.accountant)]
+        case .buying:
+            rules += [full(HubRole.purchaseManager), readOnly(HubRole.accountant)]
+        case .stock:
+            rules += [
+                full(HubRole.stockManager),
+                readOnly(HubRole.salesManager),
+                readOnly(HubRole.purchaseManager)
+            ]
+        case .accounting:
+            rules += [full(HubRole.accountant)]
+        case .pos:
+            rules += [full(HubRole.posOperator), full(HubRole.salesManager)]
+        }
+        return rules
     }
 
-    // MARK: - Stock User
+    // MARK: - Decoration
 
-    /// Full access to Inventory module DocTypes; read access to Items.
-    ///
-    /// DocTypes in scope: Item, ItemGroup, Warehouse, StockEntry, StockLedgerEntry
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var stockUser: Never {
-        fatalError("stockUser is a stub — implement with Core's PermissionRule.")
+    /// Return `docTypes` with `scope`-appropriate permission rules applied.
+    /// Any role a DocType already declares that this scope does not cover is
+    /// preserved, so bespoke per-DocType rules are not lost.
+    public static func decorated(_ docTypes: [DocType], scope: HubModuleScope) -> [DocType] {
+        let computed = rules(for: scope)
+        let computedRoles = Set(computed.map { $0.role })
+        return docTypes.map { docType in
+            var copy = docType
+            let preserved = docType.permissions.filter { !computedRoles.contains($0.role) }
+            copy.permissions = computed + preserved
+            return copy
+        }
     }
 
-    // MARK: - HR Manager
-
-    /// Full access to HR module DocTypes.
-    ///
-    /// DocTypes in scope: Employee, LeaveApplication, Attendance, ExpenseClaim, Payroll
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var hrManager: Never {
-        fatalError("hrManager is a stub — implement with Core's PermissionRule.")
-    }
-
-    // MARK: - Purchase Manager
-
-    /// Full access to Buying module DocTypes; read access to Inventory.
-    ///
-    /// DocTypes in scope: Supplier, PurchaseOrder, PurchaseReceipt, PurchaseInvoice
-    ///
-    /// - TODO: Implement using `PermissionRule` values from MercantisCore.
-    public static var purchaseManager: Never {
-        fatalError("purchaseManager is a stub — implement with Core's PermissionRule.")
-    }
-
-    // MARK: - All Roles
-
-    /// All permission role definitions — will be wired into `HubManifest.build()`.
-    /// - TODO: Replace with an array of `PermissionRule` values from MercantisCore.
-    public static let allRoles: [Any] = []
+    /// All Hub role names, for tooling / role pickers.
+    public static let allRoles: [String] = HubRole.all
 }

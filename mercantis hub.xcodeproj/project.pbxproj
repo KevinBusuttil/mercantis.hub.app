@@ -499,7 +499,7 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/KevinBusuttil/mercantis.core.app";
 			requirement = {
-				branch = "claude/nice-curie-6mfq15";
+				branch = "claude/trusting-babbage-b0t6er";
 				kind = branch;
 			};
 		};

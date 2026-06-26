@@ -5,18 +5,22 @@ public enum HubManifest: Sendable {
     public static let appName = "Mercantis Hub"
     public static let version = "0.1.0"
 
+    // P0.3: each module's DocTypes are decorated with role-based PermissionRules
+    // (HubPermissions) keyed by functional area, so Core's PermissionEngine has
+    // real rules to enforce once operator roles are propagated (P0.2). System
+    // Manager retains full access everywhere.
     public static let allDocTypes: [DocType] =
-        Setup.allDocTypes              // tree masters and shared link targets first
-        + Tax.allDocTypes              // TaxCategory / TaxCode + shared TaxCharge row
-        + CRM.allDocTypes              // Customer, Contact, Address, Lead + DynamicLink
-        + Selling.allDocTypes          // Item + sales transactions
-        + Buying.allDocTypes           // Supplier + purchase transactions
-        + Stock.allDocTypes            // StockEntry + StockEntryDetail + Bin
-        + Deliveries.allDocTypes       // SalesDelivery + SalesDeliveryItem
-        + Accounting.allDocTypes       // Account + JournalEntry / PaymentEntry
-        + POS.allDocTypes              // POS Profile / Session / Invoice + Payment Tender
-        + Manufacturing.allDocTypes    // BOM / WorkOrder / JobCard / ProductionPlan
-        + Capture.allDocTypes          // Captured Document + Capture Rule (ADR-049)
+        HubPermissions.decorated(Setup.allDocTypes, scope: .setup)
+        + HubPermissions.decorated(Tax.allDocTypes, scope: .accounting)
+        + HubPermissions.decorated(CRM.allDocTypes, scope: .sales)
+        + HubPermissions.decorated(Selling.allDocTypes, scope: .sales)
+        + HubPermissions.decorated(Buying.allDocTypes, scope: .buying)
+        + HubPermissions.decorated(Stock.allDocTypes, scope: .stock)
+        + HubPermissions.decorated(Deliveries.allDocTypes, scope: .stock)
+        + HubPermissions.decorated(Accounting.allDocTypes, scope: .accounting)
+        + HubPermissions.decorated(POS.allDocTypes, scope: .pos)
+        + HubPermissions.decorated(Manufacturing.allDocTypes, scope: .stock)
+        + HubPermissions.decorated(Capture.allDocTypes, scope: .setup)
 
     public static func docType(for id: String) -> DocType? {
         allDocTypes.first { $0.id == id }

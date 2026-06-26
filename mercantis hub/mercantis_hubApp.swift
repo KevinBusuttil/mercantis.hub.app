@@ -39,7 +39,7 @@ struct mercantis_hubApp: App {
     /// Multi-operator local auth. Gates the app behind a passcode lock; the
     /// active operator will drive the audit identity once Core grows a session
     /// hook (see `HubIdentity`).
-    @StateObject private var authStore = AuthStore()
+    @StateObject private var authStore: AuthStore
 
     /// Serverless cross-device company sync over a shared folder (ADR-047).
     /// Held at app scope so its background timer / event subscriptions live for
@@ -65,6 +65,12 @@ struct mercantis_hubApp: App {
         // LedgerDerivationService subscribes from the same instance.
         let emitter = EventEmitter()
 
+        // P0.2: the signed-in operator (id + roles) drives audit identity and
+        // permission checks. Built here so the context provider below can capture
+        // a stable reference; injected into the StateObject like `companySync`.
+        let authStore = AuthStore()
+        _authStore = StateObject(wrappedValue: authStore)
+
         let documentEngine = DocumentEngine(
             database: database,
             registry: registry,
@@ -72,6 +78,28 @@ struct mercantis_hubApp: App {
             userId: HubIdentity.userId(),
             eventEmitter: emitter
         )
+        // P0.2: resolve the live operator at call time. DocumentEngine mutations
+        // originate from MainActor UI (and the synchronous derivation services
+        // they trigger), so reading the MainActor-isolated AuthStore here is
+        // safe. Before unlock, `currentOperator` is nil and the engine falls back
+        // to the device identity (HubIdentity.userId via .legacy).
+        documentEngine.setExecutionContextProvider {
+            // Only the MainActor-bound UI path has a meaningful operator. Off the
+            // main thread (e.g. the sync engine applying remote mutations) fall
+            // back to nil so the engine uses its legacy identity rather than
+            // crashing on an isolation assumption.
+            guard Thread.isMainThread else { return nil }
+            return MainActor.assumeIsolated {
+                guard let op = authStore.currentOperator else { return nil }
+                return ExecutionContext(
+                    operatorId: op.id,
+                    companyId: "Default Company",
+                    roles: op.roles,
+                    deviceId: HubIdentity.deviceId(),
+                    sessionId: op.id
+                )
+            }
+        }
         self.documentEngine = documentEngine
         // Wall 6: Hub uses Core's WorkflowEngine for post-submit state
         // transitions. The convenience init wires
