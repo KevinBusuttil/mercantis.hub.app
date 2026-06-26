@@ -243,7 +243,7 @@ nonisolated final class PostingCoordinator {
 
     // MARK: - Row builders (mirror LedgerDerivationService.derive*)
 
-    private static func journalEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
+    static func journalEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
         let postingDate = doc.fields["posting_date"] ?? .date(Date())
         let currency = doc.fields["company_currency"]
         var docs: [Document] = []
@@ -291,7 +291,7 @@ nonisolated final class PostingCoordinator {
         return docs
     }
 
-    private static func salesInvoiceRows(_ doc: Document, reversal: Bool, fallbackVatAccount: String?) -> [Document] {
+    static func salesInvoiceRows(_ doc: Document, reversal: Bool, fallbackVatAccount: String?) -> [Document] {
         guard let receivable = doc.fields["debit_to"],
               let income = doc.fields["income_account"] else { return [] }
         let postingDate = doc.fields["transaction_date"] ?? .date(Date())
@@ -331,7 +331,7 @@ nonisolated final class PostingCoordinator {
         return docs
     }
 
-    private static func purchaseInvoiceRows(
+    static func purchaseInvoiceRows(
         _ doc: Document, reversal: Bool, fallbackVatAccount: String?,
         grniAccount: String?, stockItemFlags: [String: Bool]
     ) -> [Document] {
@@ -416,7 +416,7 @@ nonisolated final class PostingCoordinator {
     /// flips). Skipped when the COGS / Stock accounts are unset (mirrors the
     /// legacy event path). The derived Stock Balance (Bin) is recomputed
     /// post-commit by LedgerDerivationService from the committed ledger rows.
-    private static func stockIssueRows(
+    static func stockIssueRows(
         _ doc: Document, voucherType: String, reversal: Bool, costBasis: [Int: Double],
         cogsAccount: String?, inventoryAccount: String?
     ) -> [Document] {
@@ -513,7 +513,7 @@ nonisolated final class PostingCoordinator {
     /// submit, -qty on reversal), at the line's stated valuation rate. A line
     /// may have only one of the two (a pure receipt or issue). The trans_type
     /// follows the entry's purpose; the Bin cache is recomputed post-commit.
-    private static func stockEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
+    static func stockEntryRows(_ doc: Document, reversal: Bool) -> [Document] {
         let postingDate = doc.fields["posting_date"] ?? .date(Date())
         let postingTime = doc.fields["posting_time"]
         let transType = stockLedgerTransType(forPurpose: doc.fields["purpose"])
