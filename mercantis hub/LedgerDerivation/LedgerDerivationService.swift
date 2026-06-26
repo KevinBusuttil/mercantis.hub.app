@@ -41,6 +41,10 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
 
     private let engine: DocumentEngine
     private let emitter: EventEmitter
+    /// Derivation writes append-only ledger / subledger rows as a SYSTEM action,
+    /// not on behalf of the submitting operator — any operator who may submit a
+    /// source document triggers them, regardless of their module role. (P0.2)
+    private let systemContext = ExecutionContext.system(operatorId: "system", deviceId: "system")
     /// Phase 3 — recomputes Stock Balance (Bin) rows after this service
     /// writes the Stock Ledger rows for a Stock Entry. Owned here (rather
     /// than wired as a separate event subscriber) so the recompute is
@@ -279,7 +283,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             fields: fields,
             children: [:]
         )
-        try engine.save(sle)
+        try engine.save(sle, context: systemContext)
     }
 
     // MARK: - Journal Entry → GL Entry
@@ -735,7 +739,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             fields: fields,
             children: [:]
         )
-        try engine.save(gle)
+        try engine.save(gle, context: systemContext)
     }
 
     // MARK: - Tax rows → GL Entry + TaxTrans (Phase 2)
@@ -847,7 +851,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
-        try engine.save(doc)
+        try engine.save(doc, context: systemContext)
     }
 
     /// The single Business Profile's default VAT account, used as the
@@ -898,7 +902,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
-        try engine.save(doc)
+        try engine.save(doc, context: systemContext)
     }
 
     private func writeVendTrans(
@@ -934,7 +938,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
-        try engine.save(doc)
+        try engine.save(doc, context: systemContext)
     }
 
     /// Append a Settlement row. Returns `true` when a new row was
@@ -973,7 +977,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
-        try engine.save(doc)
+        try engine.save(doc, context: systemContext)
         return true
     }
 
@@ -996,7 +1000,7 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             ?? 0
         let deltaVal = asDouble(delta) ?? 0
         invoice.fields["outstanding_amount"] = .double(current + deltaVal)
-        try engine.save(invoice)
+        try engine.save(invoice, context: systemContext)
     }
 
     // MARK: - Helpers

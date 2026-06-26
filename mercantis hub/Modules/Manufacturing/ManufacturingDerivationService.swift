@@ -49,6 +49,9 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
 
     private let engine: DocumentEngine
     private let emitter: EventEmitter
+    /// Derivation (BOM rollup, Work Order generation, completion Stock Entry)
+    /// is a SYSTEM action, not gated by the submitting operator's role. (P0.2)
+    private let systemContext = ExecutionContext.system(operatorId: "system", deviceId: "system")
     private var tokens: [SubscriptionToken] = []
 
     public init(engine: DocumentEngine, emitter: EventEmitter) {
@@ -148,7 +151,7 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
         updated.fields["raw_material_cost"] = .double(rawCost)
         updated.fields["operating_cost"]    = .double(opCost)
         updated.fields["total_cost"]        = .double(totalCost)
-        try engine.save(updated)
+        try engine.save(updated, context: systemContext)
     }
 
     // MARK: - 2. ProductionPlan → WorkOrder
@@ -205,7 +208,7 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
                 fields: fields,
                 children: requiredItems.isEmpty ? [:] : ["required_items": requiredItems]
             )
-            try engine.save(wo)
+            try engine.save(wo, context: systemContext)
         }
     }
 
@@ -313,13 +316,13 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
             ],
             children: ["items": rows]
         )
-        var stockEntry = try engine.save(draft)
+        var stockEntry = try engine.save(draft, context: systemContext)
         // Auto-submit so LedgerDerivationService picks up the
         // DocumentSubmittedEvent and writes the corresponding
         // StockLedgerEntries. The user explicitly opted into
         // "automatic on completion" so the post-submit StockEntry
         // shouldn't sit in Draft waiting for them.
-        try engine.submit(&stockEntry)
+        try engine.submit(&stockEntry, context: systemContext)
     }
 
     // MARK: - Helpers
