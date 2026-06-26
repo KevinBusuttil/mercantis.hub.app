@@ -249,6 +249,22 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles
     )
 
+    /// Posting Audit — Tier 3. Every `PostingBatch` written by the atomic
+    /// posting path, problems first (failed / pending) then posted / reversed.
+    /// This is the operator-facing view of posting health: because posting now
+    /// commits in the same transaction as submit/cancel, a healthy system shows
+    /// only `posted` and `reversed` batches and never a `failed` or orphaned
+    /// `pending` one — a non-empty failed/pending section is the signal that
+    /// something bypassed the atomic seam and needs attention.
+    public static let postingAudit = ReportDefinition(
+        id: "posting-audit",
+        name: "Posting Audit",
+        docType: "PostingBatch",
+        columns: ["Batch", "Source Type", "Source", "Status", "Version", "Posted At", "Error"],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
@@ -256,7 +272,7 @@ public enum HubReports: Sendable {
         customerAging, supplierAging,
         trialBalance, balanceSheet, incomeStatement,
         customerStatement, supplierLedger,
-        vatSummary,
+        vatSummary, postingAudit,
     ]
 
     public static func report(forId id: String) -> ReportDefinition? {
@@ -903,6 +919,48 @@ public enum HubReports: Sendable {
 
         rows.append(["—", "Net Income", formatCurrency(revenue - expenses)])
         return ReportResult(columns: incomeStatement.columns, rows: rows)
+    }
+
+    // MARK: - Posting Audit (Tier 3)
+
+    /// List every `PostingBatch`, problems first. Reads the `posting_batches`
+    /// table through `PostingBatchStore` rather than the DocumentEngine — batches
+    /// are a Core posting primitive, not a DocType. When no store is injected
+    /// (previews / tests) it returns an empty result rather than failing.
+    public static func runPostingAudit(store: PostingBatchStore?) throws -> ReportResult {
+        let columns = postingAudit.columns
+        guard let store else { return ReportResult(columns: columns, rows: []) }
+
+        // Surface the statuses that demand attention first. A non-empty
+        // failed / pending section means something bypassed the atomic seam.
+        let statusRank: [PostingStatus: Int] = [.failed: 0, .pending: 1, .reversed: 2, .posted: 3]
+        var all: [PostingBatch] = []
+        for status in [PostingStatus.failed, .pending, .reversed, .posted] {
+            all.append(contentsOf: try store.batches(withStatus: status, limit: 200))
+        }
+        let sorted = all.sorted { lhs, rhs in
+            let lRank = statusRank[lhs.status] ?? 99
+            let rRank = statusRank[rhs.status] ?? 99
+            if lRank != rRank { return lRank < rRank }
+            return lhs.sourceId < rhs.sourceId
+        }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+
+        let rows: [[String?]] = sorted.map { batch in
+            [
+                batch.id,
+                batch.sourceType,
+                batch.sourceId,
+                batch.status.rawValue.capitalized,
+                String(batch.version),
+                batch.postedAt.map { dateFormatter.string(from: $0) } ?? "—",
+                (batch.errorMessage?.isEmpty == false) ? batch.errorMessage : nil,
+            ]
+        }
+        return ReportResult(columns: columns, rows: rows)
     }
 
     // MARK: - Cell helpers

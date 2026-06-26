@@ -257,7 +257,11 @@ enum Buying {
             FieldDefinition(key: "expense_account", label: "Expense Account",
                             type: .link, required: true, linkedDocType: "Account"),
             FieldDefinition(key: "cost_center", label: "Cost Center",
-                            type: .link, required: false, linkedDocType: "CostCenter")
+                            type: .link, required: false, linkedDocType: "CostCenter"),
+            FieldDefinition(key: "is_return", label: "Is Return (Debit Note)",
+                            type: .boolean, required: false, defaultValue: .bool(false)),
+            FieldDefinition(key: "return_against", label: "Return Against",
+                            type: .link, required: false, linkedDocType: "PurchaseInvoice")
         ],
         permissions: [systemManagerPermission],
         workflowId: "wf-purchase-invoice",
@@ -369,6 +373,10 @@ enum Buying {
                             type: .link, required: false, linkedDocType: "Currency"),
             FieldDefinition(key: "set_warehouse", label: "Default Warehouse",
                             type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "is_return", label: "Is Return (Goods Out)",
+                            type: .boolean, required: false, defaultValue: .bool(false)),
+            FieldDefinition(key: "return_against", label: "Return Against",
+                            type: .link, required: false, linkedDocType: "PurchaseReceipt"),
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "PurchaseReceiptItem"),
             FieldDefinition(key: "total_qty", label: "Total Qty",

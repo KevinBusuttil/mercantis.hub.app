@@ -9,6 +9,10 @@ struct mercantis_hubApp: App {
     /// Phase 1 — posts the DocTypes it owns (Journal Entry today) inside the
     /// submit/cancel transaction. Routed from RootView's submit/cancel actions.
     let postingCoordinator: PostingCoordinator
+    /// Tier 3 — reads the `posting_batches` ledger so the Posting Audit report
+    /// can show operators every atomic-posting batch (posted / reversed / and,
+    /// in the unlikely event the atomic path is ever bypassed, pending / failed).
+    let postingBatchStore: PostingBatchStore
     /// Wall 7 — retained so its event subscriptions stay alive for the
     /// lifetime of the app. Held via a strong reference at app scope.
     let ledgerDerivation: LedgerDerivationService
@@ -128,6 +132,7 @@ struct mercantis_hubApp: App {
         // the committed Stock Ledger rows (the legacy event-path derivation was
         // retired once posting moved into the transaction).
         self.postingCoordinator = PostingCoordinator(engine: documentEngine)
+        self.postingBatchStore = PostingBatchStore(database: database)
         self.ledgerDerivation = LedgerDerivationService(
             engine: documentEngine,
             emitter: emitter
@@ -226,6 +231,7 @@ struct mercantis_hubApp: App {
                 // Phase 1: make the posting coordinator available to the form's
                 // submit/cancel actions without threading it through every view.
                 .environment(\.postingCoordinator, postingCoordinator)
+                .environment(\.postingBatchStore, postingBatchStore)
             }
         }
         .defaultSize(width: 1100, height: 720)

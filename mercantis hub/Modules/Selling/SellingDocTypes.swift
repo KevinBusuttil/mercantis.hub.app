@@ -336,7 +336,11 @@ enum Selling {
             FieldDefinition(key: "cost_center", label: "Cost Center",
                             type: .link, required: false, linkedDocType: "CostCenter"),
             FieldDefinition(key: "sales_order", label: "Sales Order",
-                            type: .link, required: false, linkedDocType: "SalesOrder")
+                            type: .link, required: false, linkedDocType: "SalesOrder"),
+            FieldDefinition(key: "is_return", label: "Is Return (Credit Note)",
+                            type: .boolean, required: false, defaultValue: .bool(false)),
+            FieldDefinition(key: "return_against", label: "Return Against",
+                            type: .link, required: false, linkedDocType: "SalesInvoice")
         ],
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-invoice",

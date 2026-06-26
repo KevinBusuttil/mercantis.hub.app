@@ -183,8 +183,11 @@ nonisolated final class PostingCoordinator {
         // submit rolls back. Reversals are exempt (a cancel must always be able
         // to unwind, and adding stock back can't go negative).
         if !reversal {
+            // A return brings stock IN, so it is never availability-checked; the
+            // period guard still applies.
+            let isReturn = doc.fields["is_return"] == .bool(true)
             inputs.submitValidationError = fiscalPeriodViolation(for: doc, engine: engine)
-                ?? stockAvailabilityViolation(for: doc, engine: engine, uomFactors: inputs.uomFactors)
+                ?? (isReturn ? nil : stockAvailabilityViolation(for: doc, engine: engine, uomFactors: inputs.uomFactors))
         }
         return inputs
     }
@@ -400,15 +403,23 @@ nonisolated final class PostingCoordinator {
         // submit rolls back with nothing written.
         if !reversal, let violation = inputs.submitValidationError { throw violation }
 
+        // A return / credit note posts the SAME economic direction as a
+        // cancellation of the equivalent forward document (goods back in, money
+        // credited), so the builders take `econ` for the debit/credit/qty
+        // direction while `reversal` still drives the batch version and the
+        // cancel/un-cancel of the return itself.
+        let isReturn = doc.fields["is_return"] == .bool(true)
+        let econ = reversal != isReturn
+
         let ledgerDocs: [Document]
         switch doc.docType {
         case "JournalEntry":    ledgerDocs = journalEntryRows(doc, reversal: reversal)
-        case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
-        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount, grniAccount: inputs.grniAccount, stockItemFlags: inputs.stockItemFlags)
+        case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: econ, fallbackVatAccount: inputs.fallbackVatAccount)
+        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: econ, fallbackVatAccount: inputs.fallbackVatAccount, grniAccount: inputs.grniAccount, stockItemFlags: inputs.stockItemFlags)
         case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: inputs.referencedInvoices)
-        case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, uomFactors: inputs.uomFactors)
-        case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount, uomFactors: inputs.uomFactors)
-        case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount, uomFactors: inputs.uomFactors)
+        case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: econ, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, uomFactors: inputs.uomFactors)
+        case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: econ, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount, uomFactors: inputs.uomFactors)
+        case "POSInvoice":      ledgerDocs = posInvoiceRows(doc, reversal: econ, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount, incomeAccount: inputs.incomeAccount, cashAccount: inputs.cashAccount, fallbackVatAccount: inputs.fallbackVatAccount, uomFactors: inputs.uomFactors)
         case "StockEntry":      ledgerDocs = stockEntryRows(doc, reversal: reversal, uomFactors: inputs.uomFactors)
         default:                return
         }
@@ -1214,5 +1225,19 @@ extension EnvironmentValues {
     var postingCoordinator: PostingCoordinator? {
         get { self[PostingCoordinatorKey.self] }
         set { self[PostingCoordinatorKey.self] = newValue }
+    }
+}
+
+private struct PostingBatchStoreKey: EnvironmentKey {
+    static let defaultValue: PostingBatchStore? = nil
+}
+
+extension EnvironmentValues {
+    /// The app's posting-batch reader, injected at app scope so the Posting
+    /// Audit report can list every `PostingBatch` (the audit view of the
+    /// atomic-posting ledger). Nil in previews / tests that don't inject it.
+    var postingBatchStore: PostingBatchStore? {
+        get { self[PostingBatchStoreKey.self] }
+        set { self[PostingBatchStoreKey.self] = newValue }
     }
 }
