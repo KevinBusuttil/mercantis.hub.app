@@ -153,6 +153,21 @@ final class HubPostingDerivationTests: XCTestCase {
         XCTAssertEqual(cogsNet, 0, accuracy: 0.001)
     }
 
+    func test_uomConversion_scalesQtyAndCogsToStockUnit() {
+        // 2 cases delivered; a case = 12 stock units; unit cost 5.
+        let sd = doc("SD-3", "SalesDelivery", fields: ["set_warehouse": .string("WH")], children: ["items": [
+            row(0, ["item": .string("ITEM-1"), "qty": .double(2), "warehouse": .string("WH"), "uom": .string("Case")]),
+        ]])
+        let rows = PostingCoordinator.stockIssueRows(
+            sd, voucherType: "SalesDelivery", reversal: false,
+            costBasis: [0: 5], cogsAccount: "COGS", inventoryAccount: "Stock",
+            uomFactors: [0: 12])
+        // Stock leaves in stock units: 2 × 12 = 24.
+        assertAmount(dbl(sle(rows).first?.fields["qty_change"]), -24)
+        // COGS at unit cost: 24 × 5 = 120.
+        assertAmount(dbl(glFor(rows, account: "COGS")?.fields["debit"]), 120)
+    }
+
     // MARK: - GRNI loop: receipt accrues, invoice clears, nets to zero
 
     func test_grniLoop_receiptAccruesAndInvoiceClears() {
