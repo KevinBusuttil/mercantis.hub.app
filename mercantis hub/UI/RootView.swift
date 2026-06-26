@@ -1416,7 +1416,53 @@ private struct HubDocumentEditor: View {
             }
         }
 
+        if let related = relatedDocumentsCard() {
+            cards.append(related)
+        }
+
         return cards.filter(\.hasContent)
+    }
+
+    /// Lineage card: the documents this one was converted from / into, in both
+    /// directions, shown by id. Back-links (quotation, sales_order) are read
+    /// from this document's fields; forward links are found by querying the
+    /// targets that point back here. Cancelled (docStatus 2) targets are
+    /// excluded so a voided conversion doesn't linger.
+    private func relatedDocumentsCard() -> InspectorCardContent? {
+        guard !document.id.isEmpty else { return nil }
+        var rows: [WorkspaceFieldDisplay] = []
+
+        func backLink(_ label: String, field: String) {
+            if let value = stringValue(document.fields[field]), !value.isEmpty {
+                rows.append(WorkspaceFieldDisplay(key: "rel-\(field)", label: label, value: value, isNumeric: false))
+            }
+        }
+        func forwardLinks(_ label: String, target: String, linkField: String) {
+            let docs = (try? engine.list(
+                docType: target,
+                filters: [linkField: .string(document.id)],
+                applyRowAccess: false
+            )) ?? []
+            for related in docs where related.docStatus != 2 {
+                rows.append(WorkspaceFieldDisplay(key: "rel-\(target)-\(related.id)", label: label, value: related.id, isNumeric: false))
+            }
+        }
+
+        switch docType.id {
+        case "Quotation":
+            forwardLinks("Sales Order", target: "SalesOrder", linkField: "quotation")
+        case "SalesOrder":
+            backLink("Quotation", field: "quotation")
+            forwardLinks("Delivery", target: "SalesDelivery", linkField: "sales_order")
+            forwardLinks("Invoice", target: "SalesInvoice", linkField: "sales_order")
+        case "SalesDelivery", "SalesInvoice":
+            backLink("Sales Order", field: "sales_order")
+        default:
+            return nil
+        }
+
+        guard !rows.isEmpty else { return nil }
+        return InspectorCardContent(id: "related", title: "Related", systemImage: "link", rows: rows)
     }
 
     private func inspectorCardView(_ card: InspectorCardContent) -> some View {
