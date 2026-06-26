@@ -24,6 +24,10 @@ struct RootView: View {
     @ObservedObject var companySync: CompanySync
 
     @State private var selection: HubMenuItem?
+    /// Record id to pre-select after a cross-DocType "open related" navigation
+    /// (e.g. tapping a Sales Order from a Quotation's Related card). Consumed by
+    /// the destination workspace, then cleared when it makes its selection.
+    @State private var pendingOpenRecordID: String?
     @State private var collapsedGroups: Set<String> = []
     /// The capture currently being reviewed (drives the Capture flow's
     /// list ⇄ review sub-routing).
@@ -191,7 +195,12 @@ struct RootView: View {
                     docType: docType,
                     engine: engine,
                     workflowEngine: workflowEngine,
-                    customFieldStore: customFieldStore
+                    customFieldStore: customFieldStore,
+                    initialRecordID: pendingOpenRecordID,
+                    onOpenRelatedRecord: { docTypeId, recordId in
+                        openRelatedRecord(docTypeId: docTypeId, recordId: recordId)
+                    },
+                    onConsumeInitialRecord: { pendingOpenRecordID = nil }
                 )
                 // Force a fresh view identity per DocType so SwiftUI doesn't
                 // reuse the previous workspace's @State (`documents`,
@@ -234,6 +243,16 @@ struct RootView: View {
             }
         }
         .navigationTitle(selection?.label ?? "Mercantis Hub")
+    }
+
+    /// Navigate to another DocType's record (lineage "Related" links). Stashes
+    /// the target id for the destination workspace to pre-select, then switches
+    /// the sidebar selection — the per-DocType view identity gives that
+    /// workspace a fresh `RecordCollectionHostView` that consumes the id.
+    private func openRelatedRecord(docTypeId: String, recordId: String) {
+        guard let target = HubManifest.docType(for: docTypeId) else { return }
+        pendingOpenRecordID = recordId
+        selection = .docType(target)
     }
 
     /// Resolve a `.flow` nav id to its bespoke screen. Covers POS / guided
@@ -340,6 +359,13 @@ private struct HubRecordWorkspaceView: View {
     let engine: DocumentEngine
     let workflowEngine: WorkflowEngine
     let customFieldStore: CustomFieldStore
+    /// A record to pre-select when this workspace opens (cross-DocType "open
+    /// related" navigation). Consumed once, then cleared via `onConsumeInitialRecord`.
+    var initialRecordID: String? = nil
+    /// Request navigation to another DocType's record (lineage links).
+    var onOpenRelatedRecord: ((String, String) -> Void)? = nil
+    /// Clears the parent's pending pre-selection once it has been applied.
+    var onConsumeInitialRecord: (() -> Void)? = nil
 
     @State private var documents: [Document] = []
     @State private var customFields: [CustomField] = []
@@ -492,6 +518,12 @@ private struct HubRecordWorkspaceView: View {
                 try customFieldStore.remove(id: id)
                 reloadCustomFieldsSafely()
             },
+            initialSelectedDocumentID: initialRecordID,
+            onSelectionChange: { _ in
+                // The pending pre-selection has been applied (or the user picked
+                // another row); clear it so it can't re-fire on a later visit.
+                if initialRecordID != nil { onConsumeInitialRecord?() }
+            },
             externalCreateTrigger: $createTrigger,
             linkSearchProvider: { targetDocType, _ in
                 (try? engine.list(docType: targetDocType)) ?? []
@@ -522,7 +554,8 @@ private struct HubRecordWorkspaceView: View {
                         engine: engine,
                         workflowEngine: workflowEngine,
                         document: binding,
-                        onPersist: { reloadDocumentsSafely() }
+                        onPersist: { reloadDocumentsSafely() },
+                        onOpenRelatedRecord: onOpenRelatedRecord
                     )
                 )
             },
@@ -737,6 +770,9 @@ private struct HubDocumentEditor: View {
     /// `documents` list. The host owns Save itself; this fires for the
     /// lifecycle actions handled below (submit/cancel/amend/workflow).
     let onPersist: () -> Void
+    /// Requests cross-DocType navigation to a related record (lineage links in
+    /// the "Related" inspector card). Nil when navigation isn't wired.
+    var onOpenRelatedRecord: ((String, String) -> Void)? = nil
 
     /// Phase 1 — posts atomic-posting DocTypes (Journal Entry) inside the
     /// submit/cancel transaction. Injected at app scope; nil in previews.
@@ -930,6 +966,9 @@ private struct HubDocumentEditor: View {
         let label: String
         let value: String
         let isNumeric: Bool
+        /// When set, the row is a tappable link to this (DocType, record) — used
+        /// by the "Related" lineage card.
+        var navigation: (docTypeId: String, recordId: String)? = nil
 
         var id: String { key }
     }
@@ -1432,9 +1471,11 @@ private struct HubDocumentEditor: View {
         guard !document.id.isEmpty else { return nil }
         var rows: [WorkspaceFieldDisplay] = []
 
-        func backLink(_ label: String, field: String) {
+        func backLink(_ label: String, field: String, target: String) {
             if let value = stringValue(document.fields[field]), !value.isEmpty {
-                rows.append(WorkspaceFieldDisplay(key: "rel-\(field)", label: label, value: value, isNumeric: false))
+                rows.append(WorkspaceFieldDisplay(
+                    key: "rel-\(field)", label: label, value: value, isNumeric: false,
+                    navigation: (docTypeId: target, recordId: value)))
             }
         }
         func forwardLinks(_ label: String, target: String, linkField: String) {
@@ -1444,7 +1485,9 @@ private struct HubDocumentEditor: View {
                 applyRowAccess: false
             )) ?? []
             for related in docs where related.docStatus != 2 {
-                rows.append(WorkspaceFieldDisplay(key: "rel-\(target)-\(related.id)", label: label, value: related.id, isNumeric: false))
+                rows.append(WorkspaceFieldDisplay(
+                    key: "rel-\(target)-\(related.id)", label: label, value: related.id, isNumeric: false,
+                    navigation: (docTypeId: target, recordId: related.id)))
             }
         }
 
@@ -1452,11 +1495,11 @@ private struct HubDocumentEditor: View {
         case "Quotation":
             forwardLinks("Sales Order", target: "SalesOrder", linkField: "quotation")
         case "SalesOrder":
-            backLink("Quotation", field: "quotation")
+            backLink("Quotation", field: "quotation", target: "Quotation")
             forwardLinks("Delivery", target: "SalesDelivery", linkField: "sales_order")
             forwardLinks("Invoice", target: "SalesInvoice", linkField: "sales_order")
         case "SalesDelivery", "SalesInvoice":
-            backLink("Sales Order", field: "sales_order")
+            backLink("Sales Order", field: "sales_order", target: "SalesOrder")
         default:
             return nil
         }
@@ -1469,12 +1512,43 @@ private struct HubDocumentEditor: View {
         MercantisInspectorCard(card.title, systemImage: card.systemImage) {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(card.rows.enumerated()), id: \.element.id) { index, row in
-                    MercantisInspectorRow(row.label, value: row.value, isNumeric: row.isNumeric)
+                    inspectorRowView(row)
                     if index < card.rows.count - 1 {
                         Divider()
                     }
                 }
             }
+        }
+    }
+
+    /// A normal inspector row, or — when the row carries a lineage navigation
+    /// target and a handler is wired — a tappable link that opens that record.
+    @ViewBuilder
+    private func inspectorRowView(_ row: WorkspaceFieldDisplay) -> some View {
+        if let nav = row.navigation, let open = onOpenRelatedRecord {
+            Button {
+                open(nav.docTypeId, nav.recordId)
+            } label: {
+                HStack(spacing: 6) {
+                    Text(row.label)
+                        .font(.system(size: 12))
+                        .foregroundStyle(MercantisTheme.textMuted)
+                    Spacer(minLength: 8)
+                    Text(row.value)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(MercantisTheme.brandPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(MercantisTheme.textMuted)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open \(row.value)")
+        } else {
+            MercantisInspectorRow(row.label, value: row.value, isNumeric: row.isNumeric)
         }
     }
 
