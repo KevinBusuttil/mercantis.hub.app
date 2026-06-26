@@ -36,7 +36,7 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry"]
 
     /// Tolerance for the balanced-GL check (currency rounding).
     private static let balanceTolerance = 0.005
@@ -52,10 +52,12 @@ nonisolated final class PostingCoordinator {
     func submitClosure(for doc: Document) -> ((UnitOfWork) throws -> Void)? {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
-        // Resolve company-default accounts OUTSIDE the write transaction (a read
-        // inside the write would be reentrant); capture them for posting.
+        // Resolve company-default accounts and referenced invoices OUTSIDE the
+        // write transaction (a read inside the write would be reentrant);
+        // capture them for posting.
         let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
-        return { uow in try Self.post(doc, reversal: false, fallbackVatAccount: fallbackVat, engine: engine, in: uow) }
+        let invoices = Self.referencedInvoices(for: doc, engine: engine)
+        return { uow in try Self.post(doc, reversal: false, fallbackVatAccount: fallbackVat, referencedInvoices: invoices, engine: engine, in: uow) }
     }
 
     /// The `inTransaction` closure for cancelling `doc` (writes reversal rows).
@@ -63,12 +65,16 @@ nonisolated final class PostingCoordinator {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
         let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
-        return { uow in try Self.post(doc, reversal: true, fallbackVatAccount: fallbackVat, engine: engine, in: uow) }
+        let invoices = Self.referencedInvoices(for: doc, engine: engine)
+        return { uow in try Self.post(doc, reversal: true, fallbackVatAccount: fallbackVat, referencedInvoices: invoices, engine: engine, in: uow) }
     }
 
     // MARK: - Posting
 
-    private static func post(_ doc: Document, reversal: Bool, fallbackVatAccount: String?, engine: DocumentEngine, in uow: UnitOfWork) throws {
+    private static func post(
+        _ doc: Document, reversal: Bool, fallbackVatAccount: String?,
+        referencedInvoices: [String: Document], engine: DocumentEngine, in uow: UnitOfWork
+    ) throws {
         // Idempotency: one batch per (source, direction). Post is v1, reverse v2,
         // so cancel doesn't collide with the original and a re-fire is a no-op.
         let version = reversal ? 2 : 1
@@ -80,32 +86,40 @@ nonisolated final class PostingCoordinator {
         case "JournalEntry":    ledgerDocs = journalEntryRows(doc, reversal: reversal)
         case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
         case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
+        case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: referencedInvoices)
         default:                return
         }
 
-        try commit(ledgerDocs, sourceType: doc.docType, source: doc, reversal: reversal, version: version, engine: engine, in: uow)
+        // Payment Entry's GL legs can legitimately be single-sided in some
+        // account models (the contra side lives in the subledger), and the
+        // legacy event path never balance-checked it — so don't reject it here.
+        let enforceBalance = doc.docType != "PaymentEntry"
+        try commit(ledgerDocs, sourceType: doc.docType, source: doc, reversal: reversal, version: version, enforceBalance: enforceBalance, engine: engine, in: uow)
     }
 
-    /// Validate the GL legs balance, then write every ledger row and the
-    /// PostingBatch in the unit of work. A failed balance (or any write) throws,
-    /// rolling the whole submit/cancel back.
+    /// Validate the GL legs balance (when required), then write every ledger row
+    /// and the PostingBatch in the unit of work. A failed balance (or any write)
+    /// throws, rolling the whole submit/cancel back.
     private static func commit(
         _ ledgerDocs: [Document],
         sourceType: String,
         source: Document,
         reversal: Bool,
         version: Int,
+        enforceBalance: Bool,
         engine: DocumentEngine,
         in uow: UnitOfWork
     ) throws {
-        var totalDebit = 0.0
-        var totalCredit = 0.0
-        for row in ledgerDocs where row.docType == "GLEntry" {
-            totalDebit  += asDouble(row.fields["debit"]) ?? 0
-            totalCredit += asDouble(row.fields["credit"]) ?? 0
-        }
-        guard abs(totalDebit - totalCredit) < balanceTolerance else {
-            throw PostingError.unbalanced(debit: totalDebit, credit: totalCredit)
+        if enforceBalance {
+            var totalDebit = 0.0
+            var totalCredit = 0.0
+            for row in ledgerDocs where row.docType == "GLEntry" {
+                totalDebit  += asDouble(row.fields["debit"]) ?? 0
+                totalCredit += asDouble(row.fields["credit"]) ?? 0
+            }
+            guard abs(totalDebit - totalCredit) < balanceTolerance else {
+                throw PostingError.unbalanced(debit: totalDebit, credit: totalCredit)
+            }
         }
 
         for row in ledgerDocs {
@@ -251,6 +265,128 @@ nonisolated final class PostingCoordinator {
             ))
         }
         return docs
+    }
+
+    /// Mirrors `derivePaymentEntry`: GL leg(s) for the cash movement, a
+    /// Cust/VendTrans payment row, a Settlement row per allocation, and the
+    /// matching invoice `outstanding_amount` decrement (applied as an updated
+    /// invoice document so it commits in the same transaction). The referenced
+    /// invoices are pre-fetched outside the write transaction.
+    private static func paymentEntryRows(_ doc: Document, reversal: Bool, referencedInvoices: [String: Document]) -> [Document] {
+        let postingDate = doc.fields["posting_date"] ?? .date(Date())
+        let amount   = doc.fields["paid_amount"] ?? .double(0)
+        let paidFrom = doc.fields["paid_from"]
+        let paidTo   = doc.fields["paid_to"]
+        let partyType = asString(doc.fields["party_type"])
+        let party    = doc.fields["party"]
+        let currency = doc.fields["currency"]
+
+        var docs: [Document] = []
+        // Cash leaves paid_from (Cr), arrives at paid_to (Dr). Reversal flips.
+        if let paidFrom {
+            docs.append(glRow(
+                id: "GL-\(doc.id)-from\(suffix(reversal))", postingDate: postingDate, account: paidFrom,
+                debit: reversal ? amount : .double(0), credit: reversal ? .double(0) : amount,
+                partyType: partyType, party: party, costCenter: nil,
+                voucherType: "PaymentEntry", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        if let paidTo {
+            docs.append(glRow(
+                id: "GL-\(doc.id)-to\(suffix(reversal))", postingDate: postingDate, account: paidTo,
+                debit: reversal ? .double(0) : amount, credit: reversal ? amount : .double(0),
+                partyType: partyType, party: party, costCenter: nil,
+                voucherType: "PaymentEntry", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+
+        // Subledger + settlement only for party payments (not Internal Transfer).
+        guard case .string(let kind)? = doc.fields["payment_type"], kind != "Internal Transfer",
+              case .string(let partyId)? = party, !partyId.isEmpty else { return docs }
+
+        let subledgerAmount = signed(amount, negate: !reversal)
+        switch kind {
+        case "Receive":
+            docs.append(custTransRow(
+                id: "CT-\(doc.id)\(suffix(reversal))", transType: reversal ? "Adjustment" : "Payment",
+                customer: .string(partyId), postingDate: postingDate, dueDate: nil,
+                amount: subledgerAmount, currency: currency,
+                voucherType: "PaymentEntry", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        case "Pay":
+            docs.append(vendTransRow(
+                id: "VT-\(doc.id)\(suffix(reversal))", transType: reversal ? "Adjustment" : "Payment",
+                supplier: .string(partyId), postingDate: postingDate, dueDate: nil,
+                amount: subledgerAmount, currency: currency,
+                voucherType: "PaymentEntry", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        default:
+            break
+        }
+
+        // Settlement row per allocation + accumulate the outstanding delta per
+        // invoice (delta is signed: submit decrements, cancel restores).
+        var outstandingDelta: [String: Double] = [:]
+        for (idx, ref) in (doc.children["references"] ?? []).enumerated() {
+            guard case .string(let invType)? = ref.fields["reference_doctype"],
+                  case .string(let invNo)? = ref.fields["reference_name"],
+                  let allocated = ref.fields["allocated_amount"] else { continue }
+            docs.append(settlementRow(
+                id: "STL-\(doc.id)-\(idx)\(suffix(reversal))",
+                paymentVoucherNo: doc.id, invoiceVoucherType: invType, invoiceVoucherNo: invNo,
+                partyType: kind == "Receive" ? "Customer" : "Supplier", party: partyId,
+                allocatedAmount: signed(allocated, negate: reversal), postingDate: postingDate,
+                reversal: reversal, company: doc.company
+            ))
+            outstandingDelta[invNo, default: 0] += asDouble(signed(allocated, negate: !reversal)) ?? 0
+        }
+
+        // Updated invoice documents with the adjusted outstanding_amount
+        // (allowOnSubmit on Sales/Purchase Invoice), written in the same tx.
+        for (invNo, delta) in outstandingDelta {
+            guard var invoice = referencedInvoices[invNo] else { continue }
+            let current = asDouble(invoice.fields["outstanding_amount"])
+                ?? asDouble(invoice.fields["grand_total"]) ?? 0
+            invoice.fields["outstanding_amount"] = .double(current + delta)
+            docs.append(invoice)
+        }
+
+        return docs
+    }
+
+    private static func settlementRow(
+        id: String, paymentVoucherNo: String, invoiceVoucherType: String, invoiceVoucherNo: String,
+        partyType: String, party: String, allocatedAmount: FieldValue, postingDate: FieldValue,
+        reversal: Bool, company: String
+    ) -> Document {
+        let fields: [String: FieldValue] = [
+            "payment_voucher_type": .string("PaymentEntry"),
+            "payment_voucher_no":   .string(paymentVoucherNo),
+            "invoice_voucher_type": .string(invoiceVoucherType),
+            "invoice_voucher_no":   .string(invoiceVoucherNo),
+            "party_type":           .string(partyType),
+            "party":                .string(party),
+            "allocated_amount":     allocatedAmount,
+            "posting_date":         postingDate,
+            "is_reversal":          .bool(reversal),
+        ]
+        return ledger(id: id, docType: "Settlement", company: company, fields: fields)
+    }
+
+    /// Pre-fetch the invoices a Payment Entry settles, keyed by id, OUTSIDE the
+    /// write transaction. Empty for non-PaymentEntry DocTypes.
+    private static func referencedInvoices(for doc: Document, engine: DocumentEngine) -> [String: Document] {
+        guard doc.docType == "PaymentEntry" else { return [:] }
+        var result: [String: Document] = [:]
+        for ref in doc.children["references"] ?? [] {
+            guard case .string(let invType)? = ref.fields["reference_doctype"], !invType.isEmpty,
+                  case .string(let invNo)? = ref.fields["reference_name"], !invNo.isEmpty,
+                  result[invNo] == nil else { continue }
+            if let invoice = try? engine.fetch(docType: invType, id: invNo) {
+                result[invNo] = invoice
+            }
+        }
+        return result
     }
 
     /// VAT GL leg (Cr output / Dr input) + TaxTrans row per tax child row.
