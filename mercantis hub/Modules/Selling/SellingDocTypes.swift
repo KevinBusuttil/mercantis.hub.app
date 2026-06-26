@@ -301,7 +301,13 @@ enum Selling {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: salesParentFields(includeDelivery: true),
+        fields: salesParentFields(includeDelivery: true) + [
+            // Lineage back to the Quotation this order was converted from
+            // (mirrors `sales_order` on Delivery / Invoice). Drives the
+            // duplicate-conversion guard and the cancel cascade.
+            FieldDefinition(key: "quotation", label: "Quotation",
+                            type: .link, required: false, linkedDocType: "Quotation")
+        ],
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-order",
         autoname: "naming_series:SO-.YYYY.-.####",

@@ -8,6 +8,27 @@ import MercantisCore
 /// normal tax / submit flow takes over from there.
 enum HubDocumentConversion {
 
+    /// Quotation → Sales Order draft. Header (customer / date / currency /
+    /// price list / tax code / default warehouse) and the full item lines are
+    /// carried over; the order links back to the originating quotation. Totals
+    /// and posting defaults are filled by the tax policy / Business Profile when
+    /// the caller saves it.
+    static func quotationToSalesOrder(_ quote: Document) -> Document {
+        var fields: [String: FieldValue] = [
+            "transaction_date": .date(Date()),
+            "quotation": .string(quote.id),
+        ]
+        copy(["customer", "currency", "conversion_rate", "price_list", "tax_code",
+              "set_warehouse", "delivery_date"], from: quote.fields, into: &fields)
+        let items = (quote.children["items"] ?? []).enumerated().map { index, row -> ChildRow in
+            var lineFields: [String: FieldValue] = [:]
+            copy(["item", "description", "qty", "uom", "rate", "tax_code", "warehouse", "delivery_date"],
+                 from: row.fields, into: &lineFields)
+            return ChildRow(id: UUID().uuidString, rowIndex: index, fields: lineFields)
+        }
+        return draft(docType: "SalesOrder", company: quote.company, fields: fields, items: items)
+    }
+
     /// Sales Order → Sales Delivery draft. Header (customer / date / currency /
     /// default warehouse) and item lines (item / qty / uom / rate / warehouse)
     /// are carried over; each line links back to the originating order.

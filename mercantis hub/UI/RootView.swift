@@ -1193,38 +1193,54 @@ private struct HubDocumentEditor: View {
     /// order is confirmed (docStatus 1). Each builds a draft of the target
     /// document from the order and saves it; the operator opens and submits it.
     private var conversionActions: [WorkspaceActionDescriptor] {
-        guard docType.id == "SalesOrder", document.docStatus == 1, !document.id.isEmpty else { return [] }
-        return [
-            WorkspaceActionDescriptor(
-                id: "convert:delivery", label: "Convert to Delivery", role: nil, isPrimary: false,
-                perform: { convertSalesOrder(to: "SalesDelivery", label: "delivery") }
-            ),
-            WorkspaceActionDescriptor(
-                id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
-                perform: { convertSalesOrder(to: "SalesInvoice", label: "invoice") }
-            ),
-        ]
+        guard document.docStatus == 1, !document.id.isEmpty else { return [] }
+        switch docType.id {
+        case "Quotation":
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:salesorder", label: "Convert to Sales Order", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "SalesOrder", label: "sales order", linkField: "quotation") }
+                ),
+            ]
+        case "SalesOrder":
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:delivery", label: "Convert to Delivery", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "SalesDelivery", label: "delivery", linkField: "sales_order") }
+                ),
+                WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_order") }
+                ),
+            ]
+        default:
+            return []
+        }
     }
 
-    private func convertSalesOrder(to targetDocType: String, label: String) {
+    /// Build a downstream draft (`targetDocType`) from the current document,
+    /// guarding against a duplicate conversion via `linkField` (the back-link
+    /// the target carries to this document).
+    private func convertDocument(to targetDocType: String, label: String, linkField: String) {
         errorMessage = nil
         infoMessage = nil
         do {
-            // Don't create a second conversion for the same order. A cancelled
+            // Don't create a second conversion for the same source. A cancelled
             // (docStatus 2) one doesn't count, so the operator can re-convert
             // after voiding a mistake.
             let existing = (try? engine.list(
                 docType: targetDocType,
-                filters: ["sales_order": .string(document.id)],
+                filters: [linkField: .string(document.id)],
                 applyRowAccess: false
             ))?.first(where: { $0.docStatus != 2 })
             if let existing {
-                errorMessage = "A \(label) already exists for this order (\(existing.id)). Cancel it before creating another."
+                errorMessage = "A \(label) already exists for this document (\(existing.id)). Cancel it before creating another."
                 return
             }
 
             var draft: Document
             switch targetDocType {
+            case "SalesOrder":    draft = HubDocumentConversion.quotationToSalesOrder(document)
             case "SalesDelivery": draft = HubDocumentConversion.salesOrderToDelivery(document)
             case "SalesInvoice":  draft = HubDocumentConversion.salesOrderToInvoice(document)
             default: return
