@@ -174,10 +174,13 @@ enum Buying {
                             type: .link, required: false, linkedDocType: "PriceList"),
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "PurchaseItem"),
+            // Derived on save by HubTaxCalculationPolicy — display only.
             FieldDefinition(key: "total_qty", label: "Total Qty",
-                            type: .decimal, required: false),
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "grand_total", label: "Grand Total",
-                            type: .currency, required: false),
+                            type: .currency, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "notes", label: "Notes",
                             type: .longText, required: false,
                             allowOnSubmit: true)
@@ -382,7 +385,8 @@ enum Buying {
             FieldDefinition(key: "items", label: "Items",
                             type: .table, required: true, childDocType: "PurchaseReceiptItem"),
             FieldDefinition(key: "total_qty", label: "Total Qty",
-                            type: .decimal, required: false),
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true"),
             FieldDefinition(key: "remarks", label: "Remarks",
                             type: .longText, required: false, allowOnSubmit: true)
         ],
