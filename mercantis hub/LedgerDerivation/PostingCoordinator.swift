@@ -9,8 +9,11 @@
 //  legacy LedgerDerivationService event path until later increments.
 //
 //  Increment 2 added Journal Entry. Increment 3a adds the GL-only invoices
-//  (Sales Invoice, Purchase Invoice) — no stock movement, so no in-transaction
-//  Bin recompute is needed. Stock / POS / Payment DocTypes are converted later.
+//  (Sales Invoice, Purchase Invoice). Phase 2 adds the first stock DocType
+//  (Sales Delivery): its Stock Ledger Issue rows and COGS GL post inside the
+//  transaction, and the derived Stock Balance (Bin) — a cache, not a ledger —
+//  is recomputed post-commit by LedgerDerivationService from the now-committed
+//  ledger rows. POS / Purchase Receipt / Stock Entry are converted later.
 //
 //  The DocTypes posted here are listed in `atomicDocTypes`, which
 //  LedgerDerivationService skips so there is no double-posting.
@@ -36,7 +39,11 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery"]
+
+    /// Atomic DocTypes that move stock — LedgerDerivationService recomputes their
+    /// Stock Balance (Bin) post-commit (posting itself is done in-transaction).
+    static let atomicStockDocTypes: Set<String> = ["SalesDelivery"]
 
     /// Tolerance for the balanced-GL check (currency rounding).
     private static let balanceTolerance = 0.005
@@ -47,33 +54,82 @@ nonisolated final class PostingCoordinator {
         self.engine = engine
     }
 
+    /// Read-side inputs resolved OUTSIDE the write transaction (a read inside the
+    /// write would be reentrant) and captured for posting: company-default
+    /// accounts, the invoices a payment settles, and the per-line stock cost
+    /// basis for atomic stock DocTypes.
+    private struct PostingInputs {
+        var fallbackVatAccount: String?
+        var referencedInvoices: [String: Document] = [:]
+        /// Per-line cost basis keyed by child `rowIndex` (Sales Delivery):
+        /// moving-average cost on submit, original issue cost on cancel.
+        var stockCostBasis: [Int: Double] = [:]
+        var cogsAccount: String?
+        var inventoryAccount: String?
+    }
+
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
     /// DocType is not posted atomically here (caller submits normally).
     func submitClosure(for doc: Document) -> ((UnitOfWork) throws -> Void)? {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
-        // Resolve company-default accounts and referenced invoices OUTSIDE the
-        // write transaction (a read inside the write would be reentrant);
-        // capture them for posting.
-        let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
-        let invoices = Self.referencedInvoices(for: doc, engine: engine)
-        return { uow in try Self.post(doc, reversal: false, fallbackVatAccount: fallbackVat, referencedInvoices: invoices, engine: engine, in: uow) }
+        let inputs = Self.makeInputs(for: doc, reversal: false, engine: engine)
+        return { uow in try Self.post(doc, reversal: false, inputs: inputs, engine: engine, in: uow) }
     }
 
     /// The `inTransaction` closure for cancelling `doc` (writes reversal rows).
     func cancelClosure(for doc: Document) -> ((UnitOfWork) throws -> Void)? {
         guard Self.atomicDocTypes.contains(doc.docType) else { return nil }
         let engine = self.engine
-        let fallbackVat = Self.companyDefault("default_vat_account", engine: engine)
-        let invoices = Self.referencedInvoices(for: doc, engine: engine)
-        return { uow in try Self.post(doc, reversal: true, fallbackVatAccount: fallbackVat, referencedInvoices: invoices, engine: engine, in: uow) }
+        let inputs = Self.makeInputs(for: doc, reversal: true, engine: engine)
+        return { uow in try Self.post(doc, reversal: true, inputs: inputs, engine: engine, in: uow) }
+    }
+
+    // MARK: - Read-side inputs (resolved outside the write transaction)
+
+    private static func makeInputs(for doc: Document, reversal: Bool, engine: DocumentEngine) -> PostingInputs {
+        var inputs = PostingInputs(fallbackVatAccount: companyDefault("default_vat_account", engine: engine))
+        inputs.referencedInvoices = referencedInvoices(for: doc, engine: engine)
+        if atomicStockDocTypes.contains(doc.docType) {
+            inputs.cogsAccount = companyDefault("default_expense_account", engine: engine)
+            inputs.inventoryAccount = companyDefault("default_stock_account", engine: engine)
+            inputs.stockCostBasis = stockCostBasis(for: doc, reversal: reversal, engine: engine)
+        }
+        return inputs
+    }
+
+    /// Per-line valuation rate for a Sales Delivery's stock issue, read OUTSIDE
+    /// the write transaction. On submit the warehouse MOVING-AVERAGE cost (never
+    /// the selling rate); on cancel the ORIGINAL issue cost (read back from the
+    /// issue SLE) so the reversal's stock value and COGS net to zero. Keyed by
+    /// child `rowIndex`.
+    private static func stockCostBasis(for doc: Document, reversal: Bool, engine: DocumentEngine) -> [Int: Double] {
+        guard doc.docType == "SalesDelivery" else { return [:] }
+        let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+            ?? nonEmptyString(doc.fields["warehouse"])
+        let stockBalance = StockBalanceService(engine: engine)
+        var basis: [Int: Double] = [:]
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
+            let unitCost: Double
+            if reversal {
+                let origRate = (try? engine.fetch(docType: "StockLedgerEntry", id: "SLE-\(doc.id)-\(row.rowIndex)"))?.fields["valuation_rate"]
+                unitCost = asDouble(origRate) ?? 0
+            } else {
+                let bin = (try? stockBalance.balance(item: itemId, warehouse: whId)) ?? nil
+                unitCost = bin?.valuationRate ?? asDouble(row.fields["valuation_rate"]) ?? 0
+            }
+            basis[row.rowIndex] = unitCost
+        }
+        return basis
     }
 
     // MARK: - Posting
 
     private static func post(
-        _ doc: Document, reversal: Bool, fallbackVatAccount: String?,
-        referencedInvoices: [String: Document], engine: DocumentEngine, in uow: UnitOfWork
+        _ doc: Document, reversal: Bool, inputs: PostingInputs,
+        engine: DocumentEngine, in uow: UnitOfWork
     ) throws {
         // Idempotency: one batch per (source, direction). Post is v1, reverse v2,
         // so cancel doesn't collide with the original and a re-fire is a no-op.
@@ -84,9 +140,10 @@ nonisolated final class PostingCoordinator {
         let ledgerDocs: [Document]
         switch doc.docType {
         case "JournalEntry":    ledgerDocs = journalEntryRows(doc, reversal: reversal)
-        case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
-        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
-        case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: referencedInvoices)
+        case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
+        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
+        case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: inputs.referencedInvoices)
+        case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount)
         default:                return
         }
 
@@ -262,6 +319,62 @@ nonisolated final class PostingCoordinator {
                 supplier: supplierValue, postingDate: postingDate, dueDate: dueDate,
                 amount: signed(amount, negate: reversal), currency: currency,
                 voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        return docs
+    }
+
+    /// Mirrors `deriveStockDocument` for an outgoing Sales Delivery: a Stock
+    /// Ledger Issue row per line (-qty on submit, +qty on reversal) carrying the
+    /// pre-resolved `costBasis` as `valuation_rate`, plus the inventory GL —
+    /// Dr COGS / Cr Inventory at moving-average cost (reversal flips). The
+    /// derived Stock Balance (Bin) is recomputed post-commit by
+    /// LedgerDerivationService, since it reads the now-committed ledger rows.
+    private static func salesDeliveryRows(
+        _ doc: Document, reversal: Bool, costBasis: [Int: Double],
+        cogsAccount: String?, inventoryAccount: String?
+    ) -> [Document] {
+        let postingDate = doc.fields["posting_date"] ?? doc.fields["transaction_date"] ?? .date(Date())
+        let postingTime = doc.fields["posting_time"]
+        let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+            ?? nonEmptyString(doc.fields["warehouse"])
+
+        var docs: [Document] = []
+        var cogsTotal = 0.0
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
+            let qty = row.fields["qty"] ?? .double(0)
+            // Issue: -qty on submit, +qty on reversal.
+            let signedQty = signed(qty, negate: !reversal)
+            let unitCost = costBasis[row.rowIndex] ?? 0
+            docs.append(sleRow(
+                id: "SLE-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
+                transType: "Issue", item: .string(itemId), warehouse: .string(whId),
+                postingDate: postingDate, postingTime: postingTime,
+                voucherType: "SalesDelivery", voucherNo: doc.id,
+                qtyChange: signedQty, rate: .double(unitCost), reversal: reversal, company: doc.company
+            ))
+            cogsTotal += (asDouble(qty) ?? 0) * unitCost
+        }
+
+        // Inventory GL for outgoing stock — Dr COGS / Cr Inventory at
+        // moving-average cost (reversal flips). Skipped when the company-default
+        // COGS / Stock accounts are unset (mirrors the legacy event path).
+        if abs(cogsTotal) > 0.0001, let cogsAccount, let inventoryAccount {
+            let amount = FieldValue.double(cogsTotal)
+            let zero = FieldValue.double(0)
+            docs.append(glRow(
+                id: "GL-\(doc.id)-cogs\(suffix(reversal))", postingDate: postingDate, account: .string(cogsAccount),
+                debit: reversal ? zero : amount, credit: reversal ? amount : zero,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: "SalesDelivery", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+            docs.append(glRow(
+                id: "GL-\(doc.id)-inventory\(suffix(reversal))", postingDate: postingDate, account: .string(inventoryAccount),
+                debit: reversal ? amount : zero, credit: reversal ? zero : amount,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: "SalesDelivery", voucherNo: doc.id, reversal: reversal, company: doc.company
             ))
         }
         return docs
@@ -463,6 +576,29 @@ nonisolated final class PostingCoordinator {
         if let party      { fields["party"]       = party }
         if let costCenter { fields["cost_center"] = costCenter }
         return ledger(id: id, docType: "GLEntry", company: company, fields: fields)
+    }
+
+    /// Stock Ledger Entry row (mirrors LedgerDerivationService.writeSLE's field
+    /// shape) for the atomic stock path.
+    private static func sleRow(
+        id: String, transType: String, item: FieldValue, warehouse: FieldValue,
+        postingDate: FieldValue, postingTime: FieldValue?,
+        voucherType: String, voucherNo: String, qtyChange: FieldValue,
+        rate: FieldValue?, reversal: Bool, company: String
+    ) -> Document {
+        var fields: [String: FieldValue] = [
+            "trans_type":   .string(transType),
+            "item":         item,
+            "warehouse":    warehouse,
+            "posting_date": postingDate,
+            "voucher_type": .string(voucherType),
+            "voucher_no":   .string(voucherNo),
+            "qty_change":   qtyChange,
+            "is_reversal":  .bool(reversal),
+        ]
+        if let postingTime { fields["posting_time"] = postingTime }
+        if let rate        { fields["valuation_rate"] = rate }
+        return ledger(id: id, docType: "StockLedgerEntry", company: company, fields: fields)
     }
 
     private static func custTransRow(
