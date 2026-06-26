@@ -23,9 +23,9 @@ enum GuidedPaymentMode: Equatable, Sendable {
 /// resolved accounts.
 ///
 /// The output is an ordinary Payment Entry `Document` with `references`
-/// child rows — exactly the shape `LedgerDerivationService.derivePaymentEntry`
-/// already consumes — so GL, CustTrans / VendTrans, Settlement, and the
-/// invoice `outstanding_amount` decrement all keep working unchanged.
+/// child rows — exactly the shape `PostingCoordinator.paymentEntryRows`
+/// consumes — so GL, CustTrans / VendTrans, Settlement, and the invoice
+/// `outstanding_amount` decrement all keep working unchanged.
 enum GuidedPaymentBuilder {
 
     /// One outstanding invoice/bill presented for allocation.
