@@ -51,7 +51,7 @@ final class StockBalanceCalculatorTests: XCTestCase {
         XCTAssertEqual(balance.valuationRate, 0, accuracy: 0.0001, "No rate when out of stock")
     }
 
-    func test_transfer_moves_qty_between_two_warehouses() {
+    func test_transfer_moves_qty_between_two_warehouses() throws {
         // Receipt into W1, then a transfer W1 → W2.
         let balances = StockBalanceCalculator.aggregate([
             row("A", "W1", qty: 10, rate: 5, day: 1),   // receipt
@@ -59,11 +59,11 @@ final class StockBalanceCalculatorTests: XCTestCase {
             row("A", "W2", qty: 10, rate: 5, day: 2),   // transfer in
         ])
         XCTAssertEqual(balances.count, 2)
-        let w1 = balances.first { $0.warehouse == "W1" }
-        let w2 = balances.first { $0.warehouse == "W2" }
-        XCTAssertEqual(w1?.actualQty, 0, accuracy: 0.0001)
-        XCTAssertEqual(w2?.actualQty, 10, accuracy: 0.0001)
-        XCTAssertEqual(w2?.stockValue, 50, accuracy: 0.0001)
+        let w1 = try XCTUnwrap(balances.first { $0.warehouse == "W1" })
+        let w2 = try XCTUnwrap(balances.first { $0.warehouse == "W2" })
+        XCTAssertEqual(w1.actualQty, 0, accuracy: 0.0001)
+        XCTAssertEqual(w2.actualQty, 10, accuracy: 0.0001)
+        XCTAssertEqual(w2.stockValue, 50, accuracy: 0.0001)
     }
 
     func test_aggregate_groups_per_item_and_warehouse_sorted() {
