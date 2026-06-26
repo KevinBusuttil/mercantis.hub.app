@@ -34,7 +34,7 @@ fails open); **Aud = P** everywhere (recorded but device-attributed, not operato
 | Sales Order | C | C | C | C | M | M | P | — | — | — | — | — | C | P | M | P | M | No |
 | Sales Delivery | C | C | C | C | P | P | P | M(no COGS) | C | — | — | — | C | P | M | P | P | No |
 | Sales Invoice | C | C | C | C | M | M | P | P(no COGS) | — | C | C | P | C | P | M | P | P | No |
-| POS Invoice | C | C | C | C | P | M | P | C | C | C | P | P | C | P | M | P | P | No |
+| POS Invoice | C | C | C | C | P | M | P | P(no COGS) | C | C | P | P | C | P | M | P | P | No |
 | Payment Entry | C | C | C | C | P | P | P | C | — | — | C | P | C | P | M | P | P | No |
 | CustTrans | C | P | C | — | — | P | M | C | — | — | C | C | C | — | M | P | P | No |
 | VendTrans | C | P | C | — | — | P | M | C | — | — | C | C | C | — | M | P | P | No |
@@ -55,8 +55,10 @@ fails open); **Aud = P** everywhere (recorded but device-attributed, not operato
 
 Key reads: ledgers exist and post idempotently (Stk/Acct/Tax mostly C) but **none is atomic with
 its source submit, none is append-only-enforced, none is operator-attributed, none is
-permission-gated** — which is why every row is **Not Ready**. COGS (Sales), GRNI (Purchase), and
-WIP (Manufacturing) are the standout Missing accounting cells; conversion/lineage is broadly
+permission-gated** — which is why every row is **Not Ready**. COGS (Sales **and POS** —
+`derivePOSInvoice` posts Cash/Income/VAT and stock-out but no Dr COGS / Cr Inventory, lines
+648–692), GRNI (Purchase), and WIP (Manufacturing) are the standout Missing accounting cells;
+conversion/lineage is broadly
 Missing; submit validation is Partial because child rows are unvalidated.
 
 ---
@@ -447,7 +449,7 @@ Estimate key: XS <1d · S 1–3d · M 4–8d · L 2–4w · XL >4w. Repo: C=Core
 | P2.2 | 2 | Generic ConvertCommand/DocumentConversionService | C | new | P2.1 | Map source→target header/lines, set lineage | — | conversion tests | Quote→SO→Delivery→Invoice convert | L | med |
 | P2.3 | 2 | Quantity rollups + derived statuses | H | Selling DocTypes + rollup service | P2.2 | ordered/delivered/invoiced/returned; derive status | columns | partial-fulfilment tests | statuses derived, not manual | L | med |
 | P2.4 | 2 | Over-delivery/over-invoice controls | H | validation rules | P2.3 | reject qty > open | — | over-process tests | over-ship/bill blocked | M | med |
-| P2.5 | 2 | COGS + inventory GL on delivery | H | deriveStockDocument → batch | P1.3 | Dr COGS/Cr Inventory at moving-avg | — | COGS posting tests | margin correct | M | med |
+| P2.5 | 2 | COGS + inventory GL on delivery **and POS** | H | deriveStockDocument, derivePOSInvoice → batch | P1.3 | Dr COGS/Cr Inventory at moving-avg on every stock-out (delivery, POS sale) | — | COGS posting tests (delivery + POS) | gross margin & inventory-GL reconcile for both | M | med |
 | P2.6 | 2 | Returns / credit notes | H | new Sales Return, Credit Note | P2.3,P1.6 | reverse stock+GL; returned_qty rollup | — | return tests | returns post & reverse | M | med |
 
 ## Phase 3 — purchase spine
