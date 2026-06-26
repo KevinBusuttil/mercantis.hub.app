@@ -334,7 +334,9 @@ enum Selling {
             FieldDefinition(key: "income_account", label: "Income Account",
                             type: .link, required: true, linkedDocType: "Account"),
             FieldDefinition(key: "cost_center", label: "Cost Center",
-                            type: .link, required: false, linkedDocType: "CostCenter")
+                            type: .link, required: false, linkedDocType: "CostCenter"),
+            FieldDefinition(key: "sales_order", label: "Sales Order",
+                            type: .link, required: false, linkedDocType: "SalesOrder")
         ],
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-invoice",

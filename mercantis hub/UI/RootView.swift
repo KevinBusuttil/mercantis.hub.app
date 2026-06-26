@@ -1210,6 +1210,19 @@ private struct HubDocumentEditor: View {
         errorMessage = nil
         infoMessage = nil
         do {
+            // Don't create a second conversion for the same order. A cancelled
+            // (docStatus 2) one doesn't count, so the operator can re-convert
+            // after voiding a mistake.
+            let existing = (try? engine.list(
+                docType: targetDocType,
+                filters: ["sales_order": .string(document.id)],
+                applyRowAccess: false
+            ))?.first(where: { $0.docStatus != 2 })
+            if let existing {
+                errorMessage = "A \(label) already exists for this order (\(existing.id)). Cancel it before creating another."
+                return
+            }
+
             var draft: Document
             switch targetDocType {
             case "SalesDelivery": draft = HubDocumentConversion.salesOrderToDelivery(document)

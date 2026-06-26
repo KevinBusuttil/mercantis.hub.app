@@ -18,6 +18,9 @@ struct mercantis_hubApp: App {
     /// Phase 7 — mirrors Delivery Route stop status onto Sales Deliveries
     /// and appends the status-event history. Same retention contract.
     let deliveryRouteService: DeliveryRouteService
+    /// Discards draft Delivery / Invoice conversions when their Sales Order is
+    /// cancelled. Retained so its event subscription stays alive.
+    let salesOrderConversionService: SalesOrderConversionService
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
@@ -140,6 +143,11 @@ struct mercantis_hubApp: App {
         // Phase 7: Delivery Route → Sales Delivery status mirroring + the
         // append-only Delivery Status Event history. Shares the same bus.
         self.deliveryRouteService = DeliveryRouteService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Discard draft Sales Order conversions when the order is cancelled.
+        self.salesOrderConversionService = SalesOrderConversionService(
             engine: documentEngine,
             emitter: emitter
         )

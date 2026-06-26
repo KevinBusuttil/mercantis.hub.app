@@ -35,6 +35,7 @@ enum HubDocumentConversion {
     static func salesOrderToInvoice(_ order: Document) -> Document {
         var fields: [String: FieldValue] = [
             "transaction_date": .date(Date()),
+            "sales_order": .string(order.id),
         ]
         copy(["customer", "currency", "conversion_rate", "price_list", "tax_code"], from: order.fields, into: &fields)
         let items = (order.children["items"] ?? []).enumerated().map { index, row -> ChildRow in
