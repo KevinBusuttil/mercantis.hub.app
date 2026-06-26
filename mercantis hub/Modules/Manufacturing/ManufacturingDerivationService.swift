@@ -317,12 +317,18 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
             children: ["items": rows]
         )
         var stockEntry = try engine.save(draft, context: systemContext)
-        // Auto-submit so LedgerDerivationService picks up the
-        // DocumentSubmittedEvent and writes the corresponding
-        // StockLedgerEntries. The user explicitly opted into
-        // "automatic on completion" so the post-submit StockEntry
-        // shouldn't sit in Draft waiting for them.
-        try engine.submit(&stockEntry, context: systemContext)
+        // Auto-submit so the consumption / production StockLedgerEntries are
+        // written. StockEntry posts atomically (Phase 2): its ledger rows go in
+        // the submit transaction via the PostingCoordinator closure, and
+        // LedgerDerivationService recomputes the Stock Balance post-commit off
+        // the DocumentSubmittedEvent. The user opted into "automatic on
+        // completion", so it shouldn't sit in Draft waiting for them.
+        let coordinator = PostingCoordinator(engine: engine)
+        if let closure = coordinator.submitClosure(for: stockEntry) {
+            try engine.submit(&stockEntry, context: systemContext, inTransaction: closure)
+        } else {
+            try engine.submit(&stockEntry, context: systemContext)
+        }
     }
 
     // MARK: - Helpers

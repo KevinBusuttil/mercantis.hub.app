@@ -147,8 +147,18 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
         var affected: [String: (item: String, warehouse: String)] = [:]
         for row in document.children["items"] ?? [] {
             guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
-            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
-            affected["\(itemId)|\(whId)"] = (itemId, whId)
+            // Single-warehouse fulfilment lines (Sales Delivery / POS / Purchase
+            // Receipt) carry `warehouse`, inheriting the document default when
+            // absent; Stock Entry transfer lines carry `source_warehouse` /
+            // `target_warehouse` instead.
+            let warehouses = [
+                nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse,
+                nonEmptyString(row.fields["source_warehouse"]),
+                nonEmptyString(row.fields["target_warehouse"])
+            ].compactMap { $0 }
+            for whId in warehouses {
+                affected["\(itemId)|\(whId)"] = (itemId, whId)
+            }
         }
         for pair in affected.values {
             do {
