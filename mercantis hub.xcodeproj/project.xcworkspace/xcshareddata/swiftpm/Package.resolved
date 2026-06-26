@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/KevinBusuttil/mercantis.core.app",
       "state" : {
-        "branch" : "main",
-        "revision" : "e9d41afe20335e398dcbd4dc918cd2220584ce13"
+        "branch" : "claude/trusting-babbage-b0t6er",
+        "revision" : "c790e400dbac63d94b54d3fbbfef8d3a68c981b9"
       }
     },
     {
