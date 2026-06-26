@@ -12,6 +12,10 @@ struct HubSavedReportRunnerView: View {
     let savedReportEngine: SavedReportEngine
 
     @State private var result: ReportResult?
+    /// Grouped / charted projection, used when a from-scratch report defines
+    /// grouping, a chart, or any column aggregate.
+    @State private var projected: HubReportProjection.Table?
+    @State private var chartPoints: [HubReportProjection.ChartPoint] = []
     @State private var errorMessage: String?
     @State private var exportErrorMessage: String?
     @State private var editing: SavedReportDefinition?
@@ -21,6 +25,15 @@ struct HubSavedReportRunnerView: View {
 
     private var report: SavedReportDefinition? {
         store.get(id: reportId)
+    }
+
+    /// Whether a report renders via the grouped/charted projection rather than
+    /// the flat table.
+    private func usesProjection(_ report: SavedReportDefinition) -> Bool {
+        report.baseReportId == nil
+            && (report.groupByFieldKey != nil
+                || report.chart != nil
+                || report.columns.contains { $0.aggregate != .none })
     }
 
     var body: some View {
@@ -54,7 +67,14 @@ struct HubSavedReportRunnerView: View {
             }
         }
         .sheet(item: $editing, onDismiss: { load() }) { editingReport in
-            HubReportCustomiseView(report: editingReport, store: store, engine: engine)
+            if editingReport.baseReportId == nil {
+                HubReportStudioView(
+                    report: editingReport, store: store,
+                    engine: engine, savedReportEngine: savedReportEngine
+                )
+            } else {
+                HubReportCustomiseView(report: editingReport, store: store, engine: engine)
+            }
         }
         .confirmationDialog(
             "Delete this custom report?",
@@ -86,7 +106,28 @@ struct HubSavedReportRunnerView: View {
 
     @ViewBuilder
     private func content(for report: SavedReportDefinition) -> some View {
-        if let result {
+        if usesProjection(report), let projected {
+            // Grouped / charted output (subtotals, grand total, chart).
+            ScrollView {
+                HubReportOutputView(
+                    table: projected,
+                    chartPoints: chartPoints,
+                    chartKind: report.chart?.kind
+                )
+                .padding(16)
+            }
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button { load() } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        if let result { exportCSV(report: report, result: result) }
+                    } label: { Label("Export CSV", systemImage: "square.and.arrow.up") }
+                    .disabled(result == nil)
+                }
+            }
+        } else if let result {
             // The navigation bar already shows the report name, so suppress
             // the in-view title to avoid duplicating it; the header keeps the
             // row count + Refresh/Export actions. (Core top-aligns the table.)
@@ -116,6 +157,7 @@ struct HubSavedReportRunnerView: View {
             return
         }
         do {
+            // Flat result (also backs CSV export for grouped reports).
             result = try HubSavedReportRunner.run(
                 savedReport: report,
                 engine: engine,
@@ -123,9 +165,24 @@ struct HubSavedReportRunnerView: View {
                 requestingUserId: HubIdentity.userId(),
                 userRoles: ["System Manager"]
             )
+            // Grouped / charted projection when the report calls for it.
+            if usesProjection(report) {
+                let typed = try savedReportEngine.executeTyped(
+                    savedReport: report,
+                    requestingUserId: HubIdentity.userId(),
+                    userRoles: ["System Manager"]
+                )
+                projected = HubReportProjection.build(definition: report, typed: typed, engine: engine)
+                chartPoints = HubReportProjection.chartPoints(definition: report, typed: typed, engine: engine)
+            } else {
+                projected = nil
+                chartPoints = []
+            }
             errorMessage = nil
         } catch {
             result = nil
+            projected = nil
+            chartPoints = []
             errorMessage = String(describing: error)
         }
     }
