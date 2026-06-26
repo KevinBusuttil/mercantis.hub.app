@@ -1004,65 +1004,76 @@ private struct HubDocumentEditor: View {
 
         return MercantisCard(padding: .standard, tinted: true) {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(document.id.isEmpty ? "New \(docType.name)" : docType.name)
-                                .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(MercantisTheme.textPrimary)
-                            Spacer(minLength: 12)
-                            if !document.id.isEmpty {
-                                Text(document.id)
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(MercantisTheme.textSecondary)
-                                    .textSelection(.enabled)
-                            }
-                        }
-
-                        if let leadingContext {
-                            Text(leadingContext)
-                                .font(.system(size: 15, weight: .medium))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(document.id.isEmpty ? "New \(docType.name)" : docType.name)
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(MercantisTheme.textPrimary)
+                        Spacer(minLength: 12)
+                        if !document.id.isEmpty {
+                            Text(document.id)
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(MercantisTheme.textSecondary)
-                                .lineLimit(2)
-                        }
-
-                        HStack(spacing: 6) {
-                            statusBadge
-                        }
-
-                        if !metadata.isEmpty {
-                            Text(metadata.joined(separator: "  •  "))
-                                .font(.caption)
-                                .foregroundStyle(MercantisTheme.textSecondary)
-                                .lineLimit(2)
+                                .textSelection(.enabled)
                         }
                     }
 
-                    Spacer(minLength: 12)
-
-                    VStack(alignment: .trailing, spacing: 8) {
-                        if let primary = actions.first(where: \.isPrimary) {
-                            Button(primary.label, role: primary.role, action: primary.perform)
-                                .buttonStyle(.borderedProminent)
-                        }
-
-                        HStack(spacing: 8) {
-                            ForEach(actions.filter { !$0.isPrimary }) { action in
-                                Button(action.label, role: action.role, action: action.perform)
-                                    .buttonStyle(.bordered)
-                            }
-
-                            if inspectorAvailable {
-                                Button(showsInspector ? "Hide Inspector" : "Show Inspector") {
-                                    showsInspector.toggle()
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                        }
+                    if let leadingContext {
+                        Text(leadingContext)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(MercantisTheme.textSecondary)
+                            .lineLimit(2)
                     }
-                    .controlSize(.small)
+
+                    HStack(spacing: 6) {
+                        statusBadge
+                    }
+
+                    if !metadata.isEmpty {
+                        Text(metadata.joined(separator: "  •  "))
+                            .font(.caption)
+                            .foregroundStyle(MercantisTheme.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
+
+                headerActionBar
+            }
+        }
+    }
+
+    /// The document's action bar: a single aligned, consistently styled row
+    /// instead of the old cramped two-tier corner cluster. Document / workflow
+    /// actions sit on the left (primary first), so the row has room to grow as
+    /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
+    /// view-only inspector toggle is pushed to the right and visually separated.
+    @ViewBuilder
+    private var headerActionBar: some View {
+        if !actions.isEmpty || inspectorAvailable {
+            HStack(spacing: 8) {
+                if let primary = actions.first(where: \.isPrimary) {
+                    Button(primary.label, role: primary.role, action: primary.perform)
+                        .buttonStyle(.borderedProminent)
+                }
+                ForEach(actions.filter { !$0.isPrimary }) { action in
+                    Button(action.label, role: action.role, action: action.perform)
+                        .buttonStyle(.bordered)
+                }
+
+                Spacer(minLength: 12)
+
+                if inspectorAvailable {
+                    Button {
+                        showsInspector.toggle()
+                    } label: {
+                        Label(showsInspector ? "Hide Inspector" : "Show Inspector",
+                              systemImage: "sidebar.right")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
+            .controlSize(.small)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
