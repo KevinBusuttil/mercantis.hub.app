@@ -24,6 +24,7 @@ enum HubOnboardingSeeder {
         Account(id: "Debtors",   name: "Debtors",            rootType: "Asset",     accountType: "Receivable"),
         Account(id: "Stock",     name: "Stock In Hand",      rootType: "Asset",     accountType: "Stock"),
         Account(id: "Creditors", name: "Creditors",          rootType: "Liability", accountType: "Payable"),
+        Account(id: "GRNI",      name: "Stock Received Not Billed", rootType: "Liability", accountType: "Stock Received But Not Billed"),
         Account(id: "VAT",       name: "VAT",                rootType: "Liability", accountType: "Tax"),
         Account(id: "Sales",     name: "Sales",              rootType: "Income",    accountType: "Income"),
         Account(id: "COGS",      name: "Cost of Goods Sold", rootType: "Expense",   accountType: "Expense"),

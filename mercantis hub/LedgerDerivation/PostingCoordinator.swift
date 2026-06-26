@@ -9,11 +9,14 @@
 //  legacy LedgerDerivationService event path until later increments.
 //
 //  Increment 2 added Journal Entry. Increment 3a adds the GL-only invoices
-//  (Sales Invoice, Purchase Invoice). Phase 2 adds the first stock DocType
-//  (Sales Delivery): its Stock Ledger Issue rows and COGS GL post inside the
-//  transaction, and the derived Stock Balance (Bin) — a cache, not a ledger —
-//  is recomputed post-commit by LedgerDerivationService from the now-committed
-//  ledger rows. POS / Purchase Receipt / Stock Entry are converted later.
+//  (Sales Invoice, Purchase Invoice). Phase 2 adds the stock DocTypes:
+//  Sales Delivery (Issue + COGS at moving-average cost) and Purchase Receipt
+//  (Receipt + the Dr Inventory / Cr GRNI accrual). Their Stock Ledger rows and
+//  GL post inside the transaction; the derived Stock Balance (Bin) — a cache,
+//  not a ledger — is recomputed post-commit by LedgerDerivationService from the
+//  committed rows. Perpetual inventory (GRNI) is opt-in: the accrual posts only
+//  when a GRNI account is mapped, and the Purchase Invoice then clears GRNI for
+//  its stock lines. POS / Stock Entry are converted later.
 //
 //  The DocTypes posted here are listed in `atomicDocTypes`, which
 //  LedgerDerivationService skips so there is no double-posting.
@@ -39,11 +42,11 @@ nonisolated final class PostingCoordinator {
 
     /// DocTypes posted atomically here — and therefore skipped by the legacy
     /// event path. Single source of truth shared with LedgerDerivationService.
-    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery"]
+    static let atomicDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry", "SalesDelivery", "PurchaseReceipt"]
 
     /// Atomic DocTypes that move stock — LedgerDerivationService recomputes their
     /// Stock Balance (Bin) post-commit (posting itself is done in-transaction).
-    static let atomicStockDocTypes: Set<String> = ["SalesDelivery"]
+    static let atomicStockDocTypes: Set<String> = ["SalesDelivery", "PurchaseReceipt"]
 
     /// Tolerance for the balanced-GL check (currency rounding).
     private static let balanceTolerance = 0.005
@@ -66,6 +69,14 @@ nonisolated final class PostingCoordinator {
         var stockCostBasis: [Int: Double] = [:]
         var cogsAccount: String?
         var inventoryAccount: String?
+        /// GRNI clearing account (perpetual inventory). Nil unless the operator
+        /// has mapped it on the Business Profile — when nil the Purchase
+        /// Receipt / Invoice posting stays on the legacy expense-based path.
+        var grniAccount: String?
+        /// item id → is_stock_item for the document's lines, so the GRNI loop
+        /// can size the inventory accrual (Receipt) and the clearing leg
+        /// (Invoice) to the stock-item portion only.
+        var stockItemFlags: [String: Bool] = [:]
     }
 
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
@@ -90,12 +101,36 @@ nonisolated final class PostingCoordinator {
     private static func makeInputs(for doc: Document, reversal: Bool, engine: DocumentEngine) -> PostingInputs {
         var inputs = PostingInputs(fallbackVatAccount: companyDefault("default_vat_account", engine: engine))
         inputs.referencedInvoices = referencedInvoices(for: doc, engine: engine)
+        inputs.grniAccount = companyDefault("default_grni_account", engine: engine)
         if atomicStockDocTypes.contains(doc.docType) {
             inputs.cogsAccount = companyDefault("default_expense_account", engine: engine)
             inputs.inventoryAccount = companyDefault("default_stock_account", engine: engine)
             inputs.stockCostBasis = stockCostBasis(for: doc, reversal: reversal, engine: engine)
         }
+        // Per-line stock/service classification for the GRNI loop: Purchase
+        // Receipt accrues to GRNI for stock-item lines; Purchase Invoice clears
+        // GRNI for the same lines and expenses the rest.
+        if doc.docType == "PurchaseReceipt" || doc.docType == "PurchaseInvoice" {
+            inputs.stockItemFlags = stockItemFlags(for: doc, engine: engine)
+        }
         return inputs
+    }
+
+    /// Map of item id → `is_stock_item` for the document's lines, read OUTSIDE
+    /// the write transaction. An absent / non-bool flag defaults to true so an
+    /// item still counts as stock (matching the field's default).
+    private static func stockItemFlags(for doc: Document, engine: DocumentEngine) -> [String: Bool] {
+        var flags: [String: Bool] = [:]
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]), flags[itemId] == nil else { continue }
+            let item = try? engine.fetch(docType: "Item", id: itemId)
+            if case .bool(let isStock)? = item?.fields["is_stock_item"] {
+                flags[itemId] = isStock
+            } else {
+                flags[itemId] = true
+            }
+        }
+        return flags
     }
 
     /// Per-line valuation rate for a Sales Delivery's stock issue, read OUTSIDE
@@ -141,9 +176,10 @@ nonisolated final class PostingCoordinator {
         switch doc.docType {
         case "JournalEntry":    ledgerDocs = journalEntryRows(doc, reversal: reversal)
         case "SalesInvoice":    ledgerDocs = salesInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
-        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount)
+        case "PurchaseInvoice": ledgerDocs = purchaseInvoiceRows(doc, reversal: reversal, fallbackVatAccount: inputs.fallbackVatAccount, grniAccount: inputs.grniAccount, stockItemFlags: inputs.stockItemFlags)
         case "PaymentEntry":    ledgerDocs = paymentEntryRows(doc, reversal: reversal, referencedInvoices: inputs.referencedInvoices)
         case "SalesDelivery":   ledgerDocs = salesDeliveryRows(doc, reversal: reversal, costBasis: inputs.stockCostBasis, cogsAccount: inputs.cogsAccount, inventoryAccount: inputs.inventoryAccount)
+        case "PurchaseReceipt": ledgerDocs = purchaseReceiptRows(doc, reversal: reversal, stockItemFlags: inputs.stockItemFlags, inventoryAccount: inputs.inventoryAccount, grniAccount: inputs.grniAccount)
         default:                return
         }
 
@@ -284,7 +320,10 @@ nonisolated final class PostingCoordinator {
         return docs
     }
 
-    private static func purchaseInvoiceRows(_ doc: Document, reversal: Bool, fallbackVatAccount: String?) -> [Document] {
+    private static func purchaseInvoiceRows(
+        _ doc: Document, reversal: Bool, fallbackVatAccount: String?,
+        grniAccount: String?, stockItemFlags: [String: Bool]
+    ) -> [Document] {
         guard let payable = doc.fields["credit_to"],
               let expense = doc.fields["expense_account"] else { return [] }
         let postingDate = doc.fields["transaction_date"] ?? .date(Date())
@@ -298,19 +337,37 @@ nonisolated final class PostingCoordinator {
         let net   = asDouble(doc.fields["net_total"]) ?? (grand - totalTax(taxRowsChildren))
 
         var docs: [Document] = []
-        // Cr AP (gross), Dr Expense (net).
+        // Cr AP (gross).
         docs.append(glRow(
             id: "GL-\(doc.id)-credit\(suffix(reversal))", postingDate: postingDate, account: payable,
             debit: .double(reversal ? grand : 0), credit: .double(reversal ? 0 : grand),
             partyType: "Supplier", party: supplier, costCenter: costCenter,
             voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
         ))
-        docs.append(glRow(
-            id: "GL-\(doc.id)-debit\(suffix(reversal))", postingDate: postingDate, account: expense,
-            debit: .double(reversal ? 0 : net), credit: .double(reversal ? net : 0),
-            partyType: nil, party: nil, costCenter: costCenter,
-            voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
-        ))
+
+        // Dr side (net of tax). With a GRNI account mapped, the value of the
+        // stock-item lines clears the receipt accrual (Dr GRNI) and only the
+        // remainder hits Expense; without it the whole net is Dr Expense, so
+        // the books are byte-for-byte the legacy behaviour. `stockNet` is
+        // clamped to `net` so a discount can never over-clear GRNI.
+        let stockNet = grniAccount == nil ? 0 : min(net, stockLineNet(doc, stockItemFlags: stockItemFlags))
+        let expenseNet = net - stockNet
+        if let grniAccount, stockNet > 0.0001 {
+            docs.append(glRow(
+                id: "GL-\(doc.id)-grni\(suffix(reversal))", postingDate: postingDate, account: .string(grniAccount),
+                debit: .double(reversal ? 0 : stockNet), credit: .double(reversal ? stockNet : 0),
+                partyType: nil, party: nil, costCenter: costCenter,
+                voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        if abs(expenseNet) > 0.0001 || stockNet <= 0.0001 {
+            docs.append(glRow(
+                id: "GL-\(doc.id)-debit\(suffix(reversal))", postingDate: postingDate, account: expense,
+                debit: .double(reversal ? 0 : expenseNet), credit: .double(reversal ? expenseNet : 0),
+                partyType: nil, party: nil, costCenter: costCenter,
+                voucherType: "PurchaseInvoice", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
         docs += taxRowDocs(doc, rows: taxRowsChildren, party: supplier, partyTypeValue: "Supplier", isOutput: false, reversal: reversal, fallbackVatAccount: fallbackVatAccount)
 
         if let supplierValue = supplier {
@@ -375,6 +432,62 @@ nonisolated final class PostingCoordinator {
                 debit: reversal ? amount : zero, credit: reversal ? zero : amount,
                 partyType: nil, party: nil, costCenter: nil,
                 voucherType: "SalesDelivery", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+        }
+        return docs
+    }
+
+    /// Purchase Receipt brings goods IN: a Stock Ledger Receipt row per line at
+    /// the line's receipt cost (+qty submit / -qty reversal), plus the inventory
+    /// accrual GL — Dr Inventory / Cr GRNI for the value of the stock-item lines
+    /// (reversal flips). The accrual is opt-in: posted only when both the Stock
+    /// and GRNI accounts are mapped; otherwise the receipt moves stock only,
+    /// exactly as the legacy event path did. The matching Purchase Invoice
+    /// clears GRNI for the same lines so the loop nets to Dr Inventory / Cr AP.
+    private static func purchaseReceiptRows(
+        _ doc: Document, reversal: Bool, stockItemFlags: [String: Bool],
+        inventoryAccount: String?, grniAccount: String?
+    ) -> [Document] {
+        let postingDate = doc.fields["transaction_date"] ?? doc.fields["posting_date"] ?? .date(Date())
+        let postingTime = doc.fields["posting_time"]
+        let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+            ?? nonEmptyString(doc.fields["warehouse"])
+
+        var docs: [Document] = []
+        var inventoryTotal = 0.0
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
+            let qty = row.fields["qty"] ?? .double(0)
+            let rate = row.fields["valuation_rate"] ?? row.fields["rate"] ?? .double(0)
+            // Receipt: +qty on submit, -qty on reversal.
+            let signedQty = signed(qty, negate: reversal)
+            docs.append(sleRow(
+                id: "SLE-\(doc.id)-\(row.rowIndex)\(suffix(reversal))",
+                transType: "Receipt", item: .string(itemId), warehouse: .string(whId),
+                postingDate: postingDate, postingTime: postingTime,
+                voucherType: "PurchaseReceipt", voucherNo: doc.id,
+                qtyChange: signedQty, rate: rate, reversal: reversal, company: doc.company
+            ))
+            if stockItemFlags[itemId] ?? true {
+                inventoryTotal += (asDouble(qty) ?? 0) * (asDouble(rate) ?? 0)
+            }
+        }
+
+        if abs(inventoryTotal) > 0.0001, let inventoryAccount, let grniAccount {
+            let amount = FieldValue.double(inventoryTotal)
+            let zero = FieldValue.double(0)
+            docs.append(glRow(
+                id: "GL-\(doc.id)-inventory\(suffix(reversal))", postingDate: postingDate, account: .string(inventoryAccount),
+                debit: reversal ? zero : amount, credit: reversal ? amount : zero,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: "PurchaseReceipt", voucherNo: doc.id, reversal: reversal, company: doc.company
+            ))
+            docs.append(glRow(
+                id: "GL-\(doc.id)-grni\(suffix(reversal))", postingDate: postingDate, account: .string(grniAccount),
+                debit: reversal ? amount : zero, credit: reversal ? zero : amount,
+                partyType: nil, party: nil, costCenter: nil,
+                voucherType: "PurchaseReceipt", voucherNo: doc.id, reversal: reversal, company: doc.company
             ))
         }
         return docs
@@ -654,6 +767,19 @@ nonisolated final class PostingCoordinator {
 
     private static func totalTax(_ rows: [ChildRow]) -> Double {
         rows.reduce(0) { $0 + (asDouble($1.fields["tax_amount"]) ?? 0) }
+    }
+
+    /// Sum of the stock-item line amounts (tax-exclusive) on a purchase
+    /// document, used to size the GRNI clearing leg on a Purchase Invoice.
+    private static func stockLineNet(_ doc: Document, stockItemFlags: [String: Bool]) -> Double {
+        var total = 0.0
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]), stockItemFlags[itemId] ?? true else { continue }
+            let amount = asDouble(row.fields["amount"])
+                ?? ((asDouble(row.fields["qty"]) ?? 0) * (asDouble(row.fields["rate"]) ?? 0))
+            total += amount
+        }
+        return total
     }
 
     private static func signed(_ value: FieldValue, negate: Bool) -> FieldValue {
