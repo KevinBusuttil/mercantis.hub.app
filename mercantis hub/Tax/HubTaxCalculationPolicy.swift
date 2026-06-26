@@ -35,7 +35,13 @@ enum HubTaxCalculationPolicy {
         docType: DocType,
         engine: DocumentEngine
     ) -> Document {
-        guard supportedDocTypes.contains(docType.id) else { return document }
+        // Documents without a tax table (Quotation, Sales Order, Delivery,
+        // Purchase Order / Receipt, …) still carry `total_qty` / `grand_total`
+        // summary fields — compute those from the line items so they populate
+        // and stay in sync, even though there is no tax to apply.
+        guard supportedDocTypes.contains(docType.id) else {
+            return appliedTotalsOnly(to: document, docType: docType)
+        }
         guard let rows = document.children[lineTableKey], !rows.isEmpty else { return document }
 
         // Default VAT account fallback from the single Business Profile.
@@ -70,6 +76,34 @@ enum HubTaxCalculationPolicy {
             partyTaxCode: partyCode,
             itemTaxCode: itemTaxCode
         )
+    }
+
+    /// Totals for documents that carry summary fields but no `taxes` table:
+    /// `total_qty` = Σ line qty, `grand_total` / `net_total` = Σ line amount
+    /// (falling back to qty × rate when a row's `amount` isn't stored). Only
+    /// writes the fields the DocType actually declares, so it is a safe no-op
+    /// for documents without any totals (e.g. master data).
+    static func appliedTotalsOnly(to document: Document, docType: DocType) -> Document {
+        let fieldKeys = Set(docType.fields.map(\.key))
+        guard fieldKeys.contains("total_qty")
+                || fieldKeys.contains("grand_total")
+                || fieldKeys.contains("net_total") else { return document }
+
+        let rows = document.children[lineTableKey] ?? []
+        var totalQty = 0.0
+        var grandTotal = 0.0
+        for row in rows {
+            let qty  = doubleValue(row.fields["qty"]) ?? 0
+            let rate = doubleValue(row.fields["rate"]) ?? 0
+            totalQty += qty
+            grandTotal += doubleValue(row.fields["amount"]) ?? (qty * rate)
+        }
+
+        var result = document
+        if fieldKeys.contains("total_qty")   { result.fields["total_qty"]   = .double(HubTaxEngine.round2(totalQty)) }
+        if fieldKeys.contains("net_total")   { result.fields["net_total"]   = .double(HubTaxEngine.round2(grandTotal)) }
+        if fieldKeys.contains("grand_total") { result.fields["grand_total"] = .double(HubTaxEngine.round2(grandTotal)) }
+        return result
     }
 
     // MARK: - Pure core (testable without a DocumentEngine)
