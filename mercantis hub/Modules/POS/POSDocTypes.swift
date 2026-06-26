@@ -17,9 +17,9 @@ private let systemManagerPermission = PermissionRule(
 /// - lines use the existing `SalesItem` child (so `HubTaxCalculationPolicy`
 ///   and the stock derivation work unchanged),
 /// - taxes use the shared `TaxCharge` rows and `HubTaxEngine`,
-/// - `LedgerDerivationService.derivePOSInvoice` posts the cash sale (Dr
-///   cash / Cr income / Cr output VAT), the TaxTrans rows, and the stock
-///   issue, all on submit.
+/// - `PostingCoordinator.posInvoiceRows` posts the cash sale (Dr cash /
+///   Cr income / Cr output VAT), the TaxTrans rows, and the stock issue —
+///   atomically inside the submit transaction.
 enum POS {
 
     // MARK: - Master: POS Profile

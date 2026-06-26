@@ -279,7 +279,7 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
             guard let item = required.fields["item"] else { continue }
             let qty = required.fields["required_qty"] ?? .double(0)
             var unitCost = 0.0
-            if case .string(let itemId)? = item, let warehouse = sourceWarehouse {
+            if case .string(let itemId) = item, let warehouse = sourceWarehouse {
                 let bin = (try? stockBalance.balance(item: itemId, warehouse: warehouse)) ?? nil
                 unitCost = bin?.valuationRate ?? 0
             }

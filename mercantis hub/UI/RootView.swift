@@ -743,6 +743,9 @@ private struct HubDocumentEditor: View {
     @Environment(\.postingCoordinator) private var posting
 
     @State private var errorMessage: String?
+    /// A transient success note (e.g. after converting a Sales Order into a
+    /// Delivery / Invoice), shown as a green banner.
+    @State private var infoMessage: String?
     /// A pending action awaiting confirmation (Post / Cancel of a
     /// ledger- or stock-affecting document). Drives the confirmation dialog.
     @State private var pendingConfirmation: PendingLifecycleAction?
@@ -829,6 +832,9 @@ private struct HubDocumentEditor: View {
                 if let error = errorMessage {
                     errorBanner(error)
                 }
+                if let infoMessage {
+                    infoBanner(infoMessage)
+                }
             }
             .padding()
         }
@@ -852,6 +858,9 @@ private struct HubDocumentEditor: View {
                 }
                 if let error = errorMessage {
                     errorBanner(error)
+                }
+                if let infoMessage {
+                    infoBanner(infoMessage)
                 }
             }
             .padding(16)
@@ -1166,6 +1175,62 @@ private struct HubDocumentEditor: View {
         .background(MercantisTheme.fillSoft(for: .danger), in: RoundedRectangle(cornerRadius: 8))
     }
 
+    private func infoBanner(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(MercantisTheme.success)
+            Text(text)
+                .foregroundStyle(MercantisTheme.success)
+                .lineLimit(2)
+            Spacer()
+        }
+        .font(.callout)
+        .padding(10)
+        .background(MercantisTheme.fillSoft(for: .success), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Sales Order → Delivery / Invoice conversion buttons, offered once the
+    /// order is confirmed (docStatus 1). Each builds a draft of the target
+    /// document from the order and saves it; the operator opens and submits it.
+    private var conversionActions: [WorkspaceActionDescriptor] {
+        guard docType.id == "SalesOrder", document.docStatus == 1, !document.id.isEmpty else { return [] }
+        return [
+            WorkspaceActionDescriptor(
+                id: "convert:delivery", label: "Convert to Delivery", role: nil, isPrimary: false,
+                perform: { convertSalesOrder(to: "SalesDelivery", label: "delivery") }
+            ),
+            WorkspaceActionDescriptor(
+                id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                perform: { convertSalesOrder(to: "SalesInvoice", label: "invoice") }
+            ),
+        ]
+    }
+
+    private func convertSalesOrder(to targetDocType: String, label: String) {
+        errorMessage = nil
+        infoMessage = nil
+        do {
+            var draft: Document
+            switch targetDocType {
+            case "SalesDelivery": draft = HubDocumentConversion.salesOrderToDelivery(document)
+            case "SalesInvoice":  draft = HubDocumentConversion.salesOrderToInvoice(document)
+            default: return
+            }
+            // Fill posting accounts / default warehouse from the Business
+            // Profile, the same way a brand-new document's first save does, so
+            // the draft carries the fields it needs to be submittable.
+            if let targetType = HubManifest.docType(for: targetDocType),
+               let profile = (try? engine.list(docType: "Company"))?.first {
+                draft = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(draft, docType: targetType, businessProfile: profile)
+            }
+            let saved = try engine.save(draft)
+            infoMessage = "Created \(label) \(saved.id) — open it to review and submit."
+            onPersist()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
     private var workspaceActions: [WorkspaceActionDescriptor] {
         var actions: [WorkspaceActionDescriptor] = []
         var primaryAssigned = false
@@ -1228,6 +1293,7 @@ private struct HubDocumentEditor: View {
             )
         }
 
+        actions.append(contentsOf: conversionActions)
         return actions
     }
 
