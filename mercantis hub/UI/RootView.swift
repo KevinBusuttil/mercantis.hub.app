@@ -998,7 +998,6 @@ private struct HubDocumentEditor: View {
     }
 
     private func workspaceHeader(layout: HubDocumentLayoutPolicy.Layout, inspectorAvailable: Bool) -> some View {
-        let actions = workspaceActions
         let leadingContext = headerContext(for: layout)
         let metadata = headerMetadata
 
@@ -1037,7 +1036,7 @@ private struct HubDocumentEditor: View {
                     }
                 }
 
-                headerActionBar
+                headerActionBar(inspectorAvailable: inspectorAvailable)
             }
         }
     }
@@ -1048,7 +1047,8 @@ private struct HubDocumentEditor: View {
     /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
     /// view-only inspector toggle is pushed to the right and visually separated.
     @ViewBuilder
-    private var headerActionBar: some View {
+    private func headerActionBar(inspectorAvailable: Bool) -> some View {
+        let actions = workspaceActions
         if !actions.isEmpty || inspectorAvailable {
             HStack(spacing: 8) {
                 if let primary = actions.first(where: \.isPrimary) {
