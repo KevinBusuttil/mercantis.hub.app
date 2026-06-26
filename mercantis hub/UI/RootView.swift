@@ -1196,6 +1196,9 @@ private struct HubDocumentEditor: View {
         guard document.docStatus == 1, !document.id.isEmpty else { return [] }
         switch docType.id {
         case "Quotation":
+            // Only an accepted/won quote (workflow state "Ordered", shown as
+            // "Accepted") converts to an order — a merely sent quote can't yet.
+            guard document.status == "Ordered" else { return [] }
             return [
                 WorkspaceActionDescriptor(
                     id: "convert:salesorder", label: "Convert to Sales Order", role: nil, isPrimary: false,
