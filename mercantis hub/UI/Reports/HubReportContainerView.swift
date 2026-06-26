@@ -22,6 +22,9 @@ struct HubReportContainerView: View {
     var savedReportStore: HubSavedReportStore? = nil
     var visibility: HubVisibilitySettings? = nil
 
+    /// Injected at app scope; backs the Posting Audit report. Nil in previews.
+    @Environment(\.postingBatchStore) private var postingBatchStore
+
     @State private var result: ReportResult?
     @State private var errorMessage: String?
     @State private var exportErrorMessage: String?
@@ -239,7 +242,13 @@ struct HubReportContainerView: View {
         }
 
         do {
-            if let r = try HubReports.runResult(reportId: reportId, engine: engine, filters: filters) {
+            // Posting Audit reads the posting-batch ledger (a Core posting
+            // primitive, not a DocType), so it routes through the injected
+            // PostingBatchStore rather than the DocumentEngine dispatch.
+            if reportId == HubReports.postingAudit.id {
+                result = try HubReports.runPostingAudit(store: postingBatchStore)
+                errorMessage = nil
+            } else if let r = try HubReports.runResult(reportId: reportId, engine: engine, filters: filters) {
                 result = r
                 errorMessage = nil
             } else {

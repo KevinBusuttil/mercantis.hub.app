@@ -1227,3 +1227,17 @@ extension EnvironmentValues {
         set { self[PostingCoordinatorKey.self] = newValue }
     }
 }
+
+private struct PostingBatchStoreKey: EnvironmentKey {
+    static let defaultValue: PostingBatchStore? = nil
+}
+
+extension EnvironmentValues {
+    /// The app's posting-batch reader, injected at app scope so the Posting
+    /// Audit report can list every `PostingBatch` (the audit view of the
+    /// atomic-posting ledger). Nil in previews / tests that don't inject it.
+    var postingBatchStore: PostingBatchStore? {
+        get { self[PostingBatchStoreKey.self] }
+        set { self[PostingBatchStoreKey.self] = newValue }
+    }
+}
