@@ -37,6 +37,8 @@ enum Setup {
                             type: .link, required: false, linkedDocType: "Currency"),
             FieldDefinition(key: "default_warehouse", label: "Default Warehouse",
                             type: .link, required: false, linkedDocType: "Warehouse"),
+            FieldDefinition(key: "allow_negative_stock", label: "Allow Negative Stock",
+                            type: .boolean, required: false, defaultValue: .bool(false)),
             FieldDefinition(key: "default_receivable_account", label: "Default Receivable Account",
                             type: .link, required: false, linkedDocType: "Account"),
             FieldDefinition(key: "default_payable_account", label: "Default Payable Account",
@@ -83,7 +85,7 @@ enum Setup {
                 title: "Defaults",
                 helpText: "Used as defaults for future sales, buying, stock, and accounting setup.",
                 columns: 2,
-                fieldKeys: ["default_currency", "default_warehouse"]
+                fieldKeys: ["default_currency", "default_warehouse", "allow_negative_stock"]
             ),
             FormLayoutSection(
                 key: "accounts",

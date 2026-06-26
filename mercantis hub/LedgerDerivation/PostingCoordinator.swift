@@ -33,6 +33,38 @@ public nonisolated enum PostingError: Error {
     case unbalanced(debit: Double, credit: Double)
 }
 
+/// Pre-posting guard failures: the submit is rejected (and the transaction
+/// rolled back) before any ledger rows are written. Surfaced to the operator
+/// via `LocalizedError`.
+public nonisolated enum PostingValidationError: LocalizedError {
+    /// The posting date falls in a fiscal period that has been closed.
+    case closedPeriod(period: String)
+    /// No fiscal year covers the posting date (and at least one is defined).
+    case noOpenPeriod(date: Date)
+    /// Issuing this line would drive stock negative and the company has not
+    /// opted into negative stock.
+    case insufficientStock(item: String, warehouse: String, onHand: Double, requested: Double)
+
+    public var errorDescription: String? {
+        switch self {
+        case .closedPeriod(let period):
+            return "The fiscal period \"\(period)\" is closed — documents can't be posted into it."
+        case .noOpenPeriod(let date):
+            return "No fiscal year covers \(Self.dateText(date)). Create and activate a fiscal year for this date before posting."
+        case .insufficientStock(let item, let warehouse, let onHand, let requested):
+            return "Not enough stock of \(item) in \(warehouse): \(Self.qtyText(requested)) requested but \(Self.qtyText(onHand)) on hand. Receive stock first, or enable “Allow Negative Stock” in the Business Profile."
+        }
+    }
+
+    private static func dateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
+    }
+
+    private static func qtyText(_ qty: Double) -> String { String(format: "%g", qty) }
+}
+
 /// Builds the in-transaction posting closures passed to `DocumentEngine.submit`
 /// / `cancel` for the DocTypes it owns.
 ///
@@ -82,6 +114,10 @@ nonisolated final class PostingCoordinator {
         /// own cash_account / income_account take precedence when set).
         var incomeAccount: String?
         var cashAccount: String?
+        /// A pre-posting guard failure (closed period / insufficient stock),
+        /// resolved OUTSIDE the write transaction and thrown inside it so the
+        /// submit rolls back. Only set on submit (never on reversal).
+        var submitValidationError: PostingValidationError?
     }
 
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
@@ -122,7 +158,84 @@ nonisolated final class PostingCoordinator {
             inputs.incomeAccount = companyDefault("default_income_account", engine: engine)
             inputs.cashAccount = companyDefault("default_cash_bank_account", engine: engine)
         }
+        // Pre-posting guards (submit only): reject posting into a closed/absent
+        // fiscal period, or an issue that would drive stock negative. Resolved
+        // here, OUTSIDE the write transaction; `post` throws it inside so the
+        // submit rolls back. Reversals are exempt (a cancel must always be able
+        // to unwind, and adding stock back can't go negative).
+        if !reversal {
+            inputs.submitValidationError = fiscalPeriodViolation(for: doc, engine: engine)
+                ?? stockAvailabilityViolation(for: doc, engine: engine)
+        }
         return inputs
+    }
+
+    /// Reject a posting whose date falls in a closed fiscal period, or — when at
+    /// least one fiscal year is defined — a date no fiscal year covers. When no
+    /// fiscal years exist at all the guard is dormant, so a fresh / unconfigured
+    /// install is never blocked.
+    private static func fiscalPeriodViolation(for doc: Document, engine: DocumentEngine) -> PostingValidationError? {
+        guard let postingDate = asDate(doc.fields["posting_date"] ?? doc.fields["transaction_date"]) else { return nil }
+        let fiscalYears = (try? engine.list(docType: "FiscalYear")) ?? []
+        guard !fiscalYears.isEmpty else { return nil }
+        let covering = fiscalYears.first { year in
+            guard let start = asDate(year.fields["year_start_date"]),
+                  let end = asDate(year.fields["year_end_date"]) else { return false }
+            return start <= postingDate && postingDate <= end
+        }
+        guard let covering else { return .noOpenPeriod(date: postingDate) }
+        if case .bool(true)? = covering.fields["is_closed"] {
+            return .closedPeriod(period: nonEmptyString(covering.fields["year_name"]) ?? covering.id)
+        }
+        return nil
+    }
+
+    /// Reject an outgoing-stock submit that would drive a bin negative, unless
+    /// the company has opted into negative stock. Requested quantities are
+    /// aggregated per (item, warehouse) across the lines and compared to the
+    /// current on-hand balance (read OUTSIDE the write transaction).
+    private static func stockAvailabilityViolation(for doc: Document, engine: DocumentEngine) -> PostingValidationError? {
+        guard ["SalesDelivery", "POSInvoice", "StockEntry"].contains(doc.docType) else { return nil }
+        if allowsNegativeStock(engine: engine) { return nil }
+        let defaultWarehouse = nonEmptyString(doc.fields["set_warehouse"])
+            ?? nonEmptyString(doc.fields["warehouse"])
+        var requested: [String: (item: String, warehouse: String, qty: Double)] = [:]
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            let qty = asDouble(row.fields["qty"]) ?? 0
+            guard qty > 0 else { continue }
+            // The warehouse stock LEAVES: the line / default warehouse for a
+            // fulfilment doc, the source warehouse for a Stock Entry (the target
+            // leg only adds stock).
+            let issueWarehouse = doc.docType == "StockEntry"
+                ? nonEmptyString(row.fields["source_warehouse"])
+                : nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse
+            guard let whId = issueWarehouse else { continue }
+            let key = "\(itemId)|\(whId)"
+            let prior = requested[key]?.qty ?? 0
+            requested[key] = (itemId, whId, prior + qty)
+        }
+        guard !requested.isEmpty else { return nil }
+        let stockBalance = StockBalanceService(engine: engine)
+        for entry in requested.values {
+            let bin = (try? stockBalance.balance(item: entry.item, warehouse: entry.warehouse)) ?? nil
+            let onHand = bin?.actualQty ?? 0
+            if entry.qty > onHand + 0.0000001 {
+                return .insufficientStock(item: entry.item, warehouse: entry.warehouse, onHand: onHand, requested: entry.qty)
+            }
+        }
+        return nil
+    }
+
+    private static func allowsNegativeStock(engine: DocumentEngine) -> Bool {
+        guard let company = (try? engine.list(docType: "Company"))?.first else { return false }
+        if case .bool(true)? = company.fields["allow_negative_stock"] { return true }
+        return false
+    }
+
+    private static func asDate(_ value: FieldValue?) -> Date? {
+        if case .date(let d)? = value { return d }
+        return nil
     }
 
     /// Map of item id → `is_stock_item` for the document's lines, read OUTSIDE
@@ -180,6 +293,11 @@ nonisolated final class PostingCoordinator {
         let version = reversal ? 2 : 1
         let batchId = PostingBatch.makeID(sourceId: doc.id, version: version)
         if try uow.postingBatchExists(id: batchId) { return }
+
+        // Pre-posting guards (resolved outside the transaction in makeInputs):
+        // throw here, inside the write, so a closed-period or negative-stock
+        // submit rolls back with nothing written.
+        if !reversal, let violation = inputs.submitValidationError { throw violation }
 
         let ledgerDocs: [Document]
         switch doc.docType {
