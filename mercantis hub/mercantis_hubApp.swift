@@ -79,7 +79,13 @@ struct mercantis_hubApp: App {
             registry: registry,
             deviceId: Self.deviceId(),
             userId: HubIdentity.userId(),
-            eventEmitter: emitter
+            eventEmitter: emitter,
+            // P0.4: financial / transactional (submittable) DocTypes fail CLOSED —
+            // submit / cancel / amend now demand an explicit granting role rather
+            // than silently allowing an unconstrained write. The seeded operator
+            // is a System Manager (full rights), so the default flows are
+            // unaffected; restricted roles are gated to their scope.
+            failClosedForSubmittable: true
         )
         // P0.2: resolve the live operator at call time. DocumentEngine mutations
         // originate from MainActor UI (and the synchronous derivation services

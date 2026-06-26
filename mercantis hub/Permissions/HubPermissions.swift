@@ -48,7 +48,7 @@ public enum HubPermissions {
         PermissionRule(
             role: role,
             canRead: true, canWrite: true, canCreate: true,
-            canDelete: true, canSubmit: true, canAmend: true
+            canDelete: true, canSubmit: true, canAmend: true, canCancel: true
         )
     }
 
@@ -56,7 +56,7 @@ public enum HubPermissions {
         PermissionRule(
             role: role,
             canRead: true, canWrite: false, canCreate: false,
-            canDelete: false, canSubmit: false, canAmend: false
+            canDelete: false, canSubmit: false, canAmend: false, canCancel: false
         )
     }
 
