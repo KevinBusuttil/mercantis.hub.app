@@ -83,7 +83,13 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
 
     private func handleSubmit(document: Document) {
         // Posted atomically in the submit transaction by PostingCoordinator.
-        guard !atomicDocTypes.contains(document.docType) else { return }
+        // For atomic stock DocTypes the Stock Ledger / GL rows are already
+        // written; only the derived Stock Balance (Bin) cache is rebuilt here,
+        // post-commit, from the now-durable ledger rows.
+        if atomicDocTypes.contains(document.docType) {
+            recomputeBinsIfStock(document)
+            return
+        }
         do {
             switch document.docType {
             case "StockEntry":      try deriveStockEntry(document, reversal: false)
@@ -106,8 +112,12 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
     }
 
     private func handleCancel(document: Document) {
-        // Reversed atomically in the cancel transaction by PostingCoordinator.
-        guard !atomicDocTypes.contains(document.docType) else { return }
+        // Reversed atomically in the cancel transaction by PostingCoordinator;
+        // recompute the derived Bin cache from the committed reversal rows.
+        if atomicDocTypes.contains(document.docType) {
+            recomputeBinsIfStock(document)
+            return
+        }
         do {
             switch document.docType {
             case "StockEntry":      try deriveStockEntry(document, reversal: true)
@@ -122,6 +132,30 @@ public nonisolated final class LedgerDerivationService: @unchecked Sendable {
             }
         } catch {
             print("LedgerDerivation cancel error for \(document.docType) \(document.id): \(error)")
+        }
+    }
+
+    /// Rebuild the Stock Balance (Bin) rows for an atomic stock DocType whose
+    /// Stock Ledger rows were written inside the submit/cancel transaction by
+    /// PostingCoordinator. The Bin is a derived cache, so it is recomputed here
+    /// (post-commit) from the committed ledger — reversal-aware because the
+    /// recompute reads the full ledger. No-op for non-stock atomic DocTypes.
+    private func recomputeBinsIfStock(_ document: Document) {
+        guard PostingCoordinator.atomicStockDocTypes.contains(document.docType) else { return }
+        let defaultWarehouse = nonEmptyString(document.fields["set_warehouse"])
+            ?? nonEmptyString(document.fields["warehouse"])
+        var affected: [String: (item: String, warehouse: String)] = [:]
+        for row in document.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            guard let whId = nonEmptyString(row.fields["warehouse"]) ?? defaultWarehouse else { continue }
+            affected["\(itemId)|\(whId)"] = (itemId, whId)
+        }
+        for pair in affected.values {
+            do {
+                try stockBalance.recompute(item: pair.item, warehouse: pair.warehouse)
+            } catch {
+                print("LedgerDerivation bin recompute error for \(document.docType) \(document.id): \(error)")
+            }
         }
     }
 
