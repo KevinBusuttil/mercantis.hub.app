@@ -1,18 +1,18 @@
 import Foundation
 import MercantisCore
 
-/// Keeps Sales Order conversions consistent with the order's lifecycle.
+/// Keeps sales-document conversions consistent with their source's lifecycle.
 ///
-/// When a Sales Order is cancelled, its still-DRAFT converted documents (Sales
-/// Deliveries / Invoices created from it via "Convert to …") are discarded —
-/// they reference a now-void order and were never posted. Submitted deliveries
-/// / invoices already block the order's cancellation in Core
-/// (`findLinkedSubmittedDocuments` via the `sales_order` link), so by the time
-/// this runs only drafts remain.
+/// When a Quotation or Sales Order is cancelled, its still-DRAFT converted
+/// documents (a Quotation's Sales Orders; a Sales Order's Deliveries /
+/// Invoices, created via "Convert to …") are discarded — they reference a
+/// now-void source and were never posted. Submitted downstream documents
+/// already block the source's cancellation in Core (`findLinkedSubmittedDocuments`
+/// via the back-link), so by the time this runs only drafts remain.
 ///
 /// Wired like the other derivation services: subscribes to
-/// `DocumentCancelledEvent` and reacts only to `SalesOrder`, writing under a
-/// system context.
+/// `DocumentCancelledEvent` and reacts to `Quotation` / `SalesOrder`, writing
+/// under a system context.
 public nonisolated final class SalesOrderConversionService: @unchecked Sendable {
 
     private let engine: DocumentEngine
@@ -36,11 +36,23 @@ public nonisolated final class SalesOrderConversionService: @unchecked Sendable 
     }
 
     private func handleCancel(document: Document) {
-        guard document.docType == "SalesOrder" else { return }
-        for targetType in ["SalesDelivery", "SalesInvoice"] {
+        // Each source links to its drafts via a back-link field on the target:
+        // a Quotation's draft Sales Orders (via `quotation`), and a Sales
+        // Order's draft Deliveries / Invoices (via `sales_order`).
+        let cascade: [(target: String, linkField: String)]
+        switch document.docType {
+        case "Quotation":
+            cascade = [("SalesOrder", "quotation")]
+        case "SalesOrder":
+            cascade = [("SalesDelivery", "sales_order"), ("SalesInvoice", "sales_order")]
+        default:
+            return
+        }
+
+        for (targetType, linkField) in cascade {
             let linked = (try? engine.list(
                 docType: targetType,
-                filters: ["sales_order": .string(document.id)],
+                filters: [linkField: .string(document.id)],
                 applyRowAccess: false
             )) ?? []
             for draft in linked where draft.docStatus == 0 {
