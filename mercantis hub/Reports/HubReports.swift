@@ -227,11 +227,34 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles
     )
 
+    /// Balance Sheet — Asset / Liability / Equity account balances (normalized
+    /// to their natural sign), with current-period net income folded into
+    /// equity. Assets equal Liabilities + Equity because the GL balances.
+    public static let balanceSheet = ReportDefinition(
+        id: "balance-sheet",
+        name: "Balance Sheet",
+        docType: "GLEntry",
+        columns: ["Section", "Account", "Amount"],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
+    /// Income Statement — Revenue and Expense account balances with Net Income.
+    public static let incomeStatement = ReportDefinition(
+        id: "income-statement",
+        name: "Income Statement",
+        docType: "GLEntry",
+        columns: ["Section", "Account", "Amount"],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
         openDeliveries, pendingReceipts, todaysRoutes,
-        customerAging, supplierAging, trialBalance,
+        customerAging, supplierAging,
+        trialBalance, balanceSheet, incomeStatement,
         customerStatement, supplierLedger,
         vatSummary,
     ]
@@ -267,7 +290,7 @@ public enum HubReports: Sendable {
         case "customer-aging":
             return try runAging(
                 report: customerAging,
-                docType: "SalesInvoice",
+                docType: "CustTrans",
                 partyField: "customer",
                 engine: engine,
                 filters: filters
@@ -275,13 +298,17 @@ public enum HubReports: Sendable {
         case "supplier-aging":
             return try runAging(
                 report: supplierAging,
-                docType: "PurchaseInvoice",
+                docType: "VendTrans",
                 partyField: "supplier",
                 engine: engine,
                 filters: filters
             )
         case "trial-balance":
             return try runTrialBalance(engine: engine)
+        case "balance-sheet":
+            return try runBalanceSheet(engine: engine)
+        case "income-statement":
+            return try runIncomeStatement(engine: engine)
         case "customer-statement":
             return try runSubledgerStatement(
                 report: customerStatement,
@@ -524,6 +551,13 @@ public enum HubReports: Sendable {
     /// `outstanding_amount` into 0-30 / 31-60 / 61-90 / 90+ buckets keyed by
     /// `partyField` ("customer" for AR, "supplier" for AP), then appends a
     /// grand-total row. Symmetric to the Flutter `_aging` routine.
+    /// AR / AP aging built from the SUBLEDGER (`CustTrans` / `VendTrans`), not
+    /// the source invoices' `outstanding_amount`. Reading the subledger makes
+    /// the aging tie out to the GL control account: it sees every movement
+    /// (invoices, payments, journal adjustments, reversals), not just
+    /// invoice-driven ones. Charges (positive amounts) are aged by posting date;
+    /// credits (payments / reversals, negative amounts) are applied oldest-first
+    /// so the remaining, aged balance nets to the party's GL balance.
     private static func runAging(
         report: ReportDefinition,
         docType: String,
@@ -531,28 +565,44 @@ public enum HubReports: Sendable {
         engine: DocumentEngine,
         filters: [String: FieldValue]
     ) throws -> ReportResult {
-        let invoices = try engine.list(
+        let entries = try engine.list(
             docType: docType,
             filters: filters.isEmpty ? nil : filters,
             applyRowAccess: false
         )
 
         let today = Date()
+        struct Charge { let date: Date; var remaining: Double }
+        var chargesByParty: [String: [Charge]] = [:]
+        var creditsByParty: [String: Double] = [:]
+
+        for entry in entries {
+            guard let party = asString(entry.fields[partyField]) else { continue }
+            let amount = asDouble(entry.fields["amount"]) ?? 0
+            guard amount != 0 else { continue }
+            let date = asDate(entry.fields["posting_date"]) ?? today
+            if amount > 0 {
+                chargesByParty[party, default: []].append(Charge(date: date, remaining: amount))
+            } else {
+                creditsByParty[party, default: 0] += -amount
+            }
+        }
+
         var perParty: [String: AgingBuckets] = [:]
-
-        for invoice in invoices {
-            guard invoice.docStatus == 1 else { continue }
-            let outstanding = asDouble(invoice.fields["outstanding_amount"]) ?? 0
-            guard outstanding > 0 else { continue }
-            let party = asString(invoice.fields[partyField]) ?? "(unknown)"
-            let dueDate  = asDate(invoice.fields["due_date"])
-                ?? asDate(invoice.fields["transaction_date"])
-                ?? today
-            let days = max(0, Int(today.timeIntervalSince(dueDate) / 86400))
-
-            var bucket = perParty[party] ?? AgingBuckets()
-            bucket.add(days: days, amount: outstanding)
-            perParty[party] = bucket
+        for (party, charges) in chargesByParty {
+            var sortedCharges = charges.sorted { $0.date < $1.date }
+            var credit = creditsByParty[party] ?? 0
+            for index in sortedCharges.indices where credit > 0 {
+                let applied = min(credit, sortedCharges[index].remaining)
+                sortedCharges[index].remaining -= applied
+                credit -= applied
+            }
+            var bucket = AgingBuckets()
+            for charge in sortedCharges where charge.remaining > 0.0001 {
+                let days = max(0, Int(today.timeIntervalSince(charge.date) / 86400))
+                bucket.add(days: days, amount: charge.remaining)
+            }
+            if bucket.total > 0.0001 { perParty[party] = bucket }
         }
 
         let ordered = perParty.sorted { $0.value.total > $1.value.total }
@@ -706,57 +756,150 @@ public enum HubReports: Sendable {
 
     // MARK: - Trial Balance
 
-    private static func runTrialBalance(engine: DocumentEngine) throws -> ReportResult {
-        // 1. Sum debit / credit per account across every GL Entry. Reversal
-        //    rows already carry swapped debit / credit so they net out
-        //    automatically — we don't filter them out, the math is correct.
-        let entries = try engine.list(docType: "GLEntry", applyRowAccess: false)
-        struct Totals { var debit: Double = 0; var credit: Double = 0 }
-        var perAccount: [String: Totals] = [:]
-        for entry in entries {
-            guard let account = asString(entry.fields["account"]) else { continue }
-            let debit  = asDouble(entry.fields["debit"])  ?? 0
-            let credit = asDouble(entry.fields["credit"]) ?? 0
-            var totals = perAccount[account] ?? Totals()
-            totals.debit  += debit
-            totals.credit += credit
-            perAccount[account] = totals
+    /// Debit / credit totals per account plus each account's root_type and
+    /// display name — the shared basis for Trial Balance, Balance Sheet and
+    /// Income Statement. Reversal rows carry swapped debit / credit, so they net
+    /// out automatically without filtering.
+    private struct GLBalances {
+        var perAccount: [String: (debit: Double, credit: Double)] = [:]
+        var root: [String: String] = [:]
+        var name: [String: String] = [:]
+
+        /// Account balance normalized to its natural sign: debit-positive for
+        /// Asset / Expense, credit-positive for Liability / Income / Equity.
+        func normalized(_ account: String) -> Double {
+            let totals = perAccount[account] ?? (debit: 0, credit: 0)
+            return Self.isCreditNatured(root[account] ?? "") ? (totals.credit - totals.debit) : (totals.debit - totals.credit)
         }
 
-        // 2. Look up each Account to find its root_type so we can group.
-        let accounts = try engine.list(docType: "Account", applyRowAccess: false)
-        let rootTypeByAccount: [String: String] = Dictionary(
-            uniqueKeysWithValues: accounts.map { ($0.id, asString($0.fields["root_type"]) ?? "Unclassified") }
-        )
+        /// Current-period net income (Income − Expense), folded into equity on
+        /// the Balance Sheet.
+        var netIncome: Double {
+            var income = 0.0, expense = 0.0
+            for (account, totals) in perAccount {
+                switch root[account] ?? "" {
+                case "Income":  income  += totals.credit - totals.debit
+                case "Expense": expense += totals.debit - totals.credit
+                default: break
+                }
+            }
+            return income - expense
+        }
 
-        // 3. Walk accounts in a stable order: by root_type then by name.
+        func accounts(in roots: Set<String>) -> [String] {
+            perAccount.keys
+                .filter { roots.contains(root[$0] ?? "Unclassified") }
+                .sorted { (name[$0] ?? $0) < (name[$1] ?? $1) }
+        }
+
+        static func isCreditNatured(_ root: String) -> Bool {
+            root == "Liability" || root == "Income" || root == "Equity"
+        }
+    }
+
+    private static func glBalances(engine: DocumentEngine) throws -> GLBalances {
+        var result = GLBalances()
+        for entry in try engine.list(docType: "GLEntry", applyRowAccess: false) {
+            guard let account = asString(entry.fields["account"]) else { continue }
+            var totals = result.perAccount[account] ?? (debit: 0, credit: 0)
+            totals.debit  += asDouble(entry.fields["debit"])  ?? 0
+            totals.credit += asDouble(entry.fields["credit"]) ?? 0
+            result.perAccount[account] = totals
+        }
+        for account in try engine.list(docType: "Account", applyRowAccess: false) {
+            result.root[account.id] = asString(account.fields["root_type"]) ?? "Unclassified"
+            result.name[account.id] = asString(account.fields["account_name"]) ?? account.id
+        }
+        return result
+    }
+
+    private static func runTrialBalance(engine: DocumentEngine) throws -> ReportResult {
+        let balances = try glBalances(engine: engine)
         let rootOrder = ["Asset", "Liability", "Equity", "Income", "Expense", "Unclassified"]
-        let sortedAccounts = perAccount.keys.sorted { lhs, rhs in
-            let lRoot = rootTypeByAccount[lhs] ?? "Unclassified"
-            let rRoot = rootTypeByAccount[rhs] ?? "Unclassified"
+        let sortedAccounts = balances.perAccount.keys.sorted { lhs, rhs in
+            let lRoot = balances.root[lhs] ?? "Unclassified"
+            let rRoot = balances.root[rhs] ?? "Unclassified"
             let lIdx = rootOrder.firstIndex(of: lRoot) ?? rootOrder.count
             let rIdx = rootOrder.firstIndex(of: rRoot) ?? rootOrder.count
             if lIdx != rIdx { return lIdx < rIdx }
-            return lhs < rhs
+            return (balances.name[lhs] ?? lhs) < (balances.name[rhs] ?? rhs)
         }
 
         var rows: [[String?]] = []
         var currentRoot: String? = nil
         for account in sortedAccounts {
-            let totals = perAccount[account] ?? Totals()
-            let root = rootTypeByAccount[account] ?? "Unclassified"
-            let closing = totals.debit - totals.credit
+            let totals = balances.perAccount[account] ?? (debit: 0, credit: 0)
+            let root = balances.root[account] ?? "Unclassified"
+            // Closing normalized to the account's natural sign so Liability /
+            // Income / Equity read positive rather than negative.
+            let closing = balances.normalized(account)
             let groupHeader = currentRoot == root ? "" : root
             currentRoot = root
             rows.append([
                 groupHeader,
-                account,
+                balances.name[account] ?? account,
                 formatCurrency(totals.debit),
                 formatCurrency(totals.credit),
                 formatCurrency(closing)
             ])
         }
         return ReportResult(columns: trialBalance.columns, rows: rows)
+    }
+
+    private static func runBalanceSheet(engine: DocumentEngine) throws -> ReportResult {
+        let balances = try glBalances(engine: engine)
+        var rows: [[String?]] = []
+
+        func section(_ title: String, roots: Set<String>) -> Double {
+            rows.append([title, nil, nil])
+            var subtotal = 0.0
+            for account in balances.accounts(in: roots) {
+                let value = balances.normalized(account)
+                subtotal += value
+                rows.append([nil, balances.name[account] ?? account, formatCurrency(value)])
+            }
+            return subtotal
+        }
+
+        let assets = section("Assets", roots: ["Asset"])
+        rows.append([nil, "Total Assets", formatCurrency(assets)])
+
+        let liabilities = section("Liabilities", roots: ["Liability"])
+        rows.append([nil, "Total Liabilities", formatCurrency(liabilities)])
+
+        var equity = section("Equity", roots: ["Equity"])
+        let netIncome = balances.netIncome
+        equity += netIncome
+        rows.append([nil, "Retained Earnings (current period)", formatCurrency(netIncome)])
+        rows.append([nil, "Total Equity", formatCurrency(equity)])
+
+        rows.append(["—", "Total Liabilities & Equity", formatCurrency(liabilities + equity)])
+        return ReportResult(columns: balanceSheet.columns, rows: rows)
+    }
+
+    private static func runIncomeStatement(engine: DocumentEngine) throws -> ReportResult {
+        let balances = try glBalances(engine: engine)
+        var rows: [[String?]] = []
+
+        func section(_ title: String, root: String) -> Double {
+            rows.append([title, nil, nil])
+            var subtotal = 0.0
+            for account in balances.accounts(in: [root]) {
+                let value = balances.normalized(account)
+                subtotal += value
+                rows.append([nil, balances.name[account] ?? account, formatCurrency(value)])
+            }
+            return subtotal
+        }
+
+        let revenue = section("Income", root: "Income")
+        rows.append([nil, "Total Revenue", formatCurrency(revenue)])
+
+        let expenses = section("Expenses", root: "Expense")
+        rows.append([nil, "Total Expenses", formatCurrency(expenses)])
+
+        rows.append(["—", "Net Income", formatCurrency(revenue - expenses)])
+        return ReportResult(columns: incomeStatement.columns, rows: rows)
     }
 
     // MARK: - Cell helpers
