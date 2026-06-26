@@ -231,6 +231,8 @@ enum Selling {
                             type: .date, required: true),
             FieldDefinition(key: "currency", label: "Currency",
                             type: .link, required: true, linkedDocType: "Currency"),
+            FieldDefinition(key: "conversion_rate", label: "Exchange Rate to Base",
+                            type: .decimal, required: false, defaultValue: .double(1)),
             FieldDefinition(key: "price_list", label: "Price List",
                             type: .link, required: false, linkedDocType: "PriceList"),
         ]

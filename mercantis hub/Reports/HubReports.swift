@@ -802,8 +802,11 @@ public enum HubReports: Sendable {
         for entry in try engine.list(docType: "GLEntry", applyRowAccess: false) {
             guard let account = asString(entry.fields["account"]) else { continue }
             var totals = result.perAccount[account] ?? (debit: 0, credit: 0)
-            totals.debit  += asDouble(entry.fields["debit"])  ?? 0
-            totals.credit += asDouble(entry.fields["credit"]) ?? 0
+            // Consolidate in the company base currency: prefer the stamped base
+            // amounts, falling back to the transaction amounts (which equal base
+            // for same-currency / unstamped rows).
+            totals.debit  += asDouble(entry.fields["base_debit"])  ?? asDouble(entry.fields["debit"])  ?? 0
+            totals.credit += asDouble(entry.fields["base_credit"]) ?? asDouble(entry.fields["credit"]) ?? 0
             result.perAccount[account] = totals
         }
         for account in try engine.list(docType: "Account", applyRowAccess: false) {

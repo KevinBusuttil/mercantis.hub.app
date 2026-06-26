@@ -123,7 +123,18 @@ nonisolated final class PostingCoordinator {
         /// quantities and per-unit rates are converted to the stock UOM so bins
         /// and valuation stay consistent.
         var uomFactors: [Int: Double] = [:]
+        /// Exchange rate from the document's transaction currency to the company
+        /// base currency (1 when same-currency). GL / subledger rows for the
+        /// purely transaction-currency financial DocTypes are stamped with base
+        /// amounts (amount × rate) so reporting can consolidate in base currency.
+        var conversionRate: Double = 1
     }
+
+    /// DocTypes whose GL / subledger legs are all in the document's transaction
+    /// currency, so multiplying by the conversion rate yields correct base
+    /// amounts. Stock DocTypes are excluded: their COGS / inventory legs are
+    /// already in base currency (the moving-average cost), so base == amount.
+    private static let baseStampDocTypes: Set<String> = ["JournalEntry", "SalesInvoice", "PurchaseInvoice", "PaymentEntry"]
 
     /// The `inTransaction` closure for submitting `doc`, or nil when `doc`'s
     /// DocType is not posted atomically here (caller submits normally).
@@ -148,6 +159,8 @@ nonisolated final class PostingCoordinator {
         var inputs = PostingInputs(fallbackVatAccount: companyDefault("default_vat_account", engine: engine))
         inputs.referencedInvoices = referencedInvoices(for: doc, engine: engine)
         inputs.grniAccount = companyDefault("default_grni_account", engine: engine)
+        let rate = asDouble(doc.fields["conversion_rate"]) ?? 1
+        inputs.conversionRate = rate > 0 ? rate : 1
         if atomicStockDocTypes.contains(doc.docType) {
             inputs.cogsAccount = companyDefault("default_expense_account", engine: engine)
             inputs.inventoryAccount = companyDefault("default_stock_account", engine: engine)
@@ -348,11 +361,42 @@ nonisolated final class PostingCoordinator {
         default:                return
         }
 
+        // Stamp base-currency amounts on the transaction-currency financial
+        // DocTypes so reports can consolidate in the company base currency.
+        let stampedDocs = baseStampDocTypes.contains(doc.docType)
+            ? stampBaseAmounts(ledgerDocs, rate: inputs.conversionRate, currency: doc.fields["currency"])
+            : ledgerDocs
+
         // Payment Entry's GL legs can legitimately be single-sided in some
         // account models (the contra side lives in the subledger), and the
         // legacy event path never balance-checked it — so don't reject it here.
         let enforceBalance = doc.docType != "PaymentEntry"
-        try commit(ledgerDocs, sourceType: doc.docType, source: doc, reversal: reversal, version: version, enforceBalance: enforceBalance, engine: engine, in: uow)
+        try commit(stampedDocs, sourceType: doc.docType, source: doc, reversal: reversal, version: version, enforceBalance: enforceBalance, engine: engine, in: uow)
+    }
+
+    /// Add base-currency amounts to GL Entry and subledger rows: `base_debit` /
+    /// `base_credit` = amount × rate, the source `currency`, and the rate. Only
+    /// applied to DocTypes whose legs are all in transaction currency.
+    private static func stampBaseAmounts(_ docs: [Document], rate: Double, currency: FieldValue?) -> [Document] {
+        docs.map { row in
+            var row = row
+            switch row.docType {
+            case "GLEntry":
+                let debit  = asDouble(row.fields["debit"])  ?? 0
+                let credit = asDouble(row.fields["credit"]) ?? 0
+                row.fields["conversion_rate"] = .double(rate)
+                row.fields["base_debit"]  = .double(debit * rate)
+                row.fields["base_credit"] = .double(credit * rate)
+                if let currency { row.fields["currency"] = currency }
+            case "CustTrans", "VendTrans":
+                let amount = asDouble(row.fields["amount"]) ?? 0
+                row.fields["conversion_rate"] = .double(rate)
+                row.fields["base_amount"] = .double(amount * rate)
+            default:
+                break
+            }
+            return row
+        }
     }
 
     /// Validate the GL legs balance (when required), then write every ledger row
