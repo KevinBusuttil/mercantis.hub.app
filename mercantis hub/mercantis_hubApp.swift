@@ -119,16 +119,15 @@ struct mercantis_hubApp: App {
         // fired here lands on the same bus that ManufacturingDerivationService
         // (and any future cross-DocType reaction) is subscribed to.
         self.workflowEngine = WorkflowEngine(database: database, eventEmitter: emitter)
-        // Wall 7: LedgerDerivationService listens for transactional
-        // submit / cancel events and writes append-only Stock Ledger
-        // Entry / GL Entry rows with deterministic ids.
+        // Phase 1/2: PostingCoordinator posts every transactional DocType
+        // atomically inside the submit / cancel transaction. LedgerDerivationService
+        // now only rebuilds the derived Stock Balance (Bin) cache post-commit from
+        // the committed Stock Ledger rows (the legacy event-path derivation was
+        // retired once posting moved into the transaction).
         self.postingCoordinator = PostingCoordinator(engine: documentEngine)
         self.ledgerDerivation = LedgerDerivationService(
             engine: documentEngine,
-            emitter: emitter,
-            // Skip the DocTypes posted atomically by PostingCoordinator so they
-            // are not double-posted by this legacy event path. (Phase 1 cutover)
-            atomicDocTypes: PostingCoordinator.atomicDocTypes
+            emitter: emitter
         )
         // Manufacturing: BOM cost rollup on save, Stock Entry on Work
         // Order completion, Work Order generation from Production Plan.
