@@ -168,7 +168,7 @@ final class HubBusinessProfileDefaultsPolicyTests: XCTestCase {
         id: String = "",
         docType: String,
         fields: [String: FieldValue] = [:],
-        children: [String: [Document]] = [:]
+        children: [String: [ChildRow]] = [:]
     ) -> Document {
         let now = Date()
         return Document(
@@ -185,8 +185,10 @@ final class HubBusinessProfileDefaultsPolicyTests: XCTestCase {
         )
     }
 
-    private func makeChild(docType: String, fields: [String: FieldValue]) -> Document {
-        makeDocument(id: UUID().uuidString, docType: docType, fields: fields)
+    private func makeChild(docType: String, fields: [String: FieldValue]) -> ChildRow {
+        // `docType` is retained for call-site readability; a ChildRow carries no
+        // docType. Order (not rowIndex) drives the policy's .first/.last checks.
+        ChildRow(id: UUID().uuidString, rowIndex: 0, fields: fields)
     }
 
     private func stringValue(_ value: FieldValue?) -> String? {
