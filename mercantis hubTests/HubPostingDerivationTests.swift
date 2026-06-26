@@ -111,6 +111,31 @@ final class HubPostingDerivationTests: XCTestCase {
         assertAmount(dbl(custTrans?.fields["amount"]), 115)
     }
 
+    // MARK: - Return / credit note (posts the cancellation direction)
+
+    func test_salesReturn_postsCreditNoteDirection() {
+        // post() feeds salesInvoiceRows `reversal == true` for an is_return
+        // submit, so a return is the credit-note direction: Cr AR / Dr Income /
+        // Dr VAT, and a negative customer subledger row.
+        let sr = doc("SR-1", "SalesInvoice", fields: [
+            "debit_to":         .string("AR"),
+            "income_account":   .string("Sales"),
+            "transaction_date": .date(Date()),
+            "grand_total":      .double(115),
+            "net_total":        .double(100),
+            "customer":         .string("CUST-1"),
+        ], children: ["taxes": [
+            row(0, ["tax_amount": .double(15), "taxable_amount": .double(100), "tax_account": .string("VAT")]),
+        ]])
+        let rows = PostingCoordinator.salesInvoiceRows(sr, reversal: true, fallbackVatAccount: nil)
+        assertAmount(dbl(glFor(rows, account: "AR")?.fields["credit"]), 115)
+        assertAmount(dbl(glFor(rows, account: "Sales")?.fields["debit"]), 100)
+        assertAmount(dbl(glFor(rows, account: "VAT")?.fields["debit"]), 15)
+        XCTAssertEqual(totalDebit(rows), totalCredit(rows), accuracy: 0.001)
+        let custTrans = rows.first { $0.docType == "CustTrans" }
+        assertAmount(dbl(custTrans?.fields["amount"]), -115)
+    }
+
     // MARK: - COGS at moving-average cost, never the selling rate
 
     func test_salesDelivery_cogsUsesMovingAverageNotSellingRate() {
