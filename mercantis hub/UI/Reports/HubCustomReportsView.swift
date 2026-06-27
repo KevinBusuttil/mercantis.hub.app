@@ -52,7 +52,17 @@ struct HubCustomReportsView: View {
                 )
             }
             .sheet(item: $editing) { report in
-                HubReportCustomiseView(report: report, store: store, engine: engine)
+                // From-scratch reports open in the visual Report Builder (live
+                // preview, grouping/totals, charts); customised built-ins keep
+                // the lighter column/filter editor.
+                if report.baseReportId == nil {
+                    HubReportStudioView(
+                        report: report, store: store,
+                        engine: engine, savedReportEngine: savedReportEngine
+                    )
+                } else {
+                    HubReportCustomiseView(report: report, store: store, engine: engine)
+                }
             }
         }
     }
