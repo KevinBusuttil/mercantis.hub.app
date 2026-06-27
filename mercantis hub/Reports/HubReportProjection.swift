@@ -141,7 +141,7 @@ enum HubReportProjection {
         case .count:
             return Double(values.compactMap { $0 }.filter { if case .null = $0 { return false } else { return true } }.count)
         case .sum, .average, .min, .max:
-            let numbers = values.compactMap(doubleValue)
+            let numbers = values.compactMap { doubleValue($0) }
             guard !numbers.isEmpty else { return kind == .sum ? 0 : nil }
             switch kind {
             case .sum:     return numbers.reduce(0, +)
