@@ -136,12 +136,11 @@ struct mercantis_hubApp: App {
         // retired once posting moved into the transaction).
         self.postingCoordinator = PostingCoordinator(engine: documentEngine)
         self.postingBatchStore = PostingBatchStore(database: database)
-        // ADR-044 print engine: register a Standard format for every DocType plus
-        // the curated sales / purchase formats, so any record can be printed/PDF'd.
+        // ADR-044 print engine: register the built-in formats (Standard per
+        // DocType + curated sales/purchase) plus any user-defined formats stored
+        // as synced PrintFormat documents.
         let printService = PrintService()
-        for format in HubPrintFormats.all() {
-            printService.register(format: format)
-        }
+        HubPrintFormatStore.refresh(printService: printService, engine: documentEngine)
         self.printService = printService
         self.ledgerDerivation = LedgerDerivationService(
             engine: documentEngine,

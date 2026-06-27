@@ -20,6 +20,7 @@ struct HubPrintButton: View {
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var working = false
+    @State private var showManager = false
 
     var body: some View {
         let formats = printService.orderedFormats(forDocType: document.docType)
@@ -33,14 +34,19 @@ struct HubPrintButton: View {
                     }
                 }
             }
+            Divider()
+            Button { showManager = true } label: { Label("Manage Formats…", systemImage: "slider.horizontal.3") }
         } label: {
             Label(working ? "Preparing…" : "Print", systemImage: "printer")
         }
-        .disabled(document.id.isEmpty || formats.isEmpty || working)
+        .disabled(document.id.isEmpty || working)
         .alert("Print failed", isPresented: $showError) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .sheet(isPresented: $showManager) {
+            HubPrintFormatsManagerView(docType: document.docType, engine: engine, printService: printService)
         }
     }
 
