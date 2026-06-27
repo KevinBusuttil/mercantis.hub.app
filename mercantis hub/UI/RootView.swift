@@ -1094,12 +1094,6 @@ private struct HubDocumentEditor: View {
         }
     }
 
-    /// The document's action bar: a single aligned, consistently styled row
-    /// instead of the old cramped two-tier corner cluster. Document / workflow
-    /// actions sit on the left (primary first), so the row has room to grow as
-    /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
-    /// view-only inspector toggle is pushed to the right and visually separated.
-    @ViewBuilder
     /// The Print menu, available on any saved document (polished or legacy
     /// workspace) so every printable DocType — Delivery Note, Purchase Receipt,
     /// master data, … — can print and manage its formats, not just the
@@ -1113,6 +1107,12 @@ private struct HubDocumentEditor: View {
         }
     }
 
+    /// The document's action bar: a single aligned, consistently styled row
+    /// instead of the old cramped two-tier corner cluster. Document / workflow
+    /// actions sit on the left (primary first), so the row has room to grow as
+    /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
+    /// view-only inspector toggle is pushed to the right and visually separated.
+    @ViewBuilder
     private func headerActionBar(inspectorAvailable: Bool) -> some View {
         let actions = workspaceActions
         if !actions.isEmpty || inspectorAvailable {
