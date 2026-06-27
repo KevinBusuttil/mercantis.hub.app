@@ -1114,10 +1114,10 @@ private struct HubDocumentEditor: View {
                 Spacer(minLength: 12)
 
                 if let printService, !document.id.isEmpty {
-                    PrintRecordButton(
+                    HubPrintButton(
                         document: document,
                         printService: printService,
-                        formatsResolver: { doc in printService.orderedFormats(forDocType: doc.docType) }
+                        engine: engine
                     )
                     .buttonStyle(.bordered)
                     .fixedSize()

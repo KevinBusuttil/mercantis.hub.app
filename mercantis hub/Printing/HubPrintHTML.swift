@@ -1,0 +1,198 @@
+import Foundation
+import MercantisCore
+
+/// Builds a styled HTML document for a print format, ready to render to PDF via
+/// WebKit. A format may carry a custom `htmlTemplate` + `css` for full control;
+/// otherwise the sections are laid out as a clean invoice (company letterhead,
+/// title, meta grid, ruled item table, totals box, footer) with a default
+/// stylesheet. The document passed in should already be link-resolved by
+/// `HubPrintPresenter`, so cells show names/codes rather than ids.
+enum HubPrintHTML {
+
+    static func html(format: PrintFormat, document: Document, company: Document?) -> String {
+        let css = format.css ?? defaultCSS
+        let body: String
+        if let template = format.htmlTemplate {
+            // Author-controlled template — substitute fields and trust its markup.
+            body = PrintTemplate.substitute(template, in: document)
+        } else {
+            body = generatedBody(format: format, document: document, company: company)
+        }
+        return """
+        <!DOCTYPE html>
+        <html><head><meta charset="utf-8"><style>\(css)</style></head>
+        <body>\(body)</body></html>
+        """
+    }
+
+    // MARK: - Generated invoice layout
+
+    private static func generatedBody(format: PrintFormat, document: Document, company: Document?) -> String {
+        var html = letterhead(company: company)
+
+        var titleEmitted = false
+        var tableSeen = false
+        var totals: [(label: String, value: String, grand: Bool)] = []
+
+        for section in format.sections {
+            switch section {
+            case .heading(let text):
+                let t = escape(PrintTemplate.substitute(text, in: document))
+                if !titleEmitted {
+                    html += "<div class=\"doc-title\">\(t)</div>"
+                    if !document.id.isEmpty { html += "<div class=\"doc-id\">\(escape(document.id))</div>" }
+                    titleEmitted = true
+                } else {
+                    html += "<h2 class=\"section\">\(t)</h2>"
+                }
+
+            case .paragraph(let text):
+                html += "<p>\(escape(PrintTemplate.substitute(text, in: document)))</p>"
+
+            case .fields(let keys, let labels):
+                html += "<div class=\"meta\">"
+                for key in keys {
+                    let label = escape(labels[key] ?? PrintTemplate.defaultLabel(forKey: key))
+                    let value = escape(valueString(for: key, in: document))
+                    html += "<div class=\"row\"><span class=\"label\">\(label)</span><span class=\"value\">\(value)</span></div>"
+                }
+                html += "</div>"
+
+            case .table(let tableKey, let columns, let labels):
+                tableSeen = true
+                html += itemsTable(tableKey: tableKey, columns: columns, labels: labels, document: document)
+
+            case .keyValue(let label, let value):
+                let l = label.trimmingCharacters(in: .whitespaces)
+                if l.caseInsensitiveCompare("Document") == .orderedSame { continue }  // shown under the title
+                let rendered = escape(PrintTemplate.substitute(value, in: document))
+                if tableSeen {
+                    totals.append((escape(PrintTemplate.substitute(label, in: document)), rendered,
+                                   l.range(of: "grand", options: .caseInsensitive) != nil))
+                } else {
+                    html += "<p><strong>\(escape(l)):</strong> \(rendered)</p>"
+                }
+            }
+        }
+
+        if !totals.isEmpty {
+            html += "<div class=\"totals\">"
+            for total in totals {
+                html += "<div class=\"kv\(total.grand ? " grand" : "")\"><span>\(total.label)</span><span>\(total.value)</span></div>"
+            }
+            html += "</div>"
+        }
+
+        html += footer(company: company)
+        return html
+    }
+
+    private static func letterhead(company: Document?) -> String {
+        guard let company else { return "" }
+        let name = stringField(company, "business_name")
+        var details: [String] = []
+        for key in ["address", "phone", "email", "vat_tax_number", "registration_number"] {
+            let v = stringField(company, key)
+            if !v.isEmpty {
+                let prefix = (key == "vat_tax_number") ? "VAT: " : (key == "registration_number" ? "Reg: " : "")
+                details.append(escape(prefix + v).replacingOccurrences(of: "\n", with: "<br>"))
+            }
+        }
+        return """
+        <div class="letterhead">
+          <div><div class="company-name">\(escape(name))</div></div>
+          <div class="company-detail">\(details.joined(separator: "<br>"))</div>
+        </div>
+        """
+    }
+
+    private static func footer(company: Document?) -> String {
+        let name = company.map { stringField($0, "business_name") } ?? ""
+        let line = name.isEmpty ? "Generated by Mercantis Hub" : "\(escape(name)) · Generated by Mercantis Hub"
+        return "<div class=\"footer\">\(line)</div>"
+    }
+
+    private static func itemsTable(tableKey: String, columns: [String], labels: [String: String], document: Document) -> String {
+        let rows = document.children[tableKey] ?? []
+        let cols = columns.isEmpty ? Array(Set(rows.flatMap { $0.fields.keys })).sorted() : columns
+        var html = "<table class=\"items\"><thead><tr>"
+        for col in cols {
+            html += "<th class=\"\(numericColumn(col, rows: rows) ? "num" : "")\">\(escape(labels[col] ?? PrintTemplate.defaultLabel(forKey: col)))</th>"
+        }
+        html += "</tr></thead><tbody>"
+        for row in rows {
+            html += "<tr>"
+            for col in cols {
+                let text = cellString(row.fields[col])
+                let numeric = Double(text) != nil
+                html += "<td class=\"\(numeric ? "num" : "")\">\(escape(text))</td>"
+            }
+            html += "</tr>"
+        }
+        html += "</tbody></table>"
+        return html
+    }
+
+    // MARK: - Value helpers
+
+    private static func valueString(for key: String, in document: Document) -> String {
+        cellString(PrintTemplate.lookup(key: key, in: document))
+    }
+
+    private static func cellString(_ value: FieldValue?) -> String {
+        guard let value else { return "" }
+        return PrintTemplate.format(value)
+    }
+
+    private static func numericColumn(_ key: String, rows: [ChildRow]) -> Bool {
+        for row in rows {
+            if let v = row.fields[key] {
+                switch v {
+                case .double, .int: return true
+                default: return false
+                }
+            }
+        }
+        return false
+    }
+
+    private static func stringField(_ document: Document, _ key: String) -> String {
+        if case .string(let s)? = document.fields[key] { return s }
+        return ""
+    }
+
+    private static func escape(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    // MARK: - Default stylesheet
+
+    private static let defaultCSS = """
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1d1d1f; font-size: 12px; margin: 40px; }
+    .letterhead { display: flex; justify-content: space-between; align-items: flex-start;
+                  border-bottom: 2px solid #2b2b2f; padding-bottom: 12px; margin-bottom: 20px; }
+    .company-name { font-size: 20px; font-weight: 700; }
+    .company-detail { color: #555; font-size: 11px; line-height: 1.5; text-align: right; }
+    .doc-title { font-size: 23px; font-weight: 700; margin: 4px 0 2px; }
+    .doc-id { color: #6b6b70; font-size: 12px; margin-bottom: 18px; }
+    h2.section { font-size: 13px; margin: 18px 0 6px; color: #2b2b2f; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 28px; margin-bottom: 18px; }
+    .meta .row { display: flex; }
+    .meta .label { color: #6b6b70; width: 130px; }
+    .meta .value { font-weight: 500; }
+    p { margin: 5px 0; }
+    table.items { width: 100%; border-collapse: collapse; margin: 8px 0 18px; }
+    table.items th { background: #f2f2f4; text-align: left; padding: 8px 10px; font-size: 11px;
+                     text-transform: uppercase; letter-spacing: 0.3px; color: #555; border-bottom: 1px solid #d9d9de; }
+    table.items td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+    .num { text-align: right; }
+    .totals { margin-left: auto; width: 300px; margin-top: 4px; }
+    .totals .kv { display: flex; justify-content: space-between; padding: 5px 0; }
+    .totals .kv.grand { border-top: 2px solid #2b2b2f; font-weight: 700; font-size: 15px; margin-top: 4px; padding-top: 9px; }
+    .footer { margin-top: 36px; border-top: 1px solid #d9d9de; padding-top: 10px; color: #8a8a90; font-size: 10px; }
+    """
+}
