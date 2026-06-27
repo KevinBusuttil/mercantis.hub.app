@@ -21,6 +21,7 @@ public enum HubManifest: Sendable {
         + HubPermissions.decorated(POS.allDocTypes, scope: .pos)
         + HubPermissions.decorated(Manufacturing.allDocTypes, scope: .stock)
         + HubPermissions.decorated(Capture.allDocTypes, scope: .setup)
+        + HubPermissions.decorated(PrintingDocs.allDocTypes, scope: .setup)
 
     public static func docType(for id: String) -> DocType? {
         allDocTypes.first { $0.id == id }
