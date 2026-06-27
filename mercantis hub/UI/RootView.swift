@@ -1009,6 +1009,8 @@ private struct HubDocumentEditor: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
+            printMenuButton
+                .controlSize(.small)
         }
     }
 
@@ -1098,6 +1100,19 @@ private struct HubDocumentEditor: View {
     /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
     /// view-only inspector toggle is pushed to the right and visually separated.
     @ViewBuilder
+    /// The Print menu, available on any saved document (polished or legacy
+    /// workspace) so every printable DocType — Delivery Note, Purchase Receipt,
+    /// master data, … — can print and manage its formats, not just the
+    /// sales/purchase transaction docs.
+    @ViewBuilder
+    private var printMenuButton: some View {
+        if let printService, !document.id.isEmpty {
+            HubPrintButton(document: document, printService: printService, engine: engine)
+                .buttonStyle(.bordered)
+                .fixedSize()
+        }
+    }
+
     private func headerActionBar(inspectorAvailable: Bool) -> some View {
         let actions = workspaceActions
         if !actions.isEmpty || inspectorAvailable {
@@ -1113,15 +1128,7 @@ private struct HubDocumentEditor: View {
 
                 Spacer(minLength: 12)
 
-                if let printService, !document.id.isEmpty {
-                    HubPrintButton(
-                        document: document,
-                        printService: printService,
-                        engine: engine
-                    )
-                    .buttonStyle(.bordered)
-                    .fixedSize()
-                }
+                printMenuButton
 
                 if inspectorAvailable {
                     Button {
