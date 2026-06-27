@@ -3,7 +3,20 @@ import MercantisCore
 import MercantisCoreUI
 #if os(macOS)
 import PDFKit
+import AppKit
+import UniformTypeIdentifiers
 #endif
+
+extension Binding where Value == String {
+    /// Bridges an optional-string model field to a non-optional `String` binding,
+    /// writing `nil` back when the text is cleared so empty blocks aren't stored.
+    init(_ source: Binding<String?>, replacingNilWith fallback: String) {
+        self.init(
+            get: { source.wrappedValue ?? fallback },
+            set: { source.wrappedValue = $0.isEmpty ? nil : $0 }
+        )
+    }
+}
 
 /// Manage the print formats for one DocType. Custom formats are stored as synced
 /// `PrintFormat` documents with a draft/published split: the Print menu only
@@ -147,7 +160,8 @@ struct PrintFormatsListView: View {
             id: "user-\(UUID().uuidString)", name: "\(base.name) Copy", docType: base.docType,
             letterHeadId: base.letterHeadId, isDefault: false,
             linkDisplay: base.linkDisplay, fieldLinkDisplays: base.fieldLinkDisplays,
-            htmlTemplate: base.htmlTemplate, css: base.css, sections: base.sections
+            htmlTemplate: base.htmlTemplate, css: base.css, sections: base.sections,
+            style: base.style
         )
         if let saved = try? HubPrintFormatStore.saveDraft(copy, documentId: nil, engine: engine) {
             reload()
@@ -189,6 +203,9 @@ struct HubPrintFormatEditorView: View {
     /// No-code layout (Phase 2): the editable mirror of the format's sections.
     @State private var layout: [EditableSection]
     @State private var linkOverrides: [String: PrintLinkDisplay]
+    /// No-code presentation (Phase 2b): logo, density, typography, standing text.
+    @State private var style: PrintStyle
+    @State private var logoStatus: String?
     @State private var previewData: Data?
     @State private var previewError: String?
     @State private var showPublish = false
@@ -211,6 +228,7 @@ struct HubPrintFormatEditorView: View {
         _css = State(initialValue: draft.css ?? "")
         _layout = State(initialValue: HubPrintLayoutModel.editable(from: draft.sections))
         _linkOverrides = State(initialValue: draft.fieldLinkDisplays)
+        _style = State(initialValue: draft.style)
     }
 
     private var nameIsEmpty: Bool { name.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -251,6 +269,7 @@ struct HubPrintFormatEditorView: View {
         .onChange(of: css) { _, _ in refreshPreview() }
         .onChange(of: layout) { _, _ in refreshPreview() }
         .onChange(of: linkOverrides) { _, _ in refreshPreview() }
+        .onChange(of: style) { _, _ in refreshPreview() }
         .sheet(isPresented: $showPublish) { publishSheet }
         .sheet(isPresented: $showVersions) { versionsSheet }
     }
@@ -293,12 +312,118 @@ struct HubPrintFormatEditorView: View {
                             layout: $layout, linkOverrides: $linkOverrides, docType: initialDraft.docType
                         )
                     }
+                    Divider()
+                    styleControls
                 }
             }
             .padding(16)
         }
         .background(MercantisTheme.surfaceMuted.opacity(0.4))
     }
+
+    // MARK: - Style (Phase 2b)
+
+    @ViewBuilder
+    private var styleControls: some View {
+        field("Letterhead") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Show company logo", isOn: $style.showLogo)
+                #if os(macOS)
+                HStack(spacing: 8) {
+                    Button("Upload logo…") { uploadLogo() }
+                    if let logoStatus {
+                        Text(logoStatus).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                Text("The logo is shared by every format and stored on the Company record.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                #endif
+            }
+        }
+
+        field("Density") {
+            Picker("", selection: $style.density) {
+                ForEach(PrintDensity.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+        }
+
+        field("Text size") {
+            HStack(spacing: 10) {
+                Slider(value: Binding(
+                    get: { Double(style.baseFontPx) },
+                    set: { style.baseFontPx = Int($0.rounded()) }
+                ), in: 9...18, step: 1)
+                Text("\(style.baseFontPx) pt").font(.caption).monospacedDigit()
+                    .foregroundStyle(.secondary).frame(width: 36, alignment: .trailing)
+            }
+        }
+
+        field("Terms & conditions") {
+            styleTextEditor(Binding($style.termsText, replacingNilWith: ""), placeholder: "Shown near the bottom of the page")
+        }
+        field("Payment / bank details") {
+            styleTextEditor(Binding($style.bankDetails, replacingNilWith: ""), placeholder: "Bank, IBAN, payment instructions")
+        }
+        field("Footer line") {
+            TextField("Defaults to the company name", text: Binding($style.footerText, replacingNilWith: ""))
+                .textFieldStyle(.roundedBorder)
+        }
+
+        field("Signature") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Show signature line", isOn: $style.showSignature)
+                if style.showSignature {
+                    TextField("Authorised Signature", text: Binding($style.signatureLabel, replacingNilWith: ""))
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+        }
+    }
+
+    private func styleTextEditor(_ text: Binding<String>, placeholder: String) -> some View {
+        TextEditor(text: text)
+            .font(.system(size: 12))
+            .frame(minHeight: 56)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(MercantisTheme.border, lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                if text.wrappedValue.isEmpty {
+                    Text(placeholder).font(.system(size: 12)).foregroundStyle(.tertiary)
+                        .padding(.horizontal, 5).padding(.vertical, 8).allowsHitTesting(false)
+                }
+            }
+    }
+
+    #if os(macOS)
+    /// Pick an image file and store its bytes on the Company record's `logo`
+    /// field. The logo is shared across every format; toggling "Show company
+    /// logo" per format decides whether it prints.
+    private func uploadLogo() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .gif]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+        guard data.count <= 2_000_000 else {
+            logoStatus = "Image too large (max 2 MB)."
+            return
+        }
+        guard var company = companyDoc() else {
+            logoStatus = "Create a Company record first."
+            return
+        }
+        company.fields["logo"] = .data(data)
+        do {
+            _ = try engine.save(company)
+            style.showLogo = true
+            logoStatus = "Logo updated."
+            refreshPreview()
+        } catch {
+            logoStatus = (error as NSError).localizedDescription
+        }
+    }
+    #endif
 
     private var previewPane: some View {
         VStack(spacing: 0) {
@@ -389,7 +514,8 @@ struct HubPrintFormatEditorView: View {
             linkDisplay: linkDisplay, fieldLinkDisplays: linkOverrides,
             htmlTemplate: canUseDeveloperMode && customHTML && !html.isEmpty ? html : nil,
             css: canUseDeveloperMode && customHTML && !css.isEmpty ? css : nil,
-            sections: HubPrintLayoutModel.sections(from: layout)
+            sections: HubPrintLayoutModel.sections(from: layout),
+            style: style
         )
     }
 
