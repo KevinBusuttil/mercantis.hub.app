@@ -1,44 +1,48 @@
 import Foundation
 import MercantisCore
 
-/// Prepares a document for printing by replacing link-field ids with the linked
-/// record's display name, so a printed Quotation shows "Kevin Busuttil",
-/// "Euro", "Sunflower Oil" and "Litres" instead of raw customer / currency /
-/// item / UOM ids. Resolution covers header fields and every child-table row.
-/// The print renderer stays a dumb string formatter; the ERP-aware lookup lives
-/// here. Run once per print action (not per UI render).
+/// Prepares a document for printing by rendering each link field the way the
+/// chosen `PrintFormat` asks for — name, code, or "code — name" — resolving the
+/// id to the linked record's title. An opaque UUID key is never printed as a
+/// code; it always falls back to the name. Covers header fields and every
+/// child-table row. The print renderer stays a dumb string formatter; the
+/// format-driven, ERP-aware lookup lives here. Run once per print action.
 enum HubPrintPresenter {
 
-    static func displayDocument(_ document: Document, engine: DocumentEngine) -> Document {
+    static func displayDocument(_ document: Document, format: PrintFormat, engine: DocumentEngine) -> Document {
         guard let docType = HubManifest.docType(for: document.docType) else { return document }
         var result = document
         var cache: [String: [String: String]] = [:]
 
-        // Resolve a link id to its printable form:
-        //  - a UUID key (e.g. Currency, UOM) is never printed — show the name
-        //    only ("Euro", "Litres");
-        //  - a human-readable code (e.g. CUST-2026-0002, ITEM-0003) is kept and
-        //    paired with the name ("CUST-2026-0002 — Kevin Busuttil"), since the
-        //    code itself is meaningful on a printed document.
-        func resolve(_ targetDocType: String, _ id: String) -> String {
+        func name(_ targetDocType: String, _ id: String) -> String? {
             if cache[targetDocType] == nil {
                 cache[targetDocType] = nameMap(for: targetDocType, engine: engine)
             }
-            let name = cache[targetDocType]?[id]
-            if looksLikeUUID(id) {
-                return name ?? ""              // never surface a raw UUID
+            return cache[targetDocType]?[id]
+        }
+
+        // Render an id per the format's mode for that field. UUID keys never
+        // surface as a code, so `.code` / `.codeAndName` fall back to the name.
+        func render(_ targetDocType: String, _ id: String, _ mode: PrintLinkDisplay) -> String {
+            let resolved = name(targetDocType, id)
+            let isOpaque = looksLikeUUID(id)
+            switch mode {
+            case .name:
+                return resolved ?? (isOpaque ? "" : id)
+            case .code:
+                return isOpaque ? (resolved ?? "") : id
+            case .codeAndName:
+                if isOpaque { return resolved ?? "" }
+                if let resolved, !resolved.isEmpty, resolved != id { return "\(id) — \(resolved)" }
+                return id
             }
-            if let name, !name.isEmpty, name != id {
-                return "\(id) — \(name)"        // code — name
-            }
-            return id
         }
 
         // Header link fields.
         for field in docType.fields where field.type == .link {
             guard let target = field.linkedDocType,
                   case .string(let id)? = result.fields[field.key], !id.isEmpty else { continue }
-            result.fields[field.key] = .string(resolve(target, id))
+            result.fields[field.key] = .string(render(target, id, format.linkDisplay(forField: field.key)))
         }
 
         // Child-table link cells.
@@ -51,7 +55,7 @@ enum HubPrintPresenter {
                 for linkField in linkFields {
                     guard let target = linkField.linkedDocType,
                           case .string(let id)? = rows[index].fields[linkField.key], !id.isEmpty else { continue }
-                    rows[index].fields[linkField.key] = .string(resolve(target, id))
+                    rows[index].fields[linkField.key] = .string(render(target, id, format.linkDisplay(forField: linkField.key)))
                 }
             }
             result.children[field.key] = rows
@@ -61,8 +65,7 @@ enum HubPrintPresenter {
     }
 
     /// id → title-field display value for every document of `docType`. Only
-    /// real names are recorded (missing → absent), so the caller can decide how
-    /// to present an id with no name.
+    /// real names are recorded (missing → absent).
     private static func nameMap(for docType: String, engine: DocumentEngine) -> [String: String] {
         guard let meta = HubManifest.docType(for: docType),
               let documents = try? engine.list(docType: docType) else { return [:] }
@@ -76,7 +79,7 @@ enum HubPrintPresenter {
         return map
     }
 
-    /// Whether an id is an opaque UUID (so it should never be printed as-is).
+    /// Whether an id is an opaque UUID (so it should never be printed as a code).
     private static func looksLikeUUID(_ id: String) -> Bool {
         UUID(uuidString: id) != nil
     }

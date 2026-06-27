@@ -68,7 +68,11 @@ enum HubPrintFormats {
 
         return PrintFormat(
             id: "std-\(docType.id)", name: "Standard", docType: docType.id,
-            isDefault: isDefault, sections: sections
+            isDefault: isDefault,
+            // The comprehensive format shows code + name for links (UUID keys
+            // fall back to name only).
+            linkDisplay: .codeAndName,
+            sections: sections
         )
     }
 
@@ -141,6 +145,13 @@ enum HubPrintFormats {
         }
         sections.append(.keyValue(label: "Grand Total", value: "{grand_total}"))
 
-        return PrintFormat(id: "fmt-\(id)", name: name, docType: docType, isDefault: true, sections: sections)
+        // A customer/supplier-facing document: names by default, but the party
+        // and item carry their code as well (e.g. "ITEM-0003 — Sunflower Oil").
+        return PrintFormat(
+            id: "fmt-\(id)", name: name, docType: docType, isDefault: true,
+            linkDisplay: .name,
+            fieldLinkDisplays: [partyKey: .codeAndName, "item": .codeAndName],
+            sections: sections
+        )
     }
 }
