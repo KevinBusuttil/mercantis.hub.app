@@ -2222,8 +2222,16 @@ extension FocusedValues {
 /// Deliberately minimal: these mirror on-screen affordances and add keyboard
 /// access — they do not introduce menu-only features. Wired into the app via
 /// `.commands { HubCommands() }`.
+/// Window ids for app-scene windows opened from menu commands.
+enum HubWindows {
+    static let printFormats = "developer-print-formats"
+}
+
 struct HubCommands: Commands {
     @FocusedValue(\.newRecordAction) private var newRecordAction
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some Commands {
         // File ▸ New <record> — replaces the stock "New" item with a
@@ -2248,6 +2256,12 @@ struct HubCommands: Commands {
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
         }
+
+        // Developer ▸ Print Formats — manage every DocType's print formats
+        // (duplicate, edit drafts, publish, restore) in a dedicated window.
+        CommandMenu("Developer") {
+            Button("Print Formats…") { openWindow(id: HubWindows.printFormats) }
+        }
         #endif
     }
 }
@@ -2264,5 +2278,18 @@ extension EnvironmentValues {
     var printService: PrintService? {
         get { self[PrintServiceKey.self] }
         set { self[PrintServiceKey.self] = newValue }
+    }
+}
+
+private struct OperatorRolesKey: EnvironmentKey {
+    static let defaultValue: Set<String> = []
+}
+
+extension EnvironmentValues {
+    /// The signed-in operator's roles, injected at app scope so views can gate
+    /// advanced capabilities (e.g. the print-format HTML/CSS developer mode).
+    var operatorRoles: Set<String> {
+        get { self[OperatorRolesKey.self] }
+        set { self[OperatorRolesKey.self] = newValue }
     }
 }

@@ -242,10 +242,21 @@ struct mercantis_hubApp: App {
                 .environment(\.postingCoordinator, postingCoordinator)
                 .environment(\.postingBatchStore, postingBatchStore)
                 .environment(\.printService, printService)
+                // The signed-in operator's roles, so views can gate advanced
+                // capabilities (e.g. the print-format HTML/CSS developer mode).
+                .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
             }
         }
         .defaultSize(width: 1100, height: 720)
         .commands { HubCommands() }
+
+        #if os(macOS)
+        // Developer ▸ Print Formats — a dedicated window to manage every
+        // DocType's print formats (draft / publish / restore).
+        Window("Print Formats", id: HubWindows.printFormats) {
+            HubPrintFormatsWindowView(engine: documentEngine, printService: printService)
+        }
+        #endif
 
         // Standard macOS Settings window (⌘,). App configuration lives here
         // rather than in the navigation sidebar (HIG: sidebars are for
