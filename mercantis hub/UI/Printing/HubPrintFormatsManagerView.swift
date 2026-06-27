@@ -186,6 +186,9 @@ struct HubPrintFormatEditorView: View {
     @State private var customHTML: Bool
     @State private var html: String
     @State private var css: String
+    /// No-code layout (Phase 2): the editable mirror of the format's sections.
+    @State private var layout: [EditableSection]
+    @State private var linkOverrides: [String: PrintLinkDisplay]
     @State private var previewData: Data?
     @State private var previewError: String?
     @State private var showPublish = false
@@ -206,6 +209,8 @@ struct HubPrintFormatEditorView: View {
         _customHTML = State(initialValue: draft.htmlTemplate != nil)
         _html = State(initialValue: draft.htmlTemplate ?? "")
         _css = State(initialValue: draft.css ?? "")
+        _layout = State(initialValue: HubPrintLayoutModel.editable(from: draft.sections))
+        _linkOverrides = State(initialValue: draft.fieldLinkDisplays)
     }
 
     private var nameIsEmpty: Bool { name.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -244,6 +249,8 @@ struct HubPrintFormatEditorView: View {
         .onChange(of: linkDisplay) { _, _ in refreshPreview() }
         .onChange(of: html) { _, _ in refreshPreview() }
         .onChange(of: css) { _, _ in refreshPreview() }
+        .onChange(of: layout) { _, _ in refreshPreview() }
+        .onChange(of: linkOverrides) { _, _ in refreshPreview() }
         .sheet(isPresented: $showPublish) { publishSheet }
         .sheet(isPresented: $showVersions) { versionsSheet }
     }
@@ -270,16 +277,21 @@ struct HubPrintFormatEditorView: View {
                     .font(.caption2).foregroundStyle(.secondary)
 
                 if canUseDeveloperMode {
-                    Divider()
                     Toggle("Advanced: edit HTML & CSS", isOn: $customHTML)
-                    if customHTML {
-                        field("HTML") { codeEditor($html, minHeight: 200) }
-                        field("CSS") { codeEditor($css, minHeight: 150) }
-                        Text("Use {field} to insert a value, e.g. {grand_total}. Leave HTML empty to fall back to the generated layout.")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    } else {
-                        Text("Generated layout: letterhead, fields, item table and totals. Turn on Advanced for full control.")
-                            .font(.caption).foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                if canUseDeveloperMode && customHTML {
+                    field("HTML") { codeEditor($html, minHeight: 200) }
+                    field("CSS") { codeEditor($css, minHeight: 150) }
+                    Text("Use {field} to insert a value, e.g. {grand_total}. Leave HTML empty to fall back to the layout below.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    field("Layout") {
+                        HubPrintLayoutSectionsEditor(
+                            layout: $layout, linkOverrides: $linkOverrides, docType: initialDraft.docType
+                        )
                     }
                 }
             }
@@ -374,10 +386,10 @@ struct HubPrintFormatEditorView: View {
         PrintFormat(
             id: initialDraft.id, name: name, docType: initialDraft.docType,
             letterHeadId: initialDraft.letterHeadId, isDefault: isDefault,
-            linkDisplay: linkDisplay, fieldLinkDisplays: initialDraft.fieldLinkDisplays,
+            linkDisplay: linkDisplay, fieldLinkDisplays: linkOverrides,
             htmlTemplate: canUseDeveloperMode && customHTML && !html.isEmpty ? html : nil,
             css: canUseDeveloperMode && customHTML && !css.isEmpty ? css : nil,
-            sections: initialDraft.sections
+            sections: HubPrintLayoutModel.sections(from: layout)
         )
     }
 
@@ -436,6 +448,134 @@ struct HubPrintFormatEditorView: View {
         showVersions = false
         onChanged()
         dismiss()
+    }
+}
+
+/// No-code editor for a format's sections: rename the title and totals, and for
+/// each field/column block add / remove / reorder fields, rename their labels,
+/// and (for link fields) choose how the reference appears.
+struct HubPrintLayoutSectionsEditor: View {
+    @Binding var layout: [EditableSection]
+    @Binding var linkOverrides: [String: PrintLinkDisplay]
+    let docType: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach($layout) { $section in
+                card(for: $section)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func card(for section: Binding<EditableSection>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(section.wrappedValue.displayTitle.uppercased())
+                .font(.system(size: 10, weight: .semibold)).tracking(0.4)
+                .foregroundStyle(MercantisTheme.textMuted)
+            switch section.wrappedValue.kind {
+            case .heading, .paragraph:
+                TextField("Text", text: section.text).textFieldStyle(.roundedBorder)
+            case .keyValue:
+                TextField("Label", text: section.label).textFieldStyle(.roundedBorder)
+            case .fields:
+                itemsEditor(section, tableKey: nil)
+            case .table:
+                itemsEditor(section, tableKey: section.wrappedValue.tableKey)
+            }
+        }
+        .padding(10)
+        .background(MercantisTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func itemsEditor(_ section: Binding<EditableSection>, tableKey: String?) -> some View {
+        VStack(spacing: 6) {
+            ForEach(section.items) { $item in
+                itemRow(section: section, item: $item, tableKey: tableKey)
+            }
+            addMenu(section: section, tableKey: tableKey)
+        }
+    }
+
+    private func itemRow(section: Binding<EditableSection>, item: Binding<EditableField>, tableKey: String?) -> some View {
+        let key = item.wrappedValue.key
+        let id = item.wrappedValue.id
+        let index = section.wrappedValue.items.firstIndex { $0.id == id }
+        let count = section.wrappedValue.items.count
+        return HStack(spacing: 6) {
+            VStack(spacing: 0) {
+                Button { move(section, id, -1) } label: { Image(systemName: "chevron.up") }
+                    .buttonStyle(.borderless).disabled((index ?? 0) == 0)
+                Button { move(section, id, 1) } label: { Image(systemName: "chevron.down") }
+                    .buttonStyle(.borderless).disabled((index ?? 0) >= count - 1)
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(MercantisTheme.textMuted)
+
+            TextField("Label", text: item.label).textFieldStyle(.roundedBorder)
+
+            if HubPrintLayoutModel.isLinkField(docType: docType, key: key, inTable: tableKey) {
+                Menu {
+                    Picker("Reference", selection: linkBinding(key)) {
+                        Text("Default").tag(PrintLinkDisplay?.none)
+                        Text("Name").tag(Optional(PrintLinkDisplay.name))
+                        Text("Code").tag(Optional(PrintLinkDisplay.code))
+                        Text("Both").tag(Optional(PrintLinkDisplay.codeAndName))
+                    }
+                } label: {
+                    Image(systemName: "number.square").font(.system(size: 12)).foregroundStyle(MercantisTheme.brandPrimary)
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("How the reference appears")
+            }
+
+            Button {
+                if let index { section.wrappedValue.items.remove(at: index) }
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless).foregroundStyle(MercantisTheme.textMuted)
+        }
+    }
+
+    @ViewBuilder
+    private func addMenu(section: Binding<EditableSection>, tableKey: String?) -> some View {
+        let present = Set(section.wrappedValue.items.map(\.key))
+        let available: [EditableField] = {
+            if let tableKey {
+                return HubPrintLayoutModel.availableColumns(docType: docType, tableKey: tableKey, excluding: present)
+            }
+            return HubPrintLayoutModel.availableFields(docType: docType, excluding: present)
+        }()
+        if !available.isEmpty {
+            Menu {
+                ForEach(available) { field in
+                    Button(field.label) { section.wrappedValue.items.append(field) }
+                }
+            } label: {
+                Label(tableKey == nil ? "Add field" : "Add column", systemImage: "plus.circle")
+                    .font(.system(size: 12))
+            }
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func linkBinding(_ key: String) -> Binding<PrintLinkDisplay?> {
+        Binding(
+            get: { linkOverrides[key] },
+            set: { value in
+                if let value { linkOverrides[key] = value } else { linkOverrides.removeValue(forKey: key) }
+            }
+        )
+    }
+
+    private func move(_ section: Binding<EditableSection>, _ id: UUID, _ offset: Int) {
+        guard let index = section.wrappedValue.items.firstIndex(where: { $0.id == id }) else { return }
+        let target = index + offset
+        guard section.wrappedValue.items.indices.contains(target) else { return }
+        section.wrappedValue.items.swapAt(index, target)
     }
 }
 
