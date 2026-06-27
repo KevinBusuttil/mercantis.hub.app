@@ -14,11 +14,24 @@ enum HubPrintPresenter {
         var result = document
         var cache: [String: [String: String]] = [:]
 
+        // Resolve a link id to its printable form:
+        //  - a UUID key (e.g. Currency, UOM) is never printed — show the name
+        //    only ("Euro", "Litres");
+        //  - a human-readable code (e.g. CUST-2026-0002, ITEM-0003) is kept and
+        //    paired with the name ("CUST-2026-0002 — Kevin Busuttil"), since the
+        //    code itself is meaningful on a printed document.
         func resolve(_ targetDocType: String, _ id: String) -> String {
             if cache[targetDocType] == nil {
                 cache[targetDocType] = nameMap(for: targetDocType, engine: engine)
             }
-            return cache[targetDocType]?[id] ?? id
+            let name = cache[targetDocType]?[id]
+            if looksLikeUUID(id) {
+                return name ?? ""              // never surface a raw UUID
+            }
+            if let name, !name.isEmpty, name != id {
+                return "\(id) — \(name)"        // code — name
+            }
+            return id
         }
 
         // Header link fields.
@@ -47,7 +60,9 @@ enum HubPrintPresenter {
         return result
     }
 
-    /// id → title-field display value for every document of `docType`.
+    /// id → title-field display value for every document of `docType`. Only
+    /// real names are recorded (missing → absent), so the caller can decide how
+    /// to present an id with no name.
     private static func nameMap(for docType: String, engine: DocumentEngine) -> [String: String] {
         guard let meta = HubManifest.docType(for: docType),
               let documents = try? engine.list(docType: docType) else { return [:] }
@@ -56,10 +71,13 @@ enum HubPrintPresenter {
             if case .string(let name)? = document.fields[meta.titleField],
                !name.trimmingCharacters(in: .whitespaces).isEmpty {
                 map[document.id] = name
-            } else {
-                map[document.id] = document.id
             }
         }
         return map
+    }
+
+    /// Whether an id is an opaque UUID (so it should never be printed as-is).
+    private static func looksLikeUUID(_ id: String) -> Bool {
+        UUID(uuidString: id) != nil
     }
 }
