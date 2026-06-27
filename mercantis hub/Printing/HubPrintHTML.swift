@@ -10,12 +10,15 @@ import MercantisCore
 enum HubPrintHTML {
 
     static func html(format: PrintFormat, document: Document, company: Document?) -> String {
-        let css = format.css ?? defaultCSS
         let body: String
+        let css: String
         if let template = format.htmlTemplate {
             // Author-controlled template — substitute fields and trust its markup.
+            // Custom HTML opts out of the no-code style layer entirely.
+            css = format.css ?? defaultCSS
             body = PrintTemplate.substitute(template, in: document)
         } else {
+            css = (format.css ?? defaultCSS) + styleCSS(format.style)
             body = generatedBody(format: format, document: document, company: company)
         }
         return """
@@ -25,10 +28,40 @@ enum HubPrintHTML {
         """
     }
 
+    /// CSS overrides derived from the no-code `PrintStyle` (typography + density).
+    /// Appended after the base stylesheet so it wins on specificity-equal rules.
+    private static func styleCSS(_ style: PrintStyle) -> String {
+        let base = max(8, min(20, style.baseFontPx))
+        let (cellPad, metaGap, blockGap): (Int, Int, Int)
+        switch style.density {
+        case .compact:  (cellPad, metaGap, blockGap) = (4, 3, 10)
+        case .standard: (cellPad, metaGap, blockGap) = (7, 5, 18)
+        case .detailed: (cellPad, metaGap, blockGap) = (11, 9, 26)
+        }
+        return """
+
+        body { font-size: \(base)px; }
+        .meta { gap: \(metaGap)px 28px; margin-bottom: \(blockGap)px; }
+        table.items td { padding: \(cellPad)px 10px; }
+        table.items th { padding: \(cellPad + 1)px 10px; }
+        .doc-id { margin-bottom: \(blockGap)px; }
+        .standing { margin-top: \(blockGap)px; }
+        .standing .block { margin-top: 12px; }
+        .standing .block .heading { font-size: \(base - 1)px; font-weight: 700; color: #2b2b2f;
+                                    text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 3px; }
+        .standing .block .body { color: #444; line-height: 1.5; white-space: pre-wrap; }
+        .signature { margin-top: 40px; display: flex; justify-content: flex-end; }
+        .signature .line { width: 230px; border-top: 1px solid #2b2b2f; padding-top: 6px;
+                           text-align: center; color: #555; font-size: \(base - 1)px; }
+        .logo { max-height: 64px; max-width: 220px; margin-bottom: 6px; }
+        """
+    }
+
     // MARK: - Generated invoice layout
 
     private static func generatedBody(format: PrintFormat, document: Document, company: Document?) -> String {
-        var html = letterhead(company: company)
+        let style = format.style
+        var html = letterhead(company: company, style: style)
 
         var titleEmitted = false
         var tableSeen = false
@@ -83,11 +116,36 @@ enum HubPrintHTML {
             html += "</div>"
         }
 
-        html += footer(company: company)
+        html += standingBlocks(style: style)
+
+        html += footer(company: company, style: style)
         return html
     }
 
-    private static func letterhead(company: Document?) -> String {
+    /// The operator-authored standing text (terms, bank details) plus the
+    /// optional signature line, rendered above the page footer.
+    private static func standingBlocks(style: PrintStyle) -> String {
+        var blocks = ""
+        func block(_ heading: String, _ text: String?) {
+            guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            blocks += """
+            <div class="block"><div class="heading">\(escape(heading))</div>\
+            <div class="body">\(escape(text))</div></div>
+            """
+        }
+        block("Terms & Conditions", style.termsText)
+        block("Payment Details", style.bankDetails)
+
+        var html = blocks.isEmpty ? "" : "<div class=\"standing\">\(blocks)</div>"
+        if style.showSignature {
+            let label = style.signatureLabel?.trimmingCharacters(in: .whitespaces)
+            let line = (label?.isEmpty == false) ? label! : "Authorised Signature"
+            html += "<div class=\"signature\"><div class=\"line\">\(escape(line))</div></div>"
+        }
+        return html
+    }
+
+    private static func letterhead(company: Document?, style: PrintStyle) -> String {
         guard let company else { return "" }
         let name = stringField(company, "business_name")
         var details: [String] = []
@@ -98,15 +156,38 @@ enum HubPrintHTML {
                 details.append(escape(prefix + v).replacingOccurrences(of: "\n", with: "<br>"))
             }
         }
+        let logo = style.showLogo ? logoTag(company) : ""
         return """
         <div class="letterhead">
-          <div><div class="company-name">\(escape(name))</div></div>
+          <div>\(logo)<div class="company-name">\(escape(name))</div></div>
           <div class="company-detail">\(details.joined(separator: "<br>"))</div>
         </div>
         """
     }
 
-    private static func footer(company: Document?) -> String {
+    /// `<img>` for the company logo as an inline base64 data-URI, or "" when no
+    /// logo is stored. Logos live in the Company doc's `logo` `.image` field as
+    /// raw bytes (`FieldValue.data`).
+    private static func logoTag(_ company: Document) -> String {
+        guard case .data(let bytes)? = company.fields["logo"], !bytes.isEmpty else { return "" }
+        let mime = imageMime(bytes)
+        let b64 = bytes.base64EncodedString()
+        return "<img class=\"logo\" src=\"data:\(mime);base64,\(b64)\">"
+    }
+
+    /// Sniff a handful of common image signatures so the data-URI declares the
+    /// right type; defaults to PNG.
+    private static func imageMime(_ bytes: Data) -> String {
+        let b = [UInt8](bytes.prefix(4))
+        if b.count >= 3, b[0] == 0xFF, b[1] == 0xD8, b[2] == 0xFF { return "image/jpeg" }
+        if b.count >= 4, b[0] == 0x47, b[1] == 0x49, b[2] == 0x46 { return "image/gif" }
+        return "image/png"
+    }
+
+    private static func footer(company: Document?, style: PrintStyle) -> String {
+        if let custom = style.footerText?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+            return "<div class=\"footer\">\(escape(custom).replacingOccurrences(of: "\n", with: "<br>"))</div>"
+        }
         let name = company.map { stringField($0, "business_name") } ?? ""
         let line = name.isEmpty ? "Generated by Mercantis Hub" : "\(escape(name)) · Generated by Mercantis Hub"
         return "<div class=\"footer\">\(line)</div>"
