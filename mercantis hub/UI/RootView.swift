@@ -1117,6 +1117,7 @@ private struct HubDocumentEditor: View {
                     PrintRecordButton(
                         document: document,
                         printService: printService,
+                        documentTransform: { HubPrintPresenter.displayDocument($0, engine: engine) },
                         formatsResolver: { doc in printService.orderedFormats(forDocType: doc.docType) }
                     )
                     .buttonStyle(.bordered)
