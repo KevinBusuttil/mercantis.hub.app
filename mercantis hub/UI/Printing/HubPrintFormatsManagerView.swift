@@ -208,33 +208,44 @@ struct HubPrintFormatEditorView: View {
         _css = State(initialValue: draft.css ?? "")
     }
 
+    private var nameIsEmpty: Bool { name.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Edit Format").font(.headline)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            Divider()
+
             HSplitView {
                 configPane.frame(minWidth: 330, idealWidth: 390, maxWidth: 540)
                 previewPane.frame(minWidth: 380)
             }
-            .navigationTitle("Edit Format")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItemGroup(placement: .confirmationAction) {
-                    Button("Version History") { loadVersions(); showVersions = true }
-                    Button("Save Draft") { saveDraft() }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                    Button("Publish…") { publishNote = ""; showPublish = true }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
+
+            Divider()
+            HStack(spacing: 10) {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button("Version History") { loadVersions(); showVersions = true }
+                Button("Save Draft") { saveDraft() }.disabled(nameIsEmpty)
+                Button("Publish…") { publishNote = ""; showPublish = true }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(nameIsEmpty)
             }
-            .onAppear(perform: refreshPreview)
-            .onChange(of: customHTML) { _, on in if on, html.isEmpty { seedHTML() }; refreshPreview() }
-            .onChange(of: linkDisplay) { _, _ in refreshPreview() }
-            .onChange(of: html) { _, _ in refreshPreview() }
-            .onChange(of: css) { _, _ in refreshPreview() }
-            .sheet(isPresented: $showPublish) { publishSheet }
-            .sheet(isPresented: $showVersions) { versionsSheet }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .frame(minWidth: 880, minHeight: 580)
+        .onAppear(perform: refreshPreview)
+        .onChange(of: customHTML) { _, on in if on, html.isEmpty { seedHTML() }; refreshPreview() }
+        .onChange(of: linkDisplay) { _, _ in refreshPreview() }
+        .onChange(of: html) { _, _ in refreshPreview() }
+        .onChange(of: css) { _, _ in refreshPreview() }
+        .sheet(isPresented: $showPublish) { publishSheet }
+        .sheet(isPresented: $showVersions) { versionsSheet }
     }
 
     // MARK: - Config

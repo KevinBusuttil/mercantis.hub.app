@@ -255,6 +255,10 @@ struct mercantis_hubApp: App {
         // DocType's print formats (draft / publish / restore).
         Window("Print Formats", id: HubWindows.printFormats) {
             HubPrintFormatsWindowView(engine: documentEngine, printService: printService)
+                // This separate scene doesn't inherit the main window's
+                // environment, so re-inject the operator roles that gate the
+                // HTML/CSS developer mode.
+                .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
         }
         #endif
 
