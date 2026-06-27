@@ -1009,6 +1009,8 @@ private struct HubDocumentEditor: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
             }
+            printMenuButton
+                .controlSize(.small)
         }
     }
 
@@ -1098,6 +1100,19 @@ private struct HubDocumentEditor: View {
     /// more are added (e.g. Convert to Delivery / Convert to Invoice); the
     /// view-only inspector toggle is pushed to the right and visually separated.
     @ViewBuilder
+    /// The Print menu, available on any saved document (polished or legacy
+    /// workspace) so every printable DocType — Delivery Note, Purchase Receipt,
+    /// master data, … — can print and manage its formats, not just the
+    /// sales/purchase transaction docs.
+    @ViewBuilder
+    private var printMenuButton: some View {
+        if let printService, !document.id.isEmpty {
+            HubPrintButton(document: document, printService: printService, engine: engine)
+                .buttonStyle(.bordered)
+                .fixedSize()
+        }
+    }
+
     private func headerActionBar(inspectorAvailable: Bool) -> some View {
         let actions = workspaceActions
         if !actions.isEmpty || inspectorAvailable {
@@ -1113,15 +1128,7 @@ private struct HubDocumentEditor: View {
 
                 Spacer(minLength: 12)
 
-                if let printService, !document.id.isEmpty {
-                    HubPrintButton(
-                        document: document,
-                        printService: printService,
-                        engine: engine
-                    )
-                    .buttonStyle(.bordered)
-                    .fixedSize()
-                }
+                printMenuButton
 
                 if inspectorAvailable {
                     Button {
@@ -2215,8 +2222,16 @@ extension FocusedValues {
 /// Deliberately minimal: these mirror on-screen affordances and add keyboard
 /// access — they do not introduce menu-only features. Wired into the app via
 /// `.commands { HubCommands() }`.
+/// Window ids for app-scene windows opened from menu commands.
+enum HubWindows {
+    static let printFormats = "developer-print-formats"
+}
+
 struct HubCommands: Commands {
     @FocusedValue(\.newRecordAction) private var newRecordAction
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     var body: some Commands {
         // File ▸ New <record> — replaces the stock "New" item with a
@@ -2241,6 +2256,12 @@ struct HubCommands: Commands {
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
         }
+
+        // Developer ▸ Print Formats — manage every DocType's print formats
+        // (duplicate, edit drafts, publish, restore) in a dedicated window.
+        CommandMenu("Developer") {
+            Button("Print Formats…") { openWindow(id: HubWindows.printFormats) }
+        }
         #endif
     }
 }
@@ -2257,5 +2278,18 @@ extension EnvironmentValues {
     var printService: PrintService? {
         get { self[PrintServiceKey.self] }
         set { self[PrintServiceKey.self] = newValue }
+    }
+}
+
+private struct OperatorRolesKey: EnvironmentKey {
+    static let defaultValue: Set<String> = []
+}
+
+extension EnvironmentValues {
+    /// The signed-in operator's roles, injected at app scope so views can gate
+    /// advanced capabilities (e.g. the print-format HTML/CSS developer mode).
+    var operatorRoles: Set<String> {
+        get { self[OperatorRolesKey.self] }
+        set { self[OperatorRolesKey.self] = newValue }
     }
 }

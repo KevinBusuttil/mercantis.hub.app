@@ -113,7 +113,58 @@ enum HubPrintFormats {
             transactionFormat(id: "purchase-invoice", name: "Purchase Invoice", docType: "PurchaseInvoice",
                               title: "Purchase Invoice", partyKey: "supplier", partyLabel: "Supplier",
                               showTaxBreakdown: true),
+            deliveryFormat(id: "delivery-note", name: "Delivery Note", docType: "SalesDelivery",
+                           title: "Delivery Note", partyKey: "customer", partyLabel: "Customer"),
+            deliveryFormat(id: "goods-receipt", name: "Goods Received Note", docType: "PurchaseReceipt",
+                           title: "Goods Received Note", partyKey: "supplier", partyLabel: "Supplier"),
+            paymentReceiptFormat(),
         ]
+    }
+
+    /// A goods-movement document (Delivery Note / Goods Received Note): party +
+    /// date, an item table with quantities and source warehouse, and a total
+    /// quantity — no prices or totals.
+    private static func deliveryFormat(
+        id: String, name: String, docType: String, title: String,
+        partyKey: String, partyLabel: String
+    ) -> PrintFormat {
+        PrintFormat(
+            id: "fmt-\(id)", name: name, docType: docType, isDefault: true,
+            linkDisplay: .name,
+            fieldLinkDisplays: [partyKey: .codeAndName, "item": .codeAndName],
+            sections: [
+                .heading(text: title),
+                .keyValue(label: "Document", value: "{id}"),
+                .fields(keys: [partyKey, "transaction_date"],
+                        labels: [partyKey: partyLabel, "transaction_date": "Date"]),
+                .table(
+                    tableKey: "items",
+                    columns: ["item", "description", "qty", "uom", "warehouse"],
+                    labels: ["item": "Item", "description": "Description", "qty": "Qty",
+                             "uom": "UOM", "warehouse": "Warehouse"]
+                ),
+                .keyValue(label: "Total Qty", value: "{total_qty}"),
+            ]
+        )
+    }
+
+    /// A payment voucher / receipt: party + reference + the amounts.
+    private static func paymentReceiptFormat() -> PrintFormat {
+        PrintFormat(
+            id: "fmt-payment-receipt", name: "Payment Receipt", docType: "PaymentEntry", isDefault: true,
+            linkDisplay: .name,
+            sections: [
+                .heading(text: "Payment Receipt"),
+                .keyValue(label: "Document", value: "{id}"),
+                .fields(
+                    keys: ["payment_type", "party", "posting_date", "reference_no"],
+                    labels: ["payment_type": "Type", "party": "Party",
+                             "posting_date": "Date", "reference_no": "Reference"]
+                ),
+                .keyValue(label: "Paid Amount", value: "{paid_amount}"),
+                .keyValue(label: "Received Amount", value: "{received_amount}"),
+            ]
+        )
     }
 
     /// A clean header → party/date → items → totals layout shared by the
