@@ -1,6 +1,7 @@
 import SwiftUI
 import Charts
 import MercantisCore
+import MercantisCoreUI
 
 /// Renders a projected report: an optional chart above a grouped table with
 /// group headers, per-group subtotals and a grand total. Shared by the Report

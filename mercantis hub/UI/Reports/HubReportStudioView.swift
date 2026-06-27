@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import MercantisCore
+import MercantisCoreUI
 
 /// A friendly, visual builder for from-scratch reports: a field palette you add
 /// columns from, drag-to-reorder selected columns, group-by with subtotals and
