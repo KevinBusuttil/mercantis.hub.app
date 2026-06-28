@@ -35,7 +35,10 @@ struct HubHomeView: View {
     /// explicit so a fresh database does only a handful of cheap list calls.
     private let countedDocTypeIDs = [
         "Customer", "Supplier", "Item", "Warehouse",
-        "Currency", "Account", "StockEntry", "PaymentEntry", "SalesInvoice"
+        "Currency", "Account", "StockEntry", "PaymentEntry", "SalesInvoice",
+        // Getting Started checklist also reports on these — without them their
+        // counts stay 0 and the rows read "Needs setup" even once records exist.
+        "Company", "FiscalYear", "TaxCode"
     ]
 
     private let sampleNote = "Sample / demo data — safe to delete."
