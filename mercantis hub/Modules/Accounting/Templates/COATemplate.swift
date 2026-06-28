@@ -37,7 +37,7 @@ enum HubAccountSlot: CaseIterable {
 /// The flavour of indirect tax in a jurisdiction. Only changes the user-facing
 /// *names* of the tax-control accounts; the record ids stay stable so the
 /// posting wiring is unaffected.
-enum HubTaxStyle { case vat, salesTax, gstHst, none }
+enum HubTaxStyle: Equatable { case vat, salesTax, gstHst, none }
 
 /// One account in a chart-of-accounts template.
 struct COAAccount: Equatable {

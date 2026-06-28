@@ -41,6 +41,9 @@ public nonisolated enum PostingValidationError: LocalizedError {
     case closedPeriod(period: String)
     /// No fiscal year covers the posting date (and at least one is defined).
     case noOpenPeriod(date: Date)
+    /// The posting date is on or before the books-lock date — the period has
+    /// been filed / finalised and is protected from change.
+    case booksLocked(until: Date)
     /// Issuing this line would drive stock negative and the company has not
     /// opted into negative stock.
     case insufficientStock(item: String, warehouse: String, onHand: Double, requested: Double)
@@ -51,6 +54,8 @@ public nonisolated enum PostingValidationError: LocalizedError {
             return "The fiscal period \"\(period)\" is closed — documents can't be posted into it."
         case .noOpenPeriod(let date):
             return "No fiscal year covers \(Self.dateText(date)). Create and activate a fiscal year for this date before posting."
+        case .booksLocked(let until):
+            return "The books are locked through \(Self.dateText(until)). That period has been filed or finalised — change the lock date in the Business Profile before posting into it."
         case .insufficientStock(let item, let warehouse, let onHand, let requested):
             return "Not enough stock of \(item) in \(warehouse): \(Self.qtyText(requested)) requested but \(Self.qtyText(onHand)) on hand. Receive stock first, or enable “Allow Negative Stock” in the Business Profile."
         }
@@ -187,6 +192,7 @@ nonisolated final class PostingCoordinator {
             // period guard still applies.
             let isReturn = doc.fields["is_return"] == .bool(true)
             inputs.submitValidationError = fiscalPeriodViolation(for: doc, engine: engine)
+                ?? booksLockViolation(for: doc, engine: engine)
                 ?? (isReturn ? nil : stockAvailabilityViolation(for: doc, engine: engine, uomFactors: inputs.uomFactors))
         }
         return inputs
@@ -210,6 +216,20 @@ nonisolated final class PostingCoordinator {
             return .closedPeriod(period: nonEmptyString(covering.fields["year_name"]) ?? covering.id)
         }
         return nil
+    }
+
+    /// Reject a posting dated on or before the Business-Profile books-lock date.
+    /// The owner sets this when a period is filed / finalised so the figures
+    /// can't change by accident. Dormant when no lock date is set, so a fresh
+    /// install is never blocked. Applies to every submit (returns included),
+    /// since reopening a filed period needs an explicit lock-date change.
+    private static func booksLockViolation(for doc: Document, engine: DocumentEngine) -> PostingValidationError? {
+        guard let postingDate = asDate(doc.fields["posting_date"] ?? doc.fields["transaction_date"]) else { return nil }
+        guard let company = (try? engine.list(docType: "Company"))?.first,
+              let lockDate = asDate(company.fields["books_lock_date"]) else { return nil }
+        return BooksLockPolicy.isLocked(postingDate: postingDate, lockDate: lockDate)
+            ? .booksLocked(until: lockDate)
+            : nil
     }
 
     /// Reject an outgoing-stock submit that would drive a bin negative, unless

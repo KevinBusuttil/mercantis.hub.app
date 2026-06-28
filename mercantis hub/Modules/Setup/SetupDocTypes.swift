@@ -73,7 +73,10 @@ enum Setup {
             FieldDefinition(key: "default_tax_code", label: "Default Tax Code",
                             type: .link, required: false,
                             helpText: "The tax automatically applied to new invoices. Set from your country during setup.",
-                            linkedDocType: "TaxCode")
+                            linkedDocType: "TaxCode"),
+            FieldDefinition(key: "books_lock_date", label: "Books Locked Through",
+                            type: .date, required: false,
+                            helpText: "Postings dated on or before this date are blocked. Set automatically when you file a tax return or finalise a period, so filed figures can't change by accident.")
         ],
         permissions: [systemManagerPermission],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
@@ -111,7 +114,7 @@ enum Setup {
                 title: "Defaults",
                 helpText: "Used as defaults for future sales, buying, stock, and accounting setup.",
                 columns: 2,
-                fieldKeys: ["default_currency", "default_warehouse", "allow_negative_stock"]
+                fieldKeys: ["default_currency", "default_warehouse", "allow_negative_stock", "books_lock_date"]
             ),
             FormLayoutSection(
                 key: "accounts",
@@ -347,7 +350,18 @@ enum Setup {
             FieldDefinition(key: "is_active", label: "Active",
                             type: .boolean, required: false, defaultValue: .bool(true)),
             FieldDefinition(key: "is_closed", label: "Closed",
-                            type: .boolean, required: false, defaultValue: .bool(false))
+                            type: .boolean, required: false, defaultValue: .bool(false)),
+            FieldDefinition(key: "closed_date", label: "Closed On",
+                            type: .date, required: false,
+                            helpText: "When the year was closed off."),
+            FieldDefinition(key: "closing_entry", label: "Closing Entry",
+                            type: .link, required: false,
+                            helpText: "The year-end Journal Entry that rolled profit into Retained Earnings.",
+                            linkedDocType: "JournalEntry"),
+            FieldDefinition(key: "retained_earnings_account", label: "Retained Earnings Account",
+                            type: .link, required: false,
+                            helpText: "Where this year's net profit or loss is carried forward.",
+                            linkedDocType: "Account")
         ],
         permissions: [systemManagerPermission],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
@@ -360,7 +374,8 @@ enum Setup {
                 title: "Accounting Period",
                 helpText: "Define the start and end dates for this fiscal year. Keep one open year marked active.",
                 columns: 2,
-                fieldKeys: ["year_name", "year_start_date", "year_end_date", "is_active", "is_closed"]
+                fieldKeys: ["year_name", "year_start_date", "year_end_date", "is_active", "is_closed",
+                            "closed_date", "closing_entry", "retained_earnings_account"]
             )
         ])
     )
