@@ -780,6 +780,9 @@ private struct HubDocumentEditor: View {
     /// ADR-044 print engine, injected at app scope; drives the header Print
     /// menu (per-DocType formats, default first). Nil in previews / tests.
     @Environment(\.printService) private var printService
+    /// Tier 3 glossary, injected at app scope; supplies the "what does this do?"
+    /// tooltips on the lifecycle action buttons.
+    @Environment(\.glossary) private var glossary
 
     @State private var errorMessage: String?
     /// A transient success note (e.g. after converting a Sales Order into a
@@ -990,6 +993,7 @@ private struct HubDocumentEditor: View {
         let label: String
         let role: ButtonRole?
         let isPrimary: Bool
+        var help: String? = nil
         let perform: () -> Void
     }
 
@@ -1043,6 +1047,9 @@ private struct HubDocumentEditor: View {
         return HStack(spacing: 6) {
             if let lifecycle {
                 MercantisStatusBadge(display: lifecycle)
+                // Explains the current lifecycle state (Draft / Posted / …) when
+                // it's a registered glossary term.
+                GlossaryInfoButton(lifecycle.label)
             }
             if let workflowDisplay {
                 MercantisStatusBadge(display: workflowDisplay)
@@ -1120,10 +1127,12 @@ private struct HubDocumentEditor: View {
                 if let primary = actions.first(where: \.isPrimary) {
                     Button(primary.label, role: primary.role, action: primary.perform)
                         .buttonStyle(.borderedProminent)
+                        .help(primary.help ?? "")
                 }
                 ForEach(actions.filter { !$0.isPrimary }) { action in
                     Button(action.label, role: action.role, action: action.perform)
                         .buttonStyle(.bordered)
+                        .help(action.help ?? "")
                 }
 
                 Spacer(minLength: 12)
@@ -1334,6 +1343,7 @@ private struct HubDocumentEditor: View {
                     label: action.label,
                     role: nil,
                     isPrimary: true,
+                    help: glossary.lookup("Submit")?.summary,
                     perform: { requestSubmit(action) }
                 )
             )
@@ -1348,6 +1358,7 @@ private struct HubDocumentEditor: View {
                     label: action.label,
                     role: nil,
                     isPrimary: !primaryAssigned,
+                    help: glossary.lookup("Amend")?.summary,
                     perform: { amend() }
                 )
             )
@@ -1379,6 +1390,7 @@ private struct HubDocumentEditor: View {
                     label: action.label,
                     role: .destructive,
                     isPrimary: false,
+                    help: glossary.lookup("Cancel")?.summary,
                     perform: { requestCancel(action) }
                 )
             )
@@ -2225,6 +2237,7 @@ extension FocusedValues {
 /// Window ids for app-scene windows opened from menu commands.
 enum HubWindows {
     static let printFormats = "developer-print-formats"
+    static let glossary = "help-glossary"
 }
 
 struct HubCommands: Commands {
@@ -2255,6 +2268,13 @@ struct HubCommands: Commands {
                 )
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
+        }
+
+        // Help ▸ Mercantis Glossary — a searchable reference of the ERP /
+        // accounting terms the Hub uses.
+        CommandGroup(after: .help) {
+            Button("Mercantis Glossary…") { openWindow(id: HubWindows.glossary) }
+                .keyboardShortcut("/", modifiers: [.command, .shift])
         }
 
         // Developer ▸ Print Formats — manage every DocType's print formats
