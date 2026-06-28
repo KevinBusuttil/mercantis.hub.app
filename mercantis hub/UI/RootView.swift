@@ -29,6 +29,22 @@ struct RootView: View {
     /// the destination workspace, then cleared when it makes its selection.
     @State private var pendingOpenRecordID: String?
     @State private var collapsedGroups: Set<String> = []
+    /// Modules currently expanded in the sidebar. A multi-expand accordion
+    /// (persisted) so the user can keep several areas open and "peek" into one
+    /// without leaving the screen they're on.
+    @State private var expandedModules: Set<String> = []
+    /// Live sidebar filter text. When non-empty the sidebar flattens to a
+    /// cross-module list of matching items instead of the module accordion.
+    @State private var sidebarQuery = ""
+    /// Drives the ⌘K command palette overlay.
+    @State private var showCommandPalette = false
+    /// Set once the persisted navigation state has been restored, so the
+    /// restore runs a single time per launch.
+    @State private var navStateRestored = false
+
+    private static let expandedModulesKey = "hub.nav.expandedModules"
+    private static let collapsedGroupsKey = "hub.nav.collapsedGroups"
+    private static let selectionKey = "hub.nav.selection"
     /// The capture currently being reviewed (drives the Capture flow's
     /// list ⇄ review sub-routing).
     @State private var reviewCaptureId: String?
@@ -39,6 +55,24 @@ struct RootView: View {
         } detail: {
             detail
         }
+        .focusedSceneValue(\.commandPalette, CommandPaletteAction { showCommandPalette = true })
+        .overlay {
+            if showCommandPalette {
+                commandPaletteOverlay
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: showCommandPalette)
+        .onAppear(perform: restoreNavStateIfNeeded)
+        .onChange(of: selection) { _, newValue in
+            // Keep the selected item's module open and remember where we are.
+            if let moduleID = HubNavigation.moduleID(for: newValue, settings: visibility) {
+                expandedModules.insert(moduleID)
+            }
+            persistNavState()
+        }
+        .onChange(of: expandedModules) { _, _ in persistNavState() }
+        .onChange(of: collapsedGroups) { _, _ in persistNavState() }
         .sheet(isPresented: Binding(
             get: { !visibility.onboardingComplete },
             set: { presented in if !presented { visibility.onboardingComplete = true } }
@@ -47,15 +81,24 @@ struct RootView: View {
         }
     }
 
+    /// Centered ⌘K command palette over a dimmed backdrop. Jumps to any module
+    /// item (DocType / report / dashboard / flow) across the whole app.
+    private var commandPaletteOverlay: some View {
+        ZStack(alignment: .top) {
+            Color.black.opacity(0.14)
+                .ignoresSafeArea()
+                .onTapGesture { showCommandPalette = false }
+            CommandBarView(isPresented: $showCommandPalette, actions: paletteActions)
+                .padding(.top, 72)
+                .padding(.horizontal, 24)
+        }
+    }
+
     private var visibleModules: [HubModule] {
         HubNavigation.allModules.filter { visibility.isModuleVisible($0) }
     }
 
     private let customReportsItem: HubMenuItem = .customReports(label: "Custom Reports")
-
-    private var activeModuleID: String? {
-        HubNavigation.moduleID(for: selection, settings: visibility) ?? visibleModules.first?.id
-    }
 
     private var sidebar: some View {
         List(selection: $selection) {
@@ -66,101 +109,22 @@ struct RootView: View {
                     systemImage: "shippingbox"
                 )
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
+                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
                 .listRowSeparator(.hidden)
             }
 
-            // Persistent way back to the overview from anywhere.
             Section {
-                Button {
-                    selection = nil
-                } label: {
-                    MercantisSidebarRow(
-                        title: "Home",
-                        systemImage: "house",
-                        tone: .neutral,
-                        isSelected: selection == nil,
-                        indentation: 0
-                    )
-                }
-                .buttonStyle(.plain)
-                .listRowBackground(selection == nil ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
-                .listRowSeparator(.hidden)
-
-                // Cross-module Custom Reports home. Saved report variants
-                // span modules, so they get a single durable entry here
-                // rather than living under any one module.
-                Button {
-                    selection = customReportsItem
-                } label: {
-                    MercantisSidebarRow(
-                        title: "Custom Reports",
-                        systemImage: "slider.horizontal.3",
-                        tone: .neutral,
-                        isSelected: selection == customReportsItem,
-                        indentation: 0
-                    )
-                }
-                .buttonStyle(.plain)
-                .listRowBackground(selection == customReportsItem ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
-                .listRowSeparator(.hidden)
+                sidebarSearchField
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 8))
+                    .listRowSeparator(.hidden)
             }
 
-            ForEach(visibleModules) { module in
-                let groups = module.visibleGroups(visibility)
-                Section {
-                    Button {
-                        if let first = module.firstVisibleItem(visibility) {
-                            selection = first
-                        }
-                    } label: {
-                        MercantisSidebarModuleHeader(
-                            title: module.label,
-                            systemImage: module.systemImage,
-                            tone: module.tone,
-                            badge: module.businessBadge
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-
-                    if activeModuleID == module.id {
-                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                            // Key the collapse state by label so it stays stable
-                            // when advanced groups appear / disappear.
-                            let key = "\(module.id)::\(group.label ?? "ungrouped")"
-                            if let label = group.label {
-                                MercantisSidebarGroupHeader(
-                                    title: label,
-                                    isCollapsed: collapsedGroups.contains(key)
-                                ) {
-                                    if collapsedGroups.contains(key) {
-                                        collapsedGroups.remove(key)
-                                    } else {
-                                        collapsedGroups.insert(key)
-                                    }
-                                }
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                            }
-                            if group.label == nil || !collapsedGroups.contains(key) {
-                                ForEach(group.items, id: \.self) { item in
-                                    MercantisSidebarRow(
-                                        title: item.label,
-                                        systemImage: item.systemImage,
-                                        tone: module.tone,
-                                        isSelected: selection == item,
-                                        indentation: group.label == nil ? 0 : 6
-                                    )
-                                    .tag(item)
-                                    .listRowBackground(selection == item ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
-                                    .listRowSeparator(.hidden)
-                                }
-                            }
-                        }
-                    }
-                }
+            if isFiltering {
+                filteredResultsSection
+            } else {
+                homeSection
+                moduleSections
             }
 
             // Settings opens the standard macOS Settings window (⌘,);
@@ -184,6 +148,255 @@ struct RootView: View {
         .listStyle(.sidebar)
         .navigationTitle("Mercantis Hub")
         .frame(minWidth: 240)
+    }
+
+    private var isFiltering: Bool {
+        !sidebarQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sidebarSearchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            TextField("Filter", text: $sidebarQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+            if isFiltering {
+                Button { sidebarQuery = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear filter")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(MercantisTheme.surfaceMuted, in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    /// Persistent way back to the overview, plus the cross-module Custom
+    /// Reports home (saved variants span modules, so they live here rather than
+    /// under any one module).
+    @ViewBuilder
+    private var homeSection: some View {
+        Section {
+            Button { selection = nil } label: {
+                MercantisSidebarRow(title: "Home", systemImage: "house", tone: .neutral,
+                                    isSelected: selection == nil, indentation: 0)
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(selection == nil ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+            .listRowSeparator(.hidden)
+
+            Button { selection = customReportsItem } label: {
+                MercantisSidebarRow(title: "Custom Reports", systemImage: "slider.horizontal.3", tone: .neutral,
+                                    isSelected: selection == customReportsItem, indentation: 0)
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(selection == customReportsItem ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private var moduleSections: some View {
+        ForEach(visibleModules) { module in
+            let isExpanded = expandedModules.contains(module.id)
+            Section {
+                moduleHeaderRow(module: module, isExpanded: isExpanded)
+                if isExpanded {
+                    ForEach(Array(module.visibleGroups(visibility).enumerated()), id: \.offset) { _, group in
+                        groupRows(module: module, group: group)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Module header: tapping the title navigates into the module (and opens
+    /// it); the trailing chevron expands / collapses it without navigating, so
+    /// the user can peek into another area without leaving the current screen.
+    private func moduleHeaderRow(module: HubModule, isExpanded: Bool) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                if let first = module.firstVisibleItem(visibility) { selection = first }
+                expandedModules.insert(module.id)
+            } label: {
+                MercantisSidebarModuleHeader(
+                    title: module.label,
+                    systemImage: module.systemImage,
+                    tone: module.tone,
+                    badge: module.businessBadge
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button { toggleModuleExpanded(module.id) } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Collapse \(module.label)" : "Expand \(module.label)")
+        }
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    @ViewBuilder
+    private func groupRows(module: HubModule, group: HubMenuGroup) -> some View {
+        // Key the collapse state by label so it stays stable when advanced
+        // groups appear / disappear.
+        let key = "\(module.id)::\(group.label ?? "ungrouped")"
+        if let label = group.label {
+            MercantisSidebarGroupHeader(title: label, isCollapsed: collapsedGroups.contains(key)) {
+                if collapsedGroups.contains(key) { collapsedGroups.remove(key) }
+                else { collapsedGroups.insert(key) }
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+        if group.label == nil || !collapsedGroups.contains(key) {
+            ForEach(group.items, id: \.self) { item in
+                moduleItemRow(module: module, item: item, indented: group.label != nil)
+            }
+        }
+    }
+
+    private func moduleItemRow(module: HubModule, item: HubMenuItem, indented: Bool) -> some View {
+        MercantisSidebarRow(
+            title: item.label,
+            systemImage: item.systemImage,
+            tone: module.tone,
+            isSelected: selection == item,
+            indentation: indented ? 6 : 0
+        )
+        .tag(item)
+        .listRowBackground(selection == item ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    /// Flat, cross-module list of items matching the sidebar filter — so the
+    /// user can find anything without knowing which module holds it.
+    @ViewBuilder
+    private var filteredResultsSection: some View {
+        let results = filteredSidebarItems
+        Section {
+            if results.isEmpty {
+                Text("No matches for “\(sidebarQuery)”")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(results) { row in
+                    MercantisSidebarRow(
+                        title: row.item.label,
+                        systemImage: row.item.systemImage,
+                        tone: row.tone,
+                        isSelected: selection == row.item,
+                        indentation: 0
+                    )
+                    .tag(row.item)
+                    .listRowBackground(selection == row.item ? MercantisTheme.tableRowSelection.opacity(0.82) : Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+            }
+        } header: {
+            Text("\(results.count) result\(results.count == 1 ? "" : "s")")
+        }
+    }
+
+    private struct SidebarResult: Identifiable {
+        let item: HubMenuItem
+        let tone: MercantisModuleTone
+        var id: String { item.id }
+    }
+
+    private var filteredSidebarItems: [SidebarResult] {
+        let q = sidebarQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        var out: [SidebarResult] = []
+        for module in visibleModules {
+            for group in module.visibleGroups(visibility) {
+                for item in group.items
+                where item.label.lowercased().contains(q) || module.label.lowercased().contains(q) {
+                    out.append(SidebarResult(item: item, tone: module.tone))
+                }
+            }
+        }
+        return out
+    }
+
+    // MARK: - Command palette + nav state
+
+    private var paletteActions: [CommandBarAction] {
+        var actions: [CommandBarAction] = [
+            CommandBarAction(id: "nav:home", title: "Home", icon: "house",
+                             keywords: ["overview", "dashboard", "start"], action: { selection = nil }),
+            CommandBarAction(id: "nav:custom-reports", title: "Custom Reports", subtitle: "Reports",
+                             icon: "slider.horizontal.3", keywords: ["reports", "saved"],
+                             action: { selection = customReportsItem })
+        ]
+        for module in visibleModules {
+            for group in module.visibleGroups(visibility) {
+                for item in group.items {
+                    actions.append(
+                        CommandBarAction(
+                            id: "nav:\(module.id):\(item.id)",
+                            title: item.label,
+                            subtitle: module.label,
+                            icon: item.systemImage,
+                            keywords: [module.label, group.label ?? ""].filter { !$0.isEmpty },
+                            action: { selection = item }
+                        )
+                    )
+                }
+            }
+        }
+        return actions
+    }
+
+    private func toggleModuleExpanded(_ id: String) {
+        if expandedModules.contains(id) { expandedModules.remove(id) }
+        else { expandedModules.insert(id) }
+    }
+
+    private func restoreNavStateIfNeeded() {
+        guard !navStateRestored else { return }
+        navStateRestored = true
+        let defaults = UserDefaults.standard
+        if let arr = defaults.array(forKey: Self.expandedModulesKey) as? [String] {
+            expandedModules = Set(arr)
+        }
+        if let arr = defaults.array(forKey: Self.collapsedGroupsKey) as? [String] {
+            collapsedGroups = Set(arr)
+        }
+        if selection == nil, let id = defaults.string(forKey: Self.selectionKey),
+           let item = HubNavigation.item(forID: id, settings: visibility) {
+            selection = item
+        }
+        // Seed a sensible default expansion: the selected item's module, else
+        // the first visible module so the sidebar isn't all collapsed on a
+        // first run.
+        if let moduleID = HubNavigation.moduleID(for: selection, settings: visibility) {
+            expandedModules.insert(moduleID)
+        } else if expandedModules.isEmpty, let first = visibleModules.first {
+            expandedModules.insert(first.id)
+        }
+    }
+
+    private func persistNavState() {
+        let defaults = UserDefaults.standard
+        defaults.set(Array(expandedModules), forKey: Self.expandedModulesKey)
+        defaults.set(Array(collapsedGroups), forKey: Self.collapsedGroupsKey)
+        defaults.set(selection?.id, forKey: Self.selectionKey)
     }
 
     @ViewBuilder
@@ -2222,7 +2435,22 @@ private struct NewRecordActionKey: FocusedValueKey {
     typealias Value = NewRecordAction
 }
 
+/// Opens the ⌘K command palette. Published as a focused scene value by RootView
+/// so the menu-bar command can reach the active window's palette state.
+struct CommandPaletteAction {
+    let perform: () -> Void
+}
+
+private struct CommandPaletteActionKey: FocusedValueKey {
+    typealias Value = CommandPaletteAction
+}
+
 extension FocusedValues {
+    var commandPalette: CommandPaletteAction? {
+        get { self[CommandPaletteActionKey.self] }
+        set { self[CommandPaletteActionKey.self] = newValue }
+    }
+
     var newRecordAction: NewRecordAction? {
         get { self[NewRecordActionKey.self] }
         set { self[NewRecordActionKey.self] = newValue }
@@ -2242,6 +2470,7 @@ enum HubWindows {
 
 struct HubCommands: Commands {
     @FocusedValue(\.newRecordAction) private var newRecordAction
+    @FocusedValue(\.commandPalette) private var commandPalette
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
@@ -2255,6 +2484,14 @@ struct HubCommands: Commands {
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(newRecordAction == nil)
+        }
+
+        // Go ▸ Find… — the ⌘K command palette: jump to any DocType, report,
+        // dashboard, or flow across the whole app.
+        CommandMenu("Go") {
+            Button("Find…") { commandPalette?.perform() }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(commandPalette == nil)
         }
 
         #if os(macOS)
