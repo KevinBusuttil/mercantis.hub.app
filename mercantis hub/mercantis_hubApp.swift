@@ -1,5 +1,6 @@
 import SwiftUI
 import MercantisCore
+import MercantisCoreUI
 
 @main
 struct mercantis_hubApp: App {
@@ -245,6 +246,9 @@ struct mercantis_hubApp: App {
                 // The signed-in operator's roles, so views can gate advanced
                 // capabilities (e.g. the print-format HTML/CSS developer mode).
                 .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
+                // Tier 3 — plain-language definitions so jargon labels and
+                // lifecycle controls can explain themselves with a "?".
+                .environment(\.glossary, HubGlossary.glossary)
             }
         }
         .defaultSize(width: 1100, height: 720)
@@ -259,7 +263,16 @@ struct mercantis_hubApp: App {
                 // environment, so re-inject the operator roles that gate the
                 // HTML/CSS developer mode.
                 .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
+                .environment(\.glossary, HubGlossary.glossary)
         }
+
+        // Help ▸ Glossary — a searchable reference of the ERP / accounting terms
+        // the Hub uses, for anyone unsure what a word means.
+        Window("Glossary", id: HubWindows.glossary) {
+            NavigationStack { GlossaryBrowserView() }
+                .environment(\.glossary, HubGlossary.glossary)
+        }
+        .defaultSize(width: 460, height: 560)
         #endif
 
         // Standard macOS Settings window (⌘,). App configuration lives here
