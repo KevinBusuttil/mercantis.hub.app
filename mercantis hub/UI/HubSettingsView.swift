@@ -15,6 +15,13 @@ struct HubSettingsView: View {
         )
     }
 
+    private var modeBinding: Binding<HubUserMode> {
+        Binding(
+            get: { settings.userMode },
+            set: { settings.userMode = $0 }
+        )
+    }
+
     var body: some View {
         Form {
             Section("Workspace") {
@@ -27,8 +34,16 @@ struct HubSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Toggle("Advanced / Accountant view", isOn: $settings.showAdvanced)
-                    .help("Show the internal ledgers — GL Entry, Customer / Supplier Transactions, Settlements, Tax Transactions, and the Stock Ledger — that power balances, statements, and reports.")
+                Picker("View", selection: modeBinding) {
+                    ForEach(HubUserMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Owner keeps it simple — invoices, payments, reports. Accountant also shows the internal ledgers (GL Entry, Customer / Supplier Transactions, Settlements, Tax Transactions, Stock Ledger, Journals) that power balances, statements, and reports.")
+                Text(modeBinding.wrappedValue.blurb)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

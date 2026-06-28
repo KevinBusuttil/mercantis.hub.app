@@ -40,6 +40,9 @@ enum Setup {
                             helpText: "Accrual records income/cost when invoiced; Cash records them when money moves.",
                             defaultValue: .string("Accrual"),
                             options: ["Accrual", "Cash"]),
+            FieldDefinition(key: "business_type", label: "Business Type",
+                            type: .text, required: false,
+                            helpText: "What kind of business this is, chosen during setup. Tailors your workspace and the default income account new invoices use."),
             FieldDefinition(key: "address", label: "Address",
                             type: .longText, required: false),
             FieldDefinition(key: "email", label: "Email",
@@ -96,7 +99,7 @@ enum Setup {
                 title: "Tax & Jurisdiction",
                 helpText: "Chosen during setup. These drive your chart of accounts, tax codes, and the tax applied to new invoices.",
                 columns: 2,
-                fieldKeys: ["country", "tax_regime", "tax_registered", "accounting_basis"]
+                fieldKeys: ["country", "tax_regime", "tax_registered", "accounting_basis", "business_type"]
             ),
             FormLayoutSection(
                 key: "contact",

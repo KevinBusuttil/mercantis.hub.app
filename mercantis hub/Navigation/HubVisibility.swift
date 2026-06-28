@@ -18,6 +18,42 @@ enum HubVisibility: Int, Comparable, Sendable {
     }
 }
 
+/// Phase 4 (Accounting Autopilot) — the owner-facing framing of the advanced
+/// surface. An **Owner** sees the everyday, plain-language workspace; an
+/// **Accountant** also sees the ledgers, journals and audit spine. This is a
+/// thin façade over `HubVisibilitySettings.showAdvanced` (the underlying
+/// storage), so no persistence migration is needed — it just gives the choice a
+/// name the user understands.
+enum HubUserMode: String, CaseIterable, Identifiable, Sendable {
+    case owner
+    case accountant
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .owner:      return "Owner"
+        case .accountant: return "Accountant"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .owner:
+            return "A simple, plain-language workspace — invoices, payments, and reports. No debits, credits, or ledgers."
+        case .accountant:
+            return "Everything in Owner view plus the ledgers, journals, and audit spine an accountant works with."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .owner:      return "person"
+        case .accountant: return "person.text.rectangle"
+        }
+    }
+}
+
 /// Local, single-user preference toggling the advanced / accountant surface.
 ///
 /// Stored in `UserDefaults` (no role system in this pass — Hub is an
@@ -70,6 +106,15 @@ final class HubVisibilitySettings: ObservableObject {
         self.manufacturingEnabled = defaults.bool(forKey: Self.manufacturingEnabledKey)
         self.onboardingComplete = defaults.bool(forKey: Self.onboardingDoneKey)
         self.preset = defaults.string(forKey: Self.presetKey).flatMap(HubPreset.init(rawValue:))
+    }
+
+    /// The owner-facing mode, a façade over `showAdvanced`: Accountant reveals
+    /// the advanced ledger/audit surface, Owner keeps it simple. Setting it just
+    /// flips `showAdvanced`, so the existing persistence and every `isVisible`
+    /// caller keep working unchanged.
+    var userMode: HubUserMode {
+        get { showAdvanced ? .accountant : .owner }
+        set { showAdvanced = (newValue == .accountant) }
     }
 
     /// Apply a business-type preset: record it and switch the optional

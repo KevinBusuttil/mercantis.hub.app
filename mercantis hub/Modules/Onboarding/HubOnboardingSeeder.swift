@@ -81,7 +81,8 @@ enum HubOnboardingSeeder {
         jurisdiction: Jurisdiction,
         registered: Bool,
         taxId: String,
-        basis: HubAccountingBasis
+        basis: HubAccountingBasis,
+        preset: HubPreset? = nil
     ) -> Summary {
         var summary = Summary()
         let code = jurisdiction.currencyCode.isEmpty ? "EUR" : jurisdiction.currencyCode.uppercased()
@@ -163,17 +164,23 @@ enum HubOnboardingSeeder {
         }
 
         // Business Profile — create when absent, otherwise backfill only the
-        // defaults that are still empty (never clobber existing values).
+        // defaults that are still empty (never clobber existing values). The
+        // chosen business-type preset tailors the default income account
+        // (Service Income for a service/consulting business, Sales for goods)
+        // and is recorded on the Company record.
+        var profileAccountDefaults = accountDefaults(from: chart)
+        if let preset { profileAccountDefaults["default_income_account"] = preset.defaultIncomeAccountId }
         summary.company = ensureCompany(
             engine: engine,
             businessName: businessName,
             currencyCode: code,
-            accountDefaults: accountDefaults(from: chart),
+            accountDefaults: profileAccountDefaults,
             defaultTaxCode: defaultTaxCode,
             jurisdiction: jurisdiction,
             registered: registered,
             taxId: taxId,
-            basis: basis
+            basis: basis,
+            businessType: preset?.rawValue ?? ""
         )
 
         return summary
@@ -216,7 +223,8 @@ enum HubOnboardingSeeder {
         jurisdiction: Jurisdiction,
         registered: Bool,
         taxId: String,
-        basis: HubAccountingBasis
+        basis: HubAccountingBasis,
+        businessType: String = ""
     ) -> Bool {
         // The jurisdiction/identity fields backfilled onto the Company record.
         var profileDefaults: [String: FieldValue] = [
@@ -226,6 +234,7 @@ enum HubOnboardingSeeder {
             "tax_registered": .bool(registered),
             "accounting_basis": .string(basis.rawValue),
         ]
+        if !businessType.isEmpty { profileDefaults["business_type"] = .string(businessType) }
         for (key, accountId) in accountDefaults { profileDefaults[key] = .string(accountId) }
         if let defaultTaxCode { profileDefaults["default_tax_code"] = .string(defaultTaxCode) }
         let trimmedTaxId = taxId.trimmingCharacters(in: .whitespacesAndNewlines)
