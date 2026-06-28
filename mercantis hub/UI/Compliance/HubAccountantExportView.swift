@@ -59,13 +59,16 @@ struct HubAccountantExportView: View {
     }
 
     private func choiceRow(_ choice: ReportChoice) -> some View {
-        Toggle(isOn: binding(for: choice.id)) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(choice.name).font(.system(size: 14, weight: .medium))
                 Text(choice.detail).font(.caption2).foregroundStyle(.secondary)
             }
+            Spacer(minLength: 16)
+            Toggle("", isOn: binding(for: choice.id))
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
-        .toggleStyle(.switch)
         .padding(.vertical, 8)
     }
 
