@@ -16,14 +16,16 @@ enum HubBusinessProfileDefaultsPolicy {
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
         case "SalesInvoice":
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "debit_to", from: "default_receivable_account", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "income_account", from: "default_income_account", businessProfile: businessProfile)
+            applyAccount(&document, field: "debit_to", slot: .receivable, businessProfile: businessProfile)
+            applyAccount(&document, field: "income_account", slot: .income, businessProfile: businessProfile)
+            applyIfMissing(&document, field: "tax_code", from: "default_tax_code", businessProfile: businessProfile)
         case "PurchaseOrder":
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
         case "PurchaseInvoice":
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "credit_to", from: "default_payable_account", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "expense_account", from: "default_expense_account", businessProfile: businessProfile)
+            applyAccount(&document, field: "credit_to", slot: .payable, businessProfile: businessProfile)
+            applyAccount(&document, field: "expense_account", slot: .expense, businessProfile: businessProfile)
+            applyIfMissing(&document, field: "tax_code", from: "default_tax_code", businessProfile: businessProfile)
         case "PurchaseReceipt", "SalesDelivery":
             applyIfMissing(&document, field: "currency", from: "default_currency", businessProfile: businessProfile)
         case "PaymentEntry":
@@ -77,14 +79,28 @@ enum HubBusinessProfileDefaultsPolicy {
 
         switch paymentType {
         case "Receive":
-            applyIfMissing(&document, field: "paid_from", from: "default_receivable_account", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "paid_to", from: "default_cash_bank_account", businessProfile: businessProfile)
+            applyAccount(&document, field: "paid_from", slot: .receivable, businessProfile: businessProfile)
+            applyAccount(&document, field: "paid_to", slot: .cashBank, businessProfile: businessProfile)
         case "Pay":
-            applyIfMissing(&document, field: "paid_from", from: "default_cash_bank_account", businessProfile: businessProfile)
-            applyIfMissing(&document, field: "paid_to", from: "default_payable_account", businessProfile: businessProfile)
+            applyAccount(&document, field: "paid_from", slot: .cashBank, businessProfile: businessProfile)
+            applyAccount(&document, field: "paid_to", slot: .payable, businessProfile: businessProfile)
         default:
             break
         }
+    }
+
+    /// Resolve a posting account for a slot via the central `HubAccountResolver`
+    /// (today: the Business-Profile company default; extension point for
+    /// per-customer / per-supplier / per-item posting profiles).
+    private static func applyAccount(
+        _ document: inout Document,
+        field: String,
+        slot: HubAccountSlot,
+        businessProfile: Document?
+    ) {
+        guard isMissing(document.fields[field]) else { return }
+        guard let accountId = HubAccountResolver.account(for: slot, businessProfile: businessProfile) else { return }
+        document.fields[field] = .string(accountId)
     }
 
     private static func applyWarehouseDefault(

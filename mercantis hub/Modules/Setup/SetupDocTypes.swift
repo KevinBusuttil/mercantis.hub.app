@@ -25,6 +25,20 @@ enum Setup {
                             type: .text, required: false),
             FieldDefinition(key: "registration_number", label: "Registration Number",
                             type: .text, required: false),
+            FieldDefinition(key: "country", label: "Country",
+                            type: .text, required: false,
+                            helpText: "The country your business is set up in. Chosen during setup; drives your chart of accounts and tax codes."),
+            FieldDefinition(key: "tax_regime", label: "Tax Regime",
+                            type: .text, required: false,
+                            helpText: "VAT, Sales Tax, or GST/HST — set from your country."),
+            FieldDefinition(key: "tax_registered", label: "Tax Registered",
+                            type: .boolean, required: false, defaultValue: .bool(false),
+                            helpText: "Whether the business is registered to charge VAT / GST / sales tax."),
+            FieldDefinition(key: "accounting_basis", label: "Accounting Basis",
+                            type: .select, required: false,
+                            defaultValue: .string("Accrual"),
+                            helpText: "Accrual records income/cost when invoiced; Cash records them when money moves.",
+                            options: ["Accrual", "Cash"]),
             FieldDefinition(key: "address", label: "Address",
                             type: .longText, required: false),
             FieldDefinition(key: "email", label: "Email",
@@ -54,7 +68,10 @@ enum Setup {
             FieldDefinition(key: "default_grni_account", label: "Default GRNI Account",
                             type: .link, required: false, linkedDocType: "Account"),
             FieldDefinition(key: "default_vat_account", label: "Default VAT Account",
-                            type: .link, required: false, linkedDocType: "Account")
+                            type: .link, required: false, linkedDocType: "Account"),
+            FieldDefinition(key: "default_tax_code", label: "Default Tax Code",
+                            type: .link, required: false, linkedDocType: "TaxCode",
+                            helpText: "The tax automatically applied to new invoices. Set from your country during setup.")
         ],
         permissions: [systemManagerPermission],
         syncPolicy: SyncPolicy(conflictResolution: .lastWriteWins, immutableAfterSubmit: false),
@@ -68,6 +85,13 @@ enum Setup {
                 helpText: "Set up your legal identity and primary contact details.",
                 columns: 2,
                 fieldKeys: ["business_name", "registration_number", "vat_tax_number"]
+            ),
+            FormLayoutSection(
+                key: "jurisdiction",
+                title: "Tax & Jurisdiction",
+                helpText: "Chosen during setup. These drive your chart of accounts, tax codes, and the tax applied to new invoices.",
+                columns: 2,
+                fieldKeys: ["country", "tax_regime", "tax_registered", "accounting_basis"]
             ),
             FormLayoutSection(
                 key: "contact",
@@ -94,7 +118,8 @@ enum Setup {
                 fieldKeys: ["default_receivable_account", "default_payable_account",
                             "default_income_account", "default_expense_account",
                             "default_cash_bank_account", "default_stock_account",
-                            "default_grni_account", "default_vat_account"]
+                            "default_grni_account", "default_vat_account",
+                            "default_tax_code"]
             )
         ])
     )
