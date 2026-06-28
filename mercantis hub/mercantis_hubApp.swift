@@ -249,6 +249,10 @@ struct mercantis_hubApp: App {
                 // Tier 3 — plain-language definitions so jargon labels and
                 // lifecycle controls can explain themselves with a "?".
                 .environment(\.glossary, HubGlossary.glossary)
+                // Retint native selection (sidebar/list highlight, segmented
+                // tabs, focus rings) to the Mercantis brand indigo, so the app
+                // shows one accent instead of brand-purple + system-azure.
+                .tint(MercantisTheme.brandPrimary)
             }
         }
         .defaultSize(width: 1100, height: 720)
@@ -264,6 +268,7 @@ struct mercantis_hubApp: App {
                 // HTML/CSS developer mode.
                 .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
                 .environment(\.glossary, HubGlossary.glossary)
+                .tint(MercantisTheme.brandPrimary)
         }
 
         // Help ▸ Glossary — a searchable reference of the ERP / accounting terms
@@ -271,6 +276,7 @@ struct mercantis_hubApp: App {
         Window("Glossary", id: HubWindows.glossary) {
             NavigationStack { GlossaryBrowserView() }
                 .environment(\.glossary, HubGlossary.glossary)
+                .tint(MercantisTheme.brandPrimary)
         }
         .defaultSize(width: 460, height: 560)
 
@@ -280,6 +286,7 @@ struct mercantis_hubApp: App {
         Window("Data Browser", id: HubWindows.dataBrowser) {
             HubDataBrowserWindowView(engine: documentEngine)
                 .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
+                .tint(MercantisTheme.brandPrimary)
         }
         .defaultSize(width: 1000, height: 640)
         #endif
