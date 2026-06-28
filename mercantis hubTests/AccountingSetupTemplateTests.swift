@@ -181,6 +181,47 @@ final class AccountingSetupTemplateTests: XCTestCase {
                        "the registered country's standard VAT applies automatically")
     }
 
+    // MARK: - Repair / re-seed
+
+    func test_repair_seeds_missing_chart_and_is_idempotent() throws {
+        let (_, engine, url) = try makeEngine()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // A minimal Business Profile so repair can resolve the currency / tax.
+        _ = try engine.save(Document(
+            id: "", docType: "Company", company: "", status: "",
+            createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
+            fields: ["default_currency": .string("EUR"), "tax_registered": .bool(true)], children: [:]))
+
+        let first = HubOnboardingSeeder.repairChart(engine: engine)
+        XCTAssertGreaterThan(first.accountsAdded, 30, "repair seeds the full business-ready chart")
+        for id in ["Cash", "Bank", "Debtors", "Sales", "COGS", "Stock", "VAT", "InputVAT"] {
+            XCTAssertNotNil(try? engine.fetch(docType: "Account", id: id), "Account \(id) must exist after repair")
+        }
+
+        let second = HubOnboardingSeeder.repairChart(engine: engine)
+        XCTAssertEqual(second.accountsAdded, 0, "repair is idempotent — nothing added on a complete chart")
+    }
+
+    func test_repair_removes_orphan_uuid_group_and_seeds_the_stable_one() throws {
+        let (_, engine, url) = try makeEngine()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // A stray pre-fix group header: it gets a UUID id (Account has no
+        // name-based autoname), not the stable "ASSETS".
+        let orphan = try engine.save(Document(
+            id: "", docType: "Account", company: "", status: "",
+            createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
+            fields: ["account_name": .string("Assets"), "account_number": .string("1000"),
+                     "root_type": .string("Asset"), "is_group": .bool(true)], children: [:]))
+        XCTAssertNotEqual(orphan.id, "ASSETS", "the broken seed produced a UUID id")
+
+        let result = HubOnboardingSeeder.repairChart(engine: engine)
+        XCTAssertGreaterThanOrEqual(result.orphansRemoved, 1)
+        XCTAssertNil(try? engine.fetch(docType: "Account", id: orphan.id), "the orphan group is removed")
+        XCTAssertNotNil(try? engine.fetch(docType: "Account", id: "ASSETS"), "the stable group is seeded")
+    }
+
     // MARK: - Field coercion helpers
 
     private func stringField(_ value: FieldValue?) -> String? {

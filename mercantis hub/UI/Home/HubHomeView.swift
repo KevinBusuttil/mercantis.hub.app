@@ -657,10 +657,10 @@ struct HubHomeView: View {
     /// Builds an unsaved draft document for `docTypeID` with the given fields.
     /// Mirrors `HubRecordWorkspaceView.makeDraftDocument` so saves go through
     /// the same engine path a real user-created record would.
-    private func newDoc(_ docTypeID: String, _ fields: [String: FieldValue]) -> Document {
+    private func newDoc(_ docTypeID: String, _ fields: [String: FieldValue], id: String = "") -> Document {
         let now = Date()
         return Document(
-            id: "",
+            id: id,
             docType: docTypeID,
             company: "",
             status: "",
@@ -721,19 +721,19 @@ struct HubHomeView: View {
             if (try? engine.save(doc)) != nil { bump("Supplier") }
         }
 
-        // Supporting masters for items. These DocTypes have no naming-series,
-        // so we supply the id explicitly via `userSuppliedName`. Best-effort.
+        // Supporting masters for items. These DocTypes have no name-based
+        // autoname, so the id must be set on the document directly (a supplied
+        // name would be ignored and the record would get a UUID, breaking the
+        // stable-id links the sample items reference). Best-effort.
         if HubManifest.docType(for: "UOM") != nil {
-            _ = try? engine.save(newDoc("UOM", ["uom_name": .string("Unit")]),
-                                 userSuppliedName: "Unit")
+            _ = try? engine.save(newDoc("UOM", ["uom_name": .string("Unit")], id: "Unit"))
         }
         if HubManifest.docType(for: "ItemGroup") != nil {
-            _ = try? engine.save(newDoc("ItemGroup", ["item_group_name": .string("Sample Products")]),
-                                 userSuppliedName: "Sample Products")
+            _ = try? engine.save(newDoc("ItemGroup", ["item_group_name": .string("Sample Products")], id: "Sample Products"))
         }
         if HubManifest.docType(for: "Warehouse") != nil {
-            let doc = newDoc("Warehouse", ["warehouse_name": .string("Main Store (Sample)")])
-            if (try? engine.save(doc, userSuppliedName: "Main Store (Sample)")) != nil {
+            let doc = newDoc("Warehouse", ["warehouse_name": .string("Main Store (Sample)")], id: "Main Store (Sample)")
+            if (try? engine.save(doc)) != nil {
                 bump("Warehouse")
             }
         }
