@@ -264,16 +264,19 @@ struct RootView: View {
         }
         if group.label == nil || !collapsedGroups.contains(key) {
             ForEach(group.items, id: \.self) { item in
-                moduleItemRow(module: module, item: item, indented: group.label != nil)
+                moduleItemRow(item: item, indented: group.label != nil)
             }
         }
     }
 
-    private func moduleItemRow(module: HubModule, item: HubMenuItem, indented: Bool) -> some View {
+    /// Row icons are monochrome (neutral) so the sidebar reads calmly and the
+    /// only colour is the brand selection; module identity is carried by the
+    /// (still-tinted) module header chip, not every row.
+    private func moduleItemRow(item: HubMenuItem, indented: Bool) -> some View {
         MercantisSidebarRow(
             title: item.label,
             systemImage: item.systemImage,
-            tone: module.tone,
+            tone: .neutral,
             isSelected: selection == item,
             indentation: indented ? 6 : 0
         )
@@ -299,7 +302,7 @@ struct RootView: View {
                     MercantisSidebarRow(
                         title: row.item.label,
                         systemImage: row.item.systemImage,
-                        tone: row.tone,
+                        tone: .neutral,
                         isSelected: selection == row.item,
                         indentation: 0
                     )
