@@ -5,7 +5,10 @@ import Foundation
 /// everything up to here"), they lock the books up to that date so nothing can
 /// be posted into it by accident. Pure and tiny so both the posting guard
 /// (`PostingCoordinator`) and the UI share one definition of "locked".
-enum BooksLockPolicy {
+///
+/// `nonisolated` so the `nonisolated` `PostingCoordinator` can call it (the
+/// project defaults types to the main actor), matching `PostingValidationError`.
+nonisolated enum BooksLockPolicy {
 
     /// True when a posting dated `postingDate` is blocked by a lock set to
     /// `lockDate`. A posting on or before the lock date is blocked; a nil lock
