@@ -545,6 +545,12 @@ struct RootView: View {
             DriverTodayView(engine: engine).id("flow:\(id)")
         } else if id == "delivery-route" {
             DeliveryRouteView(engine: engine).id("flow:\(id)")
+        } else if id == "opening-balances" {
+            HubOpeningBalanceView(engine: engine, workflowEngine: workflowEngine)
+                .id("flow:\(id)")
+        } else if id == "bank-reconciliation" {
+            HubBankReconciliationView(engine: engine, workflowEngine: workflowEngine)
+                .id("flow:\(id)")
         } else if id == "customer-account" {
             CustomerAccountView(engine: engine).id("flow:\(id)")
         } else if id == "low-stock" {
