@@ -149,6 +149,19 @@ enum HubOnboardingSeeder {
         }
         let defaultTaxCode = HubTaxTemplateLibrary.defaultCodeId(for: jurisdiction, registered: registered)
 
+        // Bank accounts — wrap the Bank and Cash ledger accounts so the owner
+        // can reconcile them from day one.
+        for (id, name, gl, kind) in [("Bank-Bank", "Main Bank Account", "Bank", "Bank"),
+                                     ("Bank-Cash", "Cash on Hand", "Cash", "Cash")] {
+            _ = ensure(engine: engine, docType: "BankAccount", id: id, fields: [
+                "account_name": .string(name),
+                "account_kind": .string(kind),
+                "gl_account": .string(gl),
+                "currency": .string(code),
+                "disabled": .bool(false),
+            ])
+        }
+
         // Business Profile — create when absent, otherwise backfill only the
         // defaults that are still empty (never clobber existing values).
         summary.company = ensureCompany(

@@ -20,6 +20,13 @@ extension Accounting {
                       systemImage: "tray.and.arrow.up"),
                 .docType(Accounting.paymentEntry, label: "All Payments")
             ]),
+            HubMenuGroup(label: "Banking", items: [
+                .flow(id: "opening-balances", label: "Opening Balances",
+                      systemImage: "flag.checkered"),
+                .flow(id: "bank-reconciliation", label: "Bank Reconciliation",
+                      systemImage: "building.columns"),
+                .docType(Banking.bankAccount, label: "Bank Accounts")
+            ]),
             HubMenuGroup(label: "Receivables", items: [
                 .report(id: HubReports.customerAging.id,
                         label: "Customer Aging"),

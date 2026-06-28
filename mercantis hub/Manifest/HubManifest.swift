@@ -18,6 +18,7 @@ public enum HubManifest: Sendable {
         + HubPermissions.decorated(Stock.allDocTypes, scope: .stock)
         + HubPermissions.decorated(Deliveries.allDocTypes, scope: .stock)
         + HubPermissions.decorated(Accounting.allDocTypes, scope: .accounting)
+        + HubPermissions.decorated(Banking.allDocTypes, scope: .accounting)
         + HubPermissions.decorated(POS.allDocTypes, scope: .pos)
         + HubPermissions.decorated(Manufacturing.allDocTypes, scope: .stock)
         + HubPermissions.decorated(Capture.allDocTypes, scope: .setup)
