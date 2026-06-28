@@ -16,7 +16,7 @@ enum TaxReturnBuilder {
     struct Line: Equatable {
         let code: String
         let name: String
-        let rate: Double
+        var rate: Double
         var outputBase: Double   // taxable sales at this band
         var outputTax: Double    // tax collected on those sales
         var inputBase: Double    // taxable purchases at this band
