@@ -270,15 +270,23 @@ enum HubOnboardingSeeder {
 
     /// Create a record with a fixed id if it doesn't already exist.
     /// Returns `true` when a new record was written.
+    ///
+    /// The id is set on the document **directly** (not via `userSuppliedName`):
+    /// `Account`, `Currency`, `Warehouse` and `FiscalYear` have no name-based
+    /// `autoname`, so a supplied name would be ignored and the record would get a
+    /// UUID — which then breaks the stable ids the chart's `parent_account` /
+    /// `currency` links and the posting wiring depend on (e.g. "Cash", "VAT",
+    /// "Sales"). `DocumentEngine.save` keeps a non-empty id as-is, so this gives
+    /// every seeded master its intended stable id and keeps re-runs idempotent.
     private static func ensure(engine: DocumentEngine, docType: String, id: String, fields: [String: FieldValue]) -> Bool {
         if (try? engine.fetch(docType: docType, id: id)) != nil { return false }
         let doc = Document(
-            id: "", docType: docType, company: "", status: "",
+            id: id, docType: docType, company: "", status: "",
             createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
             fields: fields, children: [:]
         )
         do {
-            _ = try engine.save(doc, userSuppliedName: id)
+            _ = try engine.save(doc)
             return true
         } catch {
             return false

@@ -224,7 +224,7 @@ struct HubYearEndCloseView: View {
     private func ensureAccount(_ id: String) {
         guard (try? engine.fetch(docType: "Account", id: id)) == nil else { return }
         guard let acc = HubCOATemplateLibrary.accounts(taxStyle: .vat).first(where: { $0.id == id }) else { return }
-        let doc = Document(id: "", docType: "Account", company: "", status: "",
+        let doc = Document(id: id, docType: "Account", company: "", status: "",
                            createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
                            fields: [
                             "account_name": .string(acc.name),
@@ -235,7 +235,7 @@ struct HubYearEndCloseView: View {
                             "normal_balance": .string(acc.normalBalance),
                             "disabled": .bool(false),
                            ], children: [:])
-        _ = try? engine.save(doc, userSuppliedName: id)
+        _ = try? engine.save(doc)
     }
 
     // MARK: - Small views / helpers

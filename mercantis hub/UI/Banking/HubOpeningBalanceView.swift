@@ -180,7 +180,7 @@ struct HubOpeningBalanceView: View {
         guard (try? engine.fetch(docType: "Account", id: id)) == nil else { return }
         guard let acc = HubCOATemplateLibrary.accounts(taxStyle: .vat).first(where: { $0.id == id }) else { return }
         let doc = Document(
-            id: "", docType: "Account", company: "", status: "",
+            id: id, docType: "Account", company: "", status: "",
             createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
             fields: [
                 "account_name": .string(acc.name),
@@ -193,7 +193,7 @@ struct HubOpeningBalanceView: View {
             ],
             children: [:]
         )
-        _ = try? engine.save(doc, userSuppliedName: id)
+        _ = try? engine.save(doc)
     }
 
     // MARK: - Helpers
