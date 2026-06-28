@@ -39,7 +39,16 @@ extension Accounting {
                 .report(id: HubReports.supplierAging.id,
                         label: "Supplier Aging")
             ]),
-            HubMenuGroup(label: "Tax", items: [
+            HubMenuGroup(label: "Tax & Compliance", items: [
+                .flow(id: "tax-return", label: "Tax Return",
+                      systemImage: "doc.text.magnifyingglass"),
+                .docType(Compliance.taxFiling, label: "Tax Filings"),
+                .flow(id: "year-end-close", label: "Year-End Close",
+                      systemImage: "calendar.badge.checkmark"),
+                .flow(id: "books-lock", label: "Lock Books",
+                      systemImage: "lock"),
+                .flow(id: "accountant-export", label: "Accountant Export",
+                      systemImage: "square.and.arrow.up.on.square"),
                 .report(id: HubReports.vatSummary.id,
                         label: HubReports.vatSummary.name)
             ]),
@@ -60,7 +69,9 @@ extension Accounting {
             ], visibility: .advanced),
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.trialBalance.id,
-                        label: HubReports.trialBalance.name)
+                        label: HubReports.trialBalance.name),
+                .report(id: HubReports.generalLedger.id,
+                        label: HubReports.generalLedger.name)
             ], visibility: .advanced),
             HubMenuGroup(label: "Dashboards", items: [
                 .dashboard(id: HubDashboards.accountingOverview.id,

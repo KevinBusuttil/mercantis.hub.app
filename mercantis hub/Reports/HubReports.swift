@@ -249,6 +249,18 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles
     )
 
+    /// General Ledger — every posted GL Entry, grouped by account in date order
+    /// with a running balance. The transaction-level detail an accountant wants
+    /// alongside the summary statements; part of the accountant export pack.
+    public static let generalLedger = ReportDefinition(
+        id: "general-ledger",
+        name: "General Ledger",
+        docType: "GLEntry",
+        columns: ["Date", "Account", "Voucher", "Debit", "Credit", "Balance"],
+        filters: [],
+        allowedRoles: financeRoles
+    )
+
     /// Posting Audit — Tier 3. Every `PostingBatch` written by the atomic
     /// posting path, problems first (failed / pending) then posted / reversed.
     /// This is the operator-facing view of posting health: because posting now
@@ -270,7 +282,7 @@ public enum HubReports: Sendable {
         stockLedgerView, stockOnHand,
         openDeliveries, pendingReceipts, todaysRoutes,
         customerAging, supplierAging,
-        trialBalance, balanceSheet, incomeStatement,
+        trialBalance, balanceSheet, incomeStatement, generalLedger,
         customerStatement, supplierLedger,
         vatSummary, postingAudit,
     ]
@@ -325,6 +337,8 @@ public enum HubReports: Sendable {
             return try runBalanceSheet(engine: engine)
         case "income-statement":
             return try runIncomeStatement(engine: engine)
+        case "general-ledger":
+            return try runGeneralLedger(engine: engine)
         case "customer-statement":
             return try runSubledgerStatement(
                 report: customerStatement,
@@ -919,6 +933,50 @@ public enum HubReports: Sendable {
 
         rows.append(["—", "Net Income", formatCurrency(revenue - expenses)])
         return ReportResult(columns: incomeStatement.columns, rows: rows)
+    }
+
+    // MARK: - General Ledger detail (Phase 3)
+
+    /// Every GL Entry, grouped by account name and ordered by date, with a
+    /// per-account running balance (debit − credit, in base currency). Reversal
+    /// rows carry swapped legs so a cancelled voucher nets back to zero.
+    private static func runGeneralLedger(engine: DocumentEngine) throws -> ReportResult {
+        let entries = try engine.list(docType: "GLEntry", applyRowAccess: false)
+        let accountNames = Dictionary(
+            (try engine.list(docType: "Account", applyRowAccess: false))
+                .map { ($0.id, asString($0.fields["account_name"]) ?? $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        let sorted = entries.sorted { lhs, rhs in
+            let lName = accountNames[asString(lhs.fields["account"]) ?? ""] ?? ""
+            let rName = accountNames[asString(rhs.fields["account"]) ?? ""] ?? ""
+            if lName != rName { return lName < rName }
+            let lDate = asDate(lhs.fields["posting_date"]) ?? .distantPast
+            let rDate = asDate(rhs.fields["posting_date"]) ?? .distantPast
+            if lDate != rDate { return lDate < rDate }
+            return lhs.createdAt < rhs.createdAt
+        }
+
+        var rows: [[String?]] = []
+        var currentAccount: String? = nil
+        var running = 0.0
+        for entry in sorted {
+            let account = asString(entry.fields["account"]) ?? ""
+            let debit  = asDouble(entry.fields["base_debit"])  ?? asDouble(entry.fields["debit"])  ?? 0
+            let credit = asDouble(entry.fields["base_credit"]) ?? asDouble(entry.fields["credit"]) ?? 0
+            if currentAccount != account { running = 0; currentAccount = account }
+            running += debit - credit
+            rows.append([
+                format(value: entry.fields["posting_date"]),
+                accountNames[account] ?? account,
+                asString(entry.fields["voucher_no"]) ?? "",
+                formatCurrency(debit),
+                formatCurrency(credit),
+                formatCurrency(running),
+            ])
+        }
+        return ReportResult(columns: generalLedger.columns, rows: rows)
     }
 
     // MARK: - Posting Audit (Tier 3)
