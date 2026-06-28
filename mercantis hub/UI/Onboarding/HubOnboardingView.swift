@@ -21,6 +21,7 @@ struct HubOnboardingView: View {
     @State private var taxId = ""
     @State private var basis: HubAccountingBasis = .accrual
     @State private var preset: HubPreset = .services
+    @State private var mode: HubUserMode = .owner
     @State private var working = false
 
     private let currencies = ["EUR", "USD", "GBP", "CAD"]
@@ -38,13 +39,17 @@ struct HubOnboardingView: View {
                 businessSection
                 jurisdictionSection
                 presetSection
+                modeSection
                 actions
             }
             .padding(28)
             .frame(maxWidth: 640, alignment: .leading)
         }
         .frame(minWidth: 560, minHeight: 640)
-        .onAppear { preset = settings.preset ?? .services }
+        .onAppear {
+            preset = settings.preset ?? .services
+            mode = settings.userMode
+        }
     }
 
     private var header: some View {
@@ -169,6 +174,20 @@ struct HubOnboardingView: View {
         .buttonStyle(.plain)
     }
 
+    private var modeSection: some View {
+        MercantisInspectorCard("How much detail do you want?", systemImage: "slider.horizontal.3") {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("", selection: $mode) {
+                    ForEach(HubUserMode.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 280)
+                Text(mode.blurb).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var actions: some View {
         HStack {
             Button("Skip for now") { settings.onboardingComplete = true }
@@ -200,9 +219,11 @@ struct HubOnboardingView: View {
             jurisdiction: resolved,
             registered: leviesTax && taxRegistered,
             taxId: taxId,
-            basis: basis
+            basis: basis,
+            preset: preset
         )
         settings.apply(preset)
+        settings.userMode = mode
         settings.onboardingComplete = true
     }
 }

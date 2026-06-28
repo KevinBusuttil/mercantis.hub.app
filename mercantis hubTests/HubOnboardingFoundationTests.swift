@@ -19,7 +19,12 @@ final class HubOnboardingFoundationTests: XCTestCase {
         XCTAssertTrue(HubPreset.retailPOS.enablesPOS)
         XCTAssertTrue(HubPreset.lightManufacturing.enablesManufacturing)
 
-        XCTAssertEqual(HubPreset.allCases.count, 4)
+        // Consultant is a service-type preset: no optional modules.
+        XCTAssertFalse(HubPreset.consultant.enablesPOS)
+        XCTAssertFalse(HubPreset.consultant.enablesDeliveries)
+        XCTAssertFalse(HubPreset.consultant.enablesManufacturing)
+
+        XCTAssertEqual(HubPreset.allCases.count, 5)
     }
 
     // MARK: - Apply + module gating
