@@ -210,4 +210,16 @@ enum HubNavigation {
             .first(where: { $0.contains(item, settings: settings) })?
             .id
     }
+
+    /// Resolve a persisted `HubMenuItem.id` back to its item, so the sidebar can
+    /// restore the last-selected location on launch. Returns nil when the item
+    /// no longer exists or its module/group is currently hidden.
+    static func item(forID id: String, settings: HubVisibilitySettings) -> HubMenuItem? {
+        for module in allModules where settings.isModuleVisible(module) {
+            for group in module.visibleGroups(settings) {
+                if let hit = group.items.first(where: { $0.id == id }) { return hit }
+            }
+        }
+        return nil
+    }
 }
