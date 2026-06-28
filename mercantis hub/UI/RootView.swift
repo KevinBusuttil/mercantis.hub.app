@@ -48,6 +48,9 @@ struct RootView: View {
     /// The capture currently being reviewed (drives the Capture flow's
     /// list ⇄ review sub-routing).
     @State private var reviewCaptureId: String?
+    /// Result message for the Tools ▸ Repair Chart of Accounts command.
+    @State private var chartRepairMessage: String?
+    @State private var showChartRepairAlert = false
 
     var body: some View {
         NavigationSplitView {
@@ -56,6 +59,12 @@ struct RootView: View {
             detail
         }
         .focusedSceneValue(\.commandPalette, CommandPaletteAction { showCommandPalette = true })
+        .focusedSceneValue(\.repairChartAction, RepairChartAction { runChartRepair() })
+        .alert("Chart of Accounts", isPresented: $showChartRepairAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(chartRepairMessage ?? "")
+        }
         .overlay {
             if showCommandPalette {
                 commandPaletteOverlay
@@ -92,6 +101,30 @@ struct RootView: View {
                 .padding(.top, 72)
                 .padding(.horizontal, 24)
         }
+    }
+
+    /// Tools ▸ Repair Chart of Accounts. Tops up a missing / incomplete chart in
+    /// place (e.g. a workspace set up before the seeding fix) and reports what
+    /// changed.
+    private func runChartRepair() {
+        let result = HubOnboardingSeeder.repairChart(engine: engine)
+        if !result.changed {
+            chartRepairMessage = "Your chart of accounts is already complete — nothing to repair."
+        } else {
+            var parts: [String] = []
+            if result.accountsAdded > 0 {
+                parts.append("added \(result.accountsAdded) account\(result.accountsAdded == 1 ? "" : "s")")
+            }
+            if result.taxCodesAdded > 0 {
+                parts.append("added \(result.taxCodesAdded) tax code\(result.taxCodesAdded == 1 ? "" : "s")")
+            }
+            if result.orphansRemoved > 0 {
+                parts.append("removed \(result.orphansRemoved) leftover group header\(result.orphansRemoved == 1 ? "" : "s")")
+            }
+            chartRepairMessage = "Repaired your chart of accounts — " + parts.joined(separator: ", ")
+                + ". Open Money ▸ Chart of Accounts to review it."
+        }
+        showChartRepairAlert = true
     }
 
     private var visibleModules: [HubModule] {
@@ -2466,6 +2499,16 @@ private struct CommandPaletteActionKey: FocusedValueKey {
     typealias Value = CommandPaletteAction
 }
 
+/// Repairs / re-seeds the chart of accounts. Published by RootView so the
+/// menu-bar command can run it against the active window's engine.
+struct RepairChartAction {
+    let perform: () -> Void
+}
+
+private struct RepairChartActionKey: FocusedValueKey {
+    typealias Value = RepairChartAction
+}
+
 extension FocusedValues {
     var commandPalette: CommandPaletteAction? {
         get { self[CommandPaletteActionKey.self] }
@@ -2475,6 +2518,11 @@ extension FocusedValues {
     var newRecordAction: NewRecordAction? {
         get { self[NewRecordActionKey.self] }
         set { self[NewRecordActionKey.self] = newValue }
+    }
+
+    var repairChartAction: RepairChartAction? {
+        get { self[RepairChartActionKey.self] }
+        set { self[RepairChartActionKey.self] = newValue }
     }
 }
 
@@ -2493,6 +2541,7 @@ enum HubWindows {
 struct HubCommands: Commands {
     @FocusedValue(\.newRecordAction) private var newRecordAction
     @FocusedValue(\.commandPalette) private var commandPalette
+    @FocusedValue(\.repairChartAction) private var repairChartAction
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
     #endif
@@ -2514,6 +2563,13 @@ struct HubCommands: Commands {
             Button("Find…") { commandPalette?.perform() }
                 .keyboardShortcut("k", modifiers: .command)
                 .disabled(commandPalette == nil)
+        }
+
+        // Tools ▸ Repair Chart of Accounts — top up a missing / incomplete
+        // chart (e.g. a workspace set up before the seeding fix) in place.
+        CommandMenu("Tools") {
+            Button("Repair Chart of Accounts…") { repairChartAction?.perform() }
+                .disabled(repairChartAction == nil)
         }
 
         #if os(macOS)

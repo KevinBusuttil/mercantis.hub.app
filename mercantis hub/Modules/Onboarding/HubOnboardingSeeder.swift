@@ -186,6 +186,116 @@ enum HubOnboardingSeeder {
         return summary
     }
 
+    // MARK: - Repair / re-seed
+
+    struct RepairSummary {
+        var accountsAdded = 0
+        var taxCodesAdded = 0
+        var orphansRemoved = 0
+        var changed: Bool { accountsAdded > 0 || taxCodesAdded > 0 || orphansRemoved > 0 }
+    }
+
+    /// Top up an incomplete or pre-fix chart of accounts **in place**: re-seed
+    /// every missing account and tax code with its stable id (idempotent), then
+    /// remove the stray UUID-id group headers an older, broken seed left behind.
+    /// Safe to run any time — it reconstructs the tax context from the existing
+    /// Business Profile and never touches a correctly-id'd account, a posted
+    /// account, or one still used as a parent. Scoped to the chart (and the
+    /// currency its accounts link to) so it never duplicates other masters.
+    @discardableResult
+    static func repairChart(engine: DocumentEngine) -> RepairSummary {
+        var summary = RepairSummary()
+        let company = (try? engine.list(docType: "Company"))?.first
+        let code = (nonEmptyString(company?.fields["default_currency"]) ?? "EUR").uppercased()
+        let base = HubJurisdictionLibrary.forCurrency(code)
+        let taxStyle = base.taxStyle
+        let registered = boolValue(company?.fields["tax_registered"]) ?? (taxStyle != .none)
+
+        // The currency must exist (with its stable id) before the leaf accounts
+        // that link to it, or their save would be rejected.
+        _ = ensure(engine: engine, docType: "Currency", id: code, fields: [
+            "currency_name": .string(currencyName(for: code)),
+            "iso_code": .string(code),
+            "symbol": .string(currencySymbol(for: code)),
+            "enabled": .bool(true),
+        ])
+
+        // Chart of accounts (groups first so leaf parent links resolve).
+        for account in HubCOATemplateLibrary.accounts(taxStyle: taxStyle) {
+            var fields: [String: FieldValue] = [
+                "account_name": .string(account.name),
+                "account_number": .string(account.code),
+                "root_type": .string(account.rootType),
+                "account_type": .string(account.accountType),
+                "is_group": .bool(account.isGroup),
+                "normal_balance": .string(account.normalBalance),
+                "is_tax_control": .bool(account.isTaxControl),
+                "disabled": .bool(false),
+            ]
+            if let parent = account.parentId { fields["parent_account"] = .string(parent) }
+            if !account.isGroup { fields["currency"] = .string(code) }
+            if ensure(engine: engine, docType: "Account", id: account.id, fields: fields) {
+                summary.accountsAdded += 1
+            }
+        }
+
+        // Tax codes (control account is the stable "VAT" id where tax applies).
+        let taxControlAccount = taxStyle == .none ? "" : "VAT"
+        for tax in HubTaxTemplateLibrary.codes(for: base, registered: registered) {
+            var fields: [String: FieldValue] = [
+                "tax_code_name": .string(tax.name),
+                "tax_type": .string(tax.type),
+                "rate": .double(tax.rate),
+                "is_default": .bool(tax.isDefault),
+                "enabled": .bool(true),
+            ]
+            if !taxControlAccount.isEmpty { fields["tax_account"] = .string(taxControlAccount) }
+            if ensure(engine: engine, docType: "TaxCode", id: tax.id, fields: fields) {
+                summary.taxCodesAdded += 1
+            }
+        }
+
+        summary.orphansRemoved = removeOrphanGroups(engine: engine, taxStyle: taxStyle)
+        return summary
+    }
+
+    /// Remove the duplicate, stray group headers a pre-fix seed created with a
+    /// UUID id (instead of the stable template id). Strictly gated: only a
+    /// group whose id is NOT a template id, whose account number matches a
+    /// template group, that is not used as anyone's parent and has no ledger
+    /// activity, is removed.
+    private static func removeOrphanGroups(engine: DocumentEngine, taxStyle: HubTaxStyle) -> Int {
+        let chart = HubCOATemplateLibrary.accounts(taxStyle: taxStyle)
+        let templateIds = Set(chart.map(\.id))
+        let groupCodes = Set(chart.filter(\.isGroup).map(\.code))
+        let accounts = (try? engine.list(docType: "Account")) ?? []
+        let usedAsParent = Set(accounts.compactMap { nonEmptyString($0.fields["parent_account"]) })
+        let posted = Set(((try? engine.list(docType: "GLEntry")) ?? []).compactMap { nonEmptyString($0.fields["account"]) })
+
+        var removed = 0
+        for account in accounts {
+            guard boolValue(account.fields["is_group"]) == true,
+                  !templateIds.contains(account.id),
+                  let number = nonEmptyString(account.fields["account_number"]),
+                  groupCodes.contains(number),
+                  !usedAsParent.contains(account.id),
+                  !posted.contains(account.id) else { continue }
+            if (try? engine.delete(docType: "Account", id: account.id)) != nil { removed += 1 }
+        }
+        return removed
+    }
+
+    private static func boolValue(_ value: FieldValue?) -> Bool? {
+        if case .bool(let b)? = value { return b }
+        return nil
+    }
+
+    private static func nonEmptyString(_ value: FieldValue?) -> String? {
+        guard case .string(let s)? = value else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     // MARK: - Company defaults
 
     /// The legacy default-account wiring, kept for tests / reference. The
