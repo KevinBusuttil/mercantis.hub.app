@@ -14,7 +14,7 @@ struct HubDataBrowserWindowView: View {
     var body: some View {
         Group {
             if authorized {
-                DataBrowserView(runQuery: { try engine.runReadOnlyQuery($0) })
+                DataBrowserView(runQuery: { try await engine.runReadOnlyQueryAsync($0) })
             } else {
                 ContentUnavailableView(
                     "Restricted",
