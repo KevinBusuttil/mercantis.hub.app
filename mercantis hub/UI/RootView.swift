@@ -2466,6 +2466,7 @@ extension FocusedValues {
 enum HubWindows {
     static let printFormats = "developer-print-formats"
     static let glossary = "help-glossary"
+    static let dataBrowser = "developer-data-browser"
 }
 
 struct HubCommands: Commands {
@@ -2514,10 +2515,10 @@ struct HubCommands: Commands {
                 .keyboardShortcut("/", modifiers: [.command, .shift])
         }
 
-        // Developer ▸ Print Formats — manage every DocType's print formats
-        // (duplicate, edit drafts, publish, restore) in a dedicated window.
+        // Developer ▸ … — power-user tools in dedicated windows.
         CommandMenu("Developer") {
             Button("Print Formats…") { openWindow(id: HubWindows.printFormats) }
+            Button("Data Browser…") { openWindow(id: HubWindows.dataBrowser) }
         }
         #endif
     }

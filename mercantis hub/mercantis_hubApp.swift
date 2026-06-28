@@ -273,6 +273,15 @@ struct mercantis_hubApp: App {
                 .environment(\.glossary, HubGlossary.glossary)
         }
         .defaultSize(width: 460, height: 560)
+
+        // Developer ▸ Data Browser — a read-only SQL console (System Manager
+        // only). Re-inject operator roles since a separate scene doesn't inherit
+        // the main window's environment.
+        Window("Data Browser", id: HubWindows.dataBrowser) {
+            HubDataBrowserWindowView(engine: documentEngine)
+                .environment(\.operatorRoles, authStore.currentOperator?.roles ?? [])
+        }
+        .defaultSize(width: 1000, height: 640)
         #endif
 
         // Standard macOS Settings window (⌘,). App configuration lives here
