@@ -2454,6 +2454,22 @@ private struct HubDocumentEditor: View {
                 return
             }
         }
+        // Re-validate against the live status before transitioning. A workflow
+        // button can go stale if the document changed since it was rendered
+        // (e.g. a derivation service updated it); transitioning anyway throws a
+        // raw WorkflowError. Refresh and explain instead.
+        let live = (try? workflowEngine.availableTransitions(
+            workflow: workflow,
+            currentState: document.status,
+            userRoles: ["System Manager"],
+            document: document,
+            expressionEvaluator: evaluator
+        )) ?? []
+        guard live.contains(where: { $0.action == transition.action }) else {
+            refreshBinding(toID: document.id)
+            errorMessage = "That action isn’t available anymore — this \(docType.name.lowercased())’s status changed since the button appeared. I’ve refreshed it; check the current status and try again."
+            return
+        }
         do {
             _ = try workflowEngine.transition(
                 document: &document,
@@ -2488,6 +2504,11 @@ private struct HubDocumentEditor: View {
     }
 
     private func humanReadable(_ error: Error) -> String {
+        // WorkflowError isn't a LocalizedError, so its NSError description is the
+        // unhelpful "… WorkflowError error 0." — translate it to plain language.
+        if case WorkflowEngine.WorkflowError.transitionNotAllowed(let action, _, _) = error {
+            return "“\(action)” isn’t available for this \(docType.name.lowercased()) in its current status. It may have changed since the button appeared — refresh and try again."
+        }
         let description = (error as NSError).localizedDescription
         if description.isEmpty || description == "The operation couldn’t be completed." {
             return String(describing: error)
