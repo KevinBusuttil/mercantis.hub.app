@@ -1541,14 +1541,29 @@ private struct HubDocumentEditor: View {
                 ),
             ]
         case "SalesOrder":
-            return [
-                WorkspaceActionDescriptor(
+            // Hide a conversion once that side of the order is fully fulfilled.
+            var actions: [WorkspaceActionDescriptor] = []
+            if stringValue(document.fields["delivery_status"]) != "Fully Delivered" {
+                actions.append(WorkspaceActionDescriptor(
                     id: "convert:delivery", label: "Convert to Delivery", role: nil, isPrimary: false,
                     perform: { convertDocument(to: "SalesDelivery", label: "delivery", linkField: "sales_order") }
-                ),
-                WorkspaceActionDescriptor(
+                ))
+            }
+            if stringValue(document.fields["billing_status"]) != "Fully Billed" {
+                actions.append(WorkspaceActionDescriptor(
                     id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
                     perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_order") }
+                ))
+            }
+            return actions
+        case "SalesDelivery":
+            // Deliver-then-invoice: bill the goods that physically shipped.
+            // A return (goods coming back in) isn't billed as a sale.
+            guard document.fields["is_return"] != .bool(true) else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_delivery") }
                 ),
             ]
         default:
@@ -1563,25 +1578,44 @@ private struct HubDocumentEditor: View {
         errorMessage = nil
         infoMessage = nil
         do {
-            // Don't create a second conversion for the same source. A cancelled
-            // (docStatus 2) one doesn't count, so the operator can re-convert
-            // after voiding a mistake.
+            // A Sales Order can be delivered / invoiced in instalments, so
+            // multiple submitted Deliveries / Invoices are expected — only an
+            // unfinished DRAFT blocks a new one (finish or cancel it first).
+            // Every other conversion stays one-to-one: any non-cancelled target
+            // blocks a duplicate.
+            let allowsInstalments = document.docType == "SalesOrder"
+                && (targetDocType == "SalesDelivery" || targetDocType == "SalesInvoice")
             let existing = (try? engine.list(
                 docType: targetDocType,
                 filters: [linkField: .string(document.id)],
                 applyRowAccess: false
-            ))?.first(where: { $0.docStatus != 2 })
+            ))?.first(where: { allowsInstalments ? $0.docStatus == 0 : $0.docStatus != 2 })
             if let existing {
-                errorMessage = "A \(label) already exists for this document (\(existing.id)). Cancel it before creating another."
+                errorMessage = allowsInstalments
+                    ? "An unfinished \(label) draft already exists for this order (\(existing.id)). Submit or cancel it before starting another."
+                    : "A \(label) already exists for this document (\(existing.id)). Cancel it before creating another."
                 return
             }
 
             var draft: Document
-            switch targetDocType {
-            case "SalesOrder":    draft = HubDocumentConversion.quotationToSalesOrder(document)
-            case "SalesDelivery": draft = HubDocumentConversion.salesOrderToDelivery(document)
-            case "SalesInvoice":  draft = HubDocumentConversion.salesOrderToInvoice(document)
+            switch (document.docType, targetDocType) {
+            case (_, "SalesOrder"):
+                draft = HubDocumentConversion.quotationToSalesOrder(document)
+            case ("SalesOrder", "SalesDelivery"):
+                draft = HubDocumentConversion.salesOrderToDelivery(
+                    document, deliveredByItem: fulfilledByItem(orderId: document.id, docType: "SalesDelivery"))
+            case ("SalesOrder", "SalesInvoice"):
+                draft = HubDocumentConversion.salesOrderToInvoice(
+                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "SalesInvoice"))
+            case ("SalesDelivery", "SalesInvoice"):
+                draft = HubDocumentConversion.deliveryToInvoice(document)
             default: return
+            }
+            // A re-converted order may have nothing left on that side once the
+            // remaining-qty defaulting drops fully-fulfilled lines.
+            if (draft.children["items"] ?? []).isEmpty {
+                infoMessage = "Nothing left to convert into a \(label) on this document."
+                return
             }
             // Fill posting accounts / default warehouse from the Business
             // Profile, the same way a brand-new document's first save does, so
@@ -1596,6 +1630,18 @@ private struct HubDocumentEditor: View {
         } catch {
             errorMessage = humanReadable(error)
         }
+    }
+
+    /// Qty already fulfilled per item for an order, summed from its submitted
+    /// `docType` documents (SalesDelivery / SalesInvoice). Drives the
+    /// remaining-qty defaulting when converting an order again.
+    private func fulfilledByItem(orderId: String, docType: String) -> [String: Double] {
+        let docs = (try? engine.list(
+            docType: docType,
+            filters: ["sales_order": .string(orderId)],
+            applyRowAccess: false
+        )) ?? []
+        return SalesOrderFulfilmentCalculator.fulfilledByItem(docs)
     }
 
     private var workspaceActions: [WorkspaceActionDescriptor] {

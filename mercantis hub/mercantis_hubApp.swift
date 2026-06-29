@@ -29,6 +29,9 @@ struct mercantis_hubApp: App {
     /// Discards draft Delivery / Invoice conversions when their Sales Order is
     /// cancelled. Retained so its event subscription stays alive.
     let salesOrderConversionService: SalesOrderConversionService
+    /// Keeps each Sales Order's delivery / billing progress in step with the
+    /// Deliveries / Invoices submitted against it. Same retention contract.
+    let salesOrderFulfilmentService: SalesOrderFulfilmentService
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
@@ -163,6 +166,12 @@ struct mercantis_hubApp: App {
         )
         // Discard draft Sales Order conversions when the order is cancelled.
         self.salesOrderConversionService = SalesOrderConversionService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Roll delivery / billing progress up onto the Sales Order as its
+        // Deliveries / Invoices are submitted or cancelled.
+        self.salesOrderFulfilmentService = SalesOrderFulfilmentService(
             engine: documentEngine,
             emitter: emitter
         )
