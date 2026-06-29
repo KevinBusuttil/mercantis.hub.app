@@ -1541,7 +1541,19 @@ private struct HubDocumentEditor: View {
     /// order is confirmed (docStatus 1). Each builds a draft of the target
     /// document from the order and saves it; the operator opens and submits it.
     private var conversionActions: [WorkspaceActionDescriptor] {
-        guard document.docStatus == 1, !document.id.isEmpty else { return [] }
+        guard !document.id.isEmpty else { return [] }
+        // Lead is a master (not submittable), so it's handled before the
+        // docStatus gate: one click promotes it to a Customer and opens a quote.
+        if docType.id == "Lead" {
+            guard stringValue(document.fields["status"]) != "Do Not Contact" else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:quotation", label: "Convert to Quotation", role: nil, isPrimary: false,
+                    perform: { convertLeadToQuotation() }
+                ),
+            ]
+        }
+        guard document.docStatus == 1 else { return [] }
         switch docType.id {
         case "Quotation":
             // Only an accepted/won quote (workflow state "Ordered", shown as
@@ -1675,6 +1687,58 @@ private struct HubDocumentEditor: View {
             }
             let saved = try engine.save(draft)
             infoMessage = "Created \(label) \(saved.id) — open it to review and submit."
+            onPersist()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// One-click Lead → Quotation. Reuses the lead's converted Customer (or
+    /// creates one and marks the lead Converted), links any open Opportunity,
+    /// then opens a Draft Quotation for that Customer to add line items to.
+    private func convertLeadToQuotation() {
+        errorMessage = nil
+        infoMessage = nil
+        do {
+            // 1. Reuse-or-create the Customer.
+            let customerId: String
+            var createdCustomer = false
+            if let existing = stringValue(document.fields["converted_customer"]),
+               !existing.isEmpty,
+               ((try? engine.fetch(docType: "Customer", id: existing)) ?? nil) != nil {
+                customerId = existing
+            } else {
+                let savedCustomer = try engine.save(HubDocumentConversion.leadToCustomer(document))
+                customerId = savedCustomer.id
+                createdCustomer = true
+                // Write the customer back onto the lead and mark it Converted.
+                var lead = document
+                lead.fields["converted_customer"] = .string(customerId)
+                lead.fields["status"] = .string("Converted")
+                _ = try engine.save(lead)
+            }
+
+            // 2. Best-effort: link an Opportunity already raised for this lead.
+            let opportunityId = (try? engine.list(
+                docType: "Opportunity",
+                filters: ["lead": .string(document.id)],
+                applyRowAccess: false
+            ))?.first(where: { stringValue($0.fields["status"]) != "Lost" })?.id
+
+            // 3. Create the Draft Quotation for the customer.
+            var quote = HubDocumentConversion.quotationForCustomer(
+                customerId: customerId, opportunityId: opportunityId, company: document.company)
+            if let quoteType = HubManifest.docType(for: "Quotation"),
+               let profile = (try? engine.list(docType: "Company"))?.first {
+                quote = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(quote, docType: quoteType, businessProfile: profile)
+            }
+            let savedQuote = try engine.save(quote)
+
+            infoMessage = createdCustomer
+                ? "Created customer \(customerId) and quotation \(savedQuote.id) — open it to add line items."
+                : "Created quotation \(savedQuote.id) for \(customerId) — open it to add line items."
+            // Refresh so the lead shows its new Converted status.
+            refreshBinding(toID: document.id)
             onPersist()
         } catch {
             errorMessage = humanReadable(error)

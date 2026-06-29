@@ -169,6 +169,43 @@ enum HubDocumentConversion {
         return draft(docType: "PurchaseInvoice", company: receipt.company, fields: fields, items: items)
     }
 
+    // MARK: - CRM
+
+    /// Lead → Customer draft. Promotes a qualified lead into a Customer master:
+    /// a company lead becomes a Company named after `company_name`, otherwise an
+    /// Individual named after `lead_name`. Contact details and territory carry
+    /// over. Customer has its own naming series, so the engine assigns the id on
+    /// save.
+    static func leadToCustomer(_ lead: Document) -> Document {
+        let companyName = string(lead.fields["company_name"])
+        var fields: [String: FieldValue] = [
+            "customer_type": .string(companyName != nil ? "Company" : "Individual"),
+            "customer_name": .string(companyName ?? string(lead.fields["lead_name"]) ?? "New Customer"),
+        ]
+        if let email = lead.fields["email_id"] { fields["email"] = email }
+        if let mobile = lead.fields["mobile_no"] { fields["mobile"] = mobile }
+        if let phone = lead.fields["phone"] { fields["phone"] = phone }
+        if let territory = lead.fields["territory"] { fields["territory"] = territory }
+        return Document(
+            id: "", docType: "Customer", company: lead.company, status: "",
+            createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
+            docStatus: 0, fields: fields, children: [:]
+        )
+    }
+
+    /// An empty Draft Quotation for a Customer — the destination of the one-click
+    /// Lead → Quotation flow. Header (customer / date / optional opportunity) is
+    /// set; the operator adds line items. Currency / tax defaults are filled by
+    /// the Business Profile when the caller saves it.
+    static func quotationForCustomer(customerId: String, opportunityId: String?, company: String) -> Document {
+        var fields: [String: FieldValue] = [
+            "customer": .string(customerId),
+            "transaction_date": .date(Date()),
+        ]
+        if let opportunityId, !opportunityId.isEmpty { fields["opportunity"] = .string(opportunityId) }
+        return draft(docType: "Quotation", company: company, fields: fields, items: [])
+    }
+
     // MARK: - Helpers
 
     /// Carry source lines into a downstream table, defaulting each line's qty to
