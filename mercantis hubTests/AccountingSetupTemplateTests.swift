@@ -156,6 +156,25 @@ final class AccountingSetupTemplateTests: XCTestCase {
         XCTAssertGreaterThan(firstCount, 30, "the jurisdiction chart is a full business-ready COA")
     }
 
+    func test_reseeding_updates_wizard_choices_but_keeps_account_links() throws {
+        let (_, engine, url) = try makeEngine()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let mt = HubJurisdictionLibrary.jurisdiction(id: "MT")
+        HubOnboardingSeeder.seed(engine: engine, businessName: "Acme",
+                                 jurisdiction: mt, registered: true, taxId: "", basis: .accrual)
+        XCTAssertEqual(stringField((try? engine.list(docType: "Company"))?.first?.fields["accounting_basis"]), "Accrual")
+
+        // Re-run the wizard with a different accounting basis.
+        HubOnboardingSeeder.seed(engine: engine, businessName: "Acme",
+                                 jurisdiction: mt, registered: true, taxId: "", basis: .cash)
+        let company = try XCTUnwrap((try? engine.list(docType: "Company"))?.first)
+        XCTAssertEqual(stringField(company.fields["accounting_basis"]), "Cash",
+                       "re-running the wizard must update the Accounting Basis")
+        // Account-default links are backfill-only, so they stay wired.
+        XCTAssertEqual(stringField(company.fields["default_income_account"]), "Sales")
+    }
+
     func test_new_sales_invoice_defaults_accounts_and_tax_without_user_input() throws {
         let (_, engine, url) = try makeEngine()
         defer { try? FileManager.default.removeItem(at: url) }

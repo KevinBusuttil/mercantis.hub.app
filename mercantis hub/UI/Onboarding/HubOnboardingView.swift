@@ -23,6 +23,11 @@ struct HubOnboardingView: View {
     @State private var preset: HubPreset = .services
     @State private var mode: HubUserMode = .owner
     @State private var working = false
+    /// True when a Business Profile already exists — the wizard is re-run as an
+    /// "update" rather than a first-run setup.
+    @State private var isUpdate = false
+    @State private var originalCountryId = HubJurisdictionLibrary.generic.id
+    @State private var originalCurrency = HubJurisdictionLibrary.generic.currencyCode
 
     private let currencies = ["EUR", "USD", "GBP", "CAD"]
 
@@ -40,6 +45,7 @@ struct HubOnboardingView: View {
                 jurisdictionSection
                 presetSection
                 modeSection
+                if jurisdictionChanged { jurisdictionCaution }
                 actions
             }
             .padding(28)
@@ -49,15 +55,46 @@ struct HubOnboardingView: View {
         .onAppear {
             preset = settings.preset ?? .services
             mode = settings.userMode
+            loadExistingProfile()
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Welcome to Mercantis Hub").font(.title).bold()
-            Text("Tell us a few things about your business and we'll set up your accounts, tax, and a focused workspace automatically. You won't need to understand any accounting — and you can change all of this later.")
+            Text(isUpdate ? "Review your setup" : "Welcome to Mercantis Hub").font(.title).bold()
+            Text(isUpdate
+                 ? "Update your business details below. We'll apply the changes and top up anything that's missing — your existing accounts and records stay exactly as they are."
+                 : "Tell us a few things about your business and we'll set up your accounts, tax, and a focused workspace automatically. You won't need to understand any accounting — and you can change all of this later.")
                 .font(.callout).foregroundStyle(.secondary)
         }
+    }
+
+    /// Pre-fill from the existing Business Profile so a re-run shows current
+    /// values (and "Save changes" doesn't overwrite them with wizard defaults).
+    private func loadExistingProfile() {
+        guard let company = (try? engine.list(docType: "Company"))?.first else { return }
+        isUpdate = true
+        if let name = companyString(company.fields["business_name"]) { businessName = name }
+        if let code = companyString(company.fields["default_currency"]) { currency = code }
+        if let countryName = companyString(company.fields["country"]),
+           let match = HubJurisdictionLibrary.all.first(where: { $0.name == countryName }) {
+            countryId = match.id
+        }
+        if case .bool(let registered)? = company.fields["tax_registered"] { taxRegistered = registered }
+        if let tid = companyString(company.fields["vat_tax_number"]) { taxId = tid }
+        if let stored = companyString(company.fields["accounting_basis"]),
+           let parsed = HubAccountingBasis(rawValue: stored) { basis = parsed }
+        // Remember the loaded jurisdiction/currency to detect a risky change, and
+        // keep the loaded currency from being auto-overwritten by a country edit.
+        originalCountryId = countryId
+        originalCurrency = currency
+        currencyEdited = true
+    }
+
+    private func companyString(_ value: FieldValue?) -> String? {
+        guard case .string(let s)? = value else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private var businessSection: some View {
@@ -188,15 +225,33 @@ struct HubOnboardingView: View {
         }
     }
 
+    /// On a re-run, warn that switching country or currency layers a second
+    /// jurisdiction's tax codes/accounts rather than replacing the first.
+    private var jurisdictionChanged: Bool {
+        isUpdate && (countryId != originalCountryId || currency != originalCurrency)
+    }
+
+    private var jurisdictionCaution: some View {
+        Label("Changing your country or currency adds the new tax codes and accounts alongside the existing ones rather than replacing them. For a clean switch, start a fresh workspace instead.",
+              systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(MercantisTheme.warning)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(MercantisTheme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private var actions: some View {
         HStack {
-            Button("Skip for now") { settings.onboardingComplete = true }
+            Button(isUpdate ? "Cancel" : "Skip for now") { settings.onboardingComplete = true }
                 .buttonStyle(.link)
             Spacer()
             Button {
                 finish()
             } label: {
-                Text(working ? "Setting up…" : "Get Started").frame(minWidth: 120)
+                Text(working ? (isUpdate ? "Saving…" : "Setting up…")
+                             : (isUpdate ? "Save changes" : "Get Started"))
+                    .frame(minWidth: 120)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
