@@ -1122,6 +1122,19 @@ private struct HubDocumentEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 lifecycleHeader
+                // Lifecycle actions sit at the TOP for every document (matching
+                // the polished workspace), so Submit / Confirm / Cancel is
+                // always visible without scrolling past the form. The feedback
+                // banners ride alongside so action results are seen immediately.
+                if hasLifecycleActions {
+                    actionRow
+                }
+                if let error = errorMessage {
+                    errorBanner(error)
+                }
+                if let infoMessage {
+                    infoBanner(infoMessage)
+                }
                 GenericFormView(
                     docType: docType,
                     document: $document,
@@ -1149,15 +1162,6 @@ private struct HubDocumentEditor: View {
                 // workspace, derived from Stock Balance (Bin) rows.
                 if docType.id == "Item", !document.id.isEmpty {
                     ItemStockSummaryView(itemID: document.id, engine: engine)
-                }
-                if hasLifecycleActions {
-                    actionRow
-                }
-                if let error = errorMessage {
-                    errorBanner(error)
-                }
-                if let infoMessage {
-                    infoBanner(infoMessage)
                 }
             }
             .padding()
