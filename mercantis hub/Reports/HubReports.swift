@@ -1092,13 +1092,15 @@ public enum HubReports: Sendable {
             .sorted { (asDate($0.fields["opening_date"]) ?? .distantPast) > (asDate($1.fields["opening_date"]) ?? .distantPast) }
         let rows: [[String?]] = sessions.map { session in
             let summary = shiftSummary(for: session, engine: engine)
+            let openedText = summary.opened != nil ? shiftDateText(summary.opened!) : "—"
+            let overShortText = summary.overShort != nil ? formatCurrency(summary.overShort!) : nil
             return [
                 summary.profile,
-                summary.opened.map(shiftDateText) ?? "—",
+                openedText,
                 summary.status,
                 formatCurrency(summary.grossSales),
                 String(format: "%g", summary.itemsSold),
-                summary.overShort.map(formatCurrency),
+                overShortText,
             ]
         }
         return ReportResult(columns: posShifts.columns, rows: rows)
