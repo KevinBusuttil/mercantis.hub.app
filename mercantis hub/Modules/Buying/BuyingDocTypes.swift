@@ -216,6 +216,71 @@ enum Buying {
         formLayout: FormLayout(sections: purchaseParentLayout)
     )
 
+    /// Fulfilment progress, written back by `PurchaseOrderFulfilmentService` as
+    /// Receipts and Invoices are submitted against the order. `allowOnSubmit`
+    /// so the post-commit service can update them on the already-submitted
+    /// order; read-only in the form (they're derived totals, never typed in).
+    private static let purchaseOrderFulfilmentFields: [FieldDefinition] = [
+        FieldDefinition(key: "receipt_status", label: "Receipt Status",
+                        type: .select, required: false,
+                        helpText: "How much of this order has been received. Updated automatically as Purchase Receipts are submitted.",
+                        defaultValue: .string("To Receive"),
+                        options: ["To Receive", "Partially Received", "Fully Received"],
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "received_qty", label: "Received Qty",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "per_received", label: "% Received",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "billing_status", label: "Billing Status",
+                        type: .select, required: false,
+                        helpText: "How much of this order has been invoiced. Updated automatically as Purchase Invoices are submitted.",
+                        defaultValue: .string("To Bill"),
+                        options: ["To Bill", "Partially Billed", "Fully Billed"],
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "billed_qty", label: "Billed Qty",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "per_billed", label: "% Billed",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+    ]
+
+    /// Purchase Order layout = the shared purchase layout plus a Fulfilment
+    /// section (receipt / billing progress), inserted before the Notes block.
+    private static let purchaseOrderLayout: [FormLayoutSection] = [
+        FormLayoutSection(
+            key: "header",
+            title: "Header",
+            columns: 2,
+            fieldKeys: ["supplier", "transaction_date", "currency", "price_list"]
+        ),
+        FormLayoutSection(
+            key: "items",
+            title: "Items",
+            fieldKeys: ["items"]
+        ),
+        FormLayoutSection(
+            key: "totals",
+            title: "Totals",
+            columns: 2,
+            fieldKeys: ["total_qty", "grand_total"]
+        ),
+        FormLayoutSection(
+            key: "fulfilment",
+            title: "Fulfilment",
+            helpText: "Receipt and billing progress, updated automatically as Receipts and Invoices are submitted against this order.",
+            columns: 2,
+            fieldKeys: ["receipt_status", "per_received", "billing_status", "per_billed"]
+        ),
+        FormLayoutSection(
+            key: "notes",
+            title: "Notes",
+            fieldKeys: ["notes"]
+        )
+    ]
+
     /// Purchase Order — confirmed purchase, awaiting receipt. Wall 6
     /// makes it submittable with the `wf-purchase-order` workflow.
     static let purchaseOrder = DocType(
@@ -225,7 +290,7 @@ enum Buying {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: purchaseParentFields(),
+        fields: purchaseParentFields() + purchaseOrderFulfilmentFields,
         permissions: [systemManagerPermission],
         workflowId: "wf-purchase-order",
         autoname: "naming_series:PO-.YYYY.-.####",
@@ -233,7 +298,7 @@ enum Buying {
         indexes: [],
         searchFields: ["supplier"],
         titleField: "supplier",
-        formLayout: FormLayout(sections: purchaseParentLayout)
+        formLayout: FormLayout(sections: purchaseOrderLayout)
     )
 
     /// Purchase Invoice — billable line items, accounts-payable trigger.
@@ -268,6 +333,13 @@ enum Buying {
                             type: .link, required: false,
                             helpText: "Optional. Tags this purchase to a department or branch for reporting.",
                             linkedDocType: "CostCenter"),
+            // Lineage back to the Purchase Order this invoice bills (drives the
+            // billing rollup, the duplicate-conversion guard, and the cancel
+            // cascade) and the Receipt it bills (receive-then-bill).
+            FieldDefinition(key: "purchase_order", label: "Purchase Order",
+                            type: .link, required: false, linkedDocType: "PurchaseOrder"),
+            FieldDefinition(key: "purchase_receipt", label: "Purchase Receipt",
+                            type: .link, required: false, linkedDocType: "PurchaseReceipt"),
             FieldDefinition(key: "is_return", label: "Is Return (Debit Note)",
                             type: .boolean, required: false, defaultValue: .bool(false)),
             FieldDefinition(key: "return_against", label: "Return Against",

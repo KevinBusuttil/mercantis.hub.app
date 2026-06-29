@@ -210,31 +210,6 @@ enum Selling {
         ])
     )
 
-    private static let salesParentLayout: [FormLayoutSection] = [
-        FormLayoutSection(
-            key: "header",
-            title: "Header",
-            columns: 2,
-            fieldKeys: ["customer", "transaction_date", "currency", "price_list"]
-        ),
-        FormLayoutSection(
-            key: "items",
-            title: "Items",
-            fieldKeys: ["items"]
-        ),
-        FormLayoutSection(
-            key: "totals",
-            title: "Totals",
-            columns: 2,
-            fieldKeys: ["total_qty", "grand_total"]
-        ),
-        FormLayoutSection(
-            key: "notes",
-            title: "Notes",
-            fieldKeys: ["notes"]
-        )
-    ]
-
     /// Submittable transactional DocTypes need the version-checked /
     /// immutable-after-submit policy.
     private static let submittableSyncPolicy = SyncPolicy(
@@ -292,9 +267,44 @@ enum Selling {
         return fields
     }
 
+    /// Quotation layout = the shared sales layout plus a "valid till" date in
+    /// the header and the Opportunity link, so a quote shows its expiry and the
+    /// pipeline deal it belongs to.
+    private static let quotationLayout: [FormLayoutSection] = [
+        FormLayoutSection(
+            key: "header",
+            title: "Header",
+            columns: 2,
+            fieldKeys: ["customer", "transaction_date", "valid_till", "currency", "price_list"]
+        ),
+        FormLayoutSection(
+            key: "items",
+            title: "Items",
+            fieldKeys: ["items"]
+        ),
+        FormLayoutSection(
+            key: "totals",
+            title: "Totals",
+            columns: 2,
+            fieldKeys: ["total_qty", "grand_total"]
+        ),
+        FormLayoutSection(
+            key: "pipeline",
+            title: "Pipeline",
+            helpText: "The Opportunity this quote was raised for, if any.",
+            fieldKeys: ["opportunity"]
+        ),
+        FormLayoutSection(
+            key: "notes",
+            title: "Notes",
+            fieldKeys: ["notes"]
+        )
+    ]
+
     /// Quotation — pre-sale offer to a Customer / Lead. Wall 6 makes it
     /// submittable with the `wf-quotation` workflow (Draft → Submitted →
-    /// Ordered / Lost / Cancelled).
+    /// Ordered / Lost / Expired / Cancelled). `valid_till` drives the
+    /// auto-expiry sweep; `opportunity` ties it to a CRM deal.
     static let quotation = DocType(
         id: "Quotation",
         name: "Quotation",
@@ -302,7 +312,14 @@ enum Selling {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: salesParentFields(includeDelivery: true),
+        fields: salesParentFields(includeDelivery: true) + [
+            FieldDefinition(key: "valid_till", label: "Valid Till",
+                            type: .date, required: false,
+                            helpText: "After this date the quote is marked Expired automatically. Leave blank for no expiry.",
+                            allowOnSubmit: true),
+            FieldDefinition(key: "opportunity", label: "Opportunity",
+                            type: .link, required: false, linkedDocType: "Opportunity")
+        ],
         permissions: [systemManagerPermission],
         workflowId: "wf-quotation",
         autoname: "naming_series:SQTN-.YYYY.-.####",
@@ -310,8 +327,73 @@ enum Selling {
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
-        formLayout: FormLayout(sections: salesParentLayout)
+        formLayout: FormLayout(sections: quotationLayout)
     )
+
+    /// Fulfilment progress, written back by `SalesOrderFulfilmentService` as
+    /// Deliveries and Invoices are submitted against the order. `allowOnSubmit`
+    /// so the post-commit service can update them on the already-submitted
+    /// order; read-only in the form (they're derived totals, never typed in).
+    private static let salesOrderFulfilmentFields: [FieldDefinition] = [
+        FieldDefinition(key: "delivery_status", label: "Delivery Status",
+                        type: .select, required: false,
+                        helpText: "How much of this order has been delivered. Updated automatically as Deliveries are submitted.",
+                        defaultValue: .string("To Deliver"),
+                        options: ["To Deliver", "Partially Delivered", "Fully Delivered"],
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "delivered_qty", label: "Delivered Qty",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "per_delivered", label: "% Delivered",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "billing_status", label: "Billing Status",
+                        type: .select, required: false,
+                        helpText: "How much of this order has been invoiced. Updated automatically as Sales Invoices are submitted.",
+                        defaultValue: .string("To Bill"),
+                        options: ["To Bill", "Partially Billed", "Fully Billed"],
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "billed_qty", label: "Billed Qty",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+        FieldDefinition(key: "per_billed", label: "% Billed",
+                        type: .decimal, required: false,
+                        readOnlyExpression: "true", allowOnSubmit: true),
+    ]
+
+    /// Sales Order layout = the shared sales layout plus a Fulfilment section
+    /// (delivery / billing progress), inserted before the Notes block.
+    private static let salesOrderLayout: [FormLayoutSection] = [
+        FormLayoutSection(
+            key: "header",
+            title: "Header",
+            columns: 2,
+            fieldKeys: ["customer", "transaction_date", "currency", "price_list"]
+        ),
+        FormLayoutSection(
+            key: "items",
+            title: "Items",
+            fieldKeys: ["items"]
+        ),
+        FormLayoutSection(
+            key: "totals",
+            title: "Totals",
+            columns: 2,
+            fieldKeys: ["total_qty", "grand_total"]
+        ),
+        FormLayoutSection(
+            key: "fulfilment",
+            title: "Fulfilment",
+            helpText: "Delivery and billing progress, updated automatically as Deliveries and Invoices are submitted against this order.",
+            columns: 2,
+            fieldKeys: ["delivery_status", "per_delivered", "billing_status", "per_billed"]
+        ),
+        FormLayoutSection(
+            key: "notes",
+            title: "Notes",
+            fieldKeys: ["notes"]
+        )
+    ]
 
     /// Sales Order — confirmed sale, awaiting delivery. Wall 6 makes it
     /// submittable with the `wf-sales-order` workflow.
@@ -328,7 +410,7 @@ enum Selling {
             // duplicate-conversion guard and the cancel cascade.
             FieldDefinition(key: "quotation", label: "Quotation",
                             type: .link, required: false, linkedDocType: "Quotation")
-        ],
+        ] + salesOrderFulfilmentFields,
         permissions: [systemManagerPermission],
         workflowId: "wf-sales-order",
         autoname: "naming_series:SO-.YYYY.-.####",
@@ -336,7 +418,7 @@ enum Selling {
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
-        formLayout: FormLayout(sections: salesParentLayout)
+        formLayout: FormLayout(sections: salesOrderLayout)
     )
 
     /// Sales Invoice — billable line items, accounts-receivable trigger.
@@ -374,6 +456,11 @@ enum Selling {
                             linkedDocType: "CostCenter"),
             FieldDefinition(key: "sales_order", label: "Sales Order",
                             type: .link, required: false, linkedDocType: "SalesOrder"),
+            // Lineage back to the Delivery this invoice bills (deliver-then-
+            // invoice). Drives the duplicate-conversion guard and the
+            // Delivery → Invoice cancel cascade.
+            FieldDefinition(key: "sales_delivery", label: "Sales Delivery",
+                            type: .link, required: false, linkedDocType: "SalesDelivery"),
             FieldDefinition(key: "is_return", label: "Is Return (Credit Note)",
                             type: .boolean, required: false, defaultValue: .bool(false)),
             FieldDefinition(key: "return_against", label: "Return Against",

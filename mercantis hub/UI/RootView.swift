@@ -41,6 +41,8 @@ struct RootView: View {
     /// Set once the persisted navigation state has been restored, so the
     /// restore runs a single time per launch.
     @State private var navStateRestored = false
+    /// Runs the invoice-overdue sweep a single time per launch.
+    @State private var overdueSwept = false
 
     private static let expandedModulesKey = "hub.nav.expandedModules"
     private static let collapsedGroupsKey = "hub.nav.collapsedGroups"
@@ -73,6 +75,7 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.12), value: showCommandPalette)
         .onAppear(perform: restoreNavStateIfNeeded)
+        .onAppear(perform: runStartupSweepsIfNeeded)
         .onChange(of: selection) { _, newValue in
             // Keep the selected item's module open and remember where we are.
             if let moduleID = HubNavigation.moduleID(for: newValue, settings: visibility) {
@@ -125,6 +128,16 @@ struct RootView: View {
                 + ". Open Money ▸ Chart of Accounts to review it."
         }
         showChartRepairAlert = true
+    }
+
+    /// Run the time-driven status sweeps once per launch (there is no background
+    /// scheduler, so opening the app is the natural daily trigger): mark past-due
+    /// invoices Overdue and expired quotations Expired.
+    private func runStartupSweepsIfNeeded() {
+        guard !overdueSwept else { return }
+        overdueSwept = true
+        InvoiceStatusService.sweepOverdue(engine: engine)
+        QuotationExpiryService.sweepExpired(engine: engine)
     }
 
     private var visibleModules: [HubModule] {
@@ -1528,7 +1541,19 @@ private struct HubDocumentEditor: View {
     /// order is confirmed (docStatus 1). Each builds a draft of the target
     /// document from the order and saves it; the operator opens and submits it.
     private var conversionActions: [WorkspaceActionDescriptor] {
-        guard document.docStatus == 1, !document.id.isEmpty else { return [] }
+        guard !document.id.isEmpty else { return [] }
+        // Lead is a master (not submittable), so it's handled before the
+        // docStatus gate: one click promotes it to a Customer and opens a quote.
+        if docType.id == "Lead" {
+            guard stringValue(document.fields["status"]) != "Do Not Contact" else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:quotation", label: "Convert to Quotation", role: nil, isPrimary: false,
+                    perform: { convertLeadToQuotation() }
+                ),
+            ]
+        }
+        guard document.docStatus == 1 else { return [] }
         switch docType.id {
         case "Quotation":
             // Only an accepted/won quote (workflow state "Ordered", shown as
@@ -1541,14 +1566,55 @@ private struct HubDocumentEditor: View {
                 ),
             ]
         case "SalesOrder":
-            return [
-                WorkspaceActionDescriptor(
+            // Hide a conversion once that side of the order is fully fulfilled.
+            var actions: [WorkspaceActionDescriptor] = []
+            if stringValue(document.fields["delivery_status"]) != "Fully Delivered" {
+                actions.append(WorkspaceActionDescriptor(
                     id: "convert:delivery", label: "Convert to Delivery", role: nil, isPrimary: false,
                     perform: { convertDocument(to: "SalesDelivery", label: "delivery", linkField: "sales_order") }
-                ),
-                WorkspaceActionDescriptor(
+                ))
+            }
+            if stringValue(document.fields["billing_status"]) != "Fully Billed" {
+                actions.append(WorkspaceActionDescriptor(
                     id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
                     perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_order") }
+                ))
+            }
+            return actions
+        case "SalesDelivery":
+            // Deliver-then-invoice: bill the goods that physically shipped.
+            // A return (goods coming back in) isn't billed as a sale.
+            guard document.fields["is_return"] != .bool(true) else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_delivery") }
+                ),
+            ]
+        case "PurchaseOrder":
+            // Buy-side mirror: hide a conversion once that side is fully done.
+            var actions: [WorkspaceActionDescriptor] = []
+            if stringValue(document.fields["receipt_status"]) != "Fully Received" {
+                actions.append(WorkspaceActionDescriptor(
+                    id: "convert:receipt", label: "Convert to Receipt", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseReceipt", label: "receipt", linkField: "purchase_order") }
+                ))
+            }
+            if stringValue(document.fields["billing_status"]) != "Fully Billed" {
+                actions.append(WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseInvoice", label: "invoice", linkField: "purchase_order") }
+                ))
+            }
+            return actions
+        case "PurchaseReceipt":
+            // Receive-then-bill: invoice the goods physically received. A return
+            // (goods going back out) isn't billed.
+            guard document.fields["is_return"] != .bool(true) else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseInvoice", label: "invoice", linkField: "purchase_receipt") }
                 ),
             ]
         default:
@@ -1563,25 +1629,54 @@ private struct HubDocumentEditor: View {
         errorMessage = nil
         infoMessage = nil
         do {
-            // Don't create a second conversion for the same source. A cancelled
-            // (docStatus 2) one doesn't count, so the operator can re-convert
-            // after voiding a mistake.
+            // A Sales Order can be delivered / invoiced in instalments, so
+            // multiple submitted Deliveries / Invoices are expected — only an
+            // unfinished DRAFT blocks a new one (finish or cancel it first).
+            // Every other conversion stays one-to-one: any non-cancelled target
+            // blocks a duplicate.
+            let allowsInstalments = (document.docType == "SalesOrder"
+                    && (targetDocType == "SalesDelivery" || targetDocType == "SalesInvoice"))
+                || (document.docType == "PurchaseOrder"
+                    && (targetDocType == "PurchaseReceipt" || targetDocType == "PurchaseInvoice"))
             let existing = (try? engine.list(
                 docType: targetDocType,
                 filters: [linkField: .string(document.id)],
                 applyRowAccess: false
-            ))?.first(where: { $0.docStatus != 2 })
+            ))?.first(where: { allowsInstalments ? $0.docStatus == 0 : $0.docStatus != 2 })
             if let existing {
-                errorMessage = "A \(label) already exists for this document (\(existing.id)). Cancel it before creating another."
+                errorMessage = allowsInstalments
+                    ? "An unfinished \(label) draft already exists for this order (\(existing.id)). Submit or cancel it before starting another."
+                    : "A \(label) already exists for this document (\(existing.id)). Cancel it before creating another."
                 return
             }
 
             var draft: Document
-            switch targetDocType {
-            case "SalesOrder":    draft = HubDocumentConversion.quotationToSalesOrder(document)
-            case "SalesDelivery": draft = HubDocumentConversion.salesOrderToDelivery(document)
-            case "SalesInvoice":  draft = HubDocumentConversion.salesOrderToInvoice(document)
+            switch (document.docType, targetDocType) {
+            case (_, "SalesOrder"):
+                draft = HubDocumentConversion.quotationToSalesOrder(document)
+            case ("SalesOrder", "SalesDelivery"):
+                draft = HubDocumentConversion.salesOrderToDelivery(
+                    document, deliveredByItem: fulfilledByItem(orderId: document.id, docType: "SalesDelivery", linkField: "sales_order"))
+            case ("SalesOrder", "SalesInvoice"):
+                draft = HubDocumentConversion.salesOrderToInvoice(
+                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "SalesInvoice", linkField: "sales_order"))
+            case ("SalesDelivery", "SalesInvoice"):
+                draft = HubDocumentConversion.deliveryToInvoice(document)
+            case ("PurchaseOrder", "PurchaseReceipt"):
+                draft = HubDocumentConversion.purchaseOrderToReceipt(
+                    document, receivedByItem: fulfilledByItem(orderId: document.id, docType: "PurchaseReceipt", linkField: "purchase_order"))
+            case ("PurchaseOrder", "PurchaseInvoice"):
+                draft = HubDocumentConversion.purchaseOrderToInvoice(
+                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "PurchaseInvoice", linkField: "purchase_order"))
+            case ("PurchaseReceipt", "PurchaseInvoice"):
+                draft = HubDocumentConversion.receiptToInvoice(document)
             default: return
+            }
+            // A re-converted order may have nothing left on that side once the
+            // remaining-qty defaulting drops fully-fulfilled lines.
+            if (draft.children["items"] ?? []).isEmpty {
+                infoMessage = "Nothing left to convert into a \(label) on this document."
+                return
             }
             // Fill posting accounts / default warehouse from the Business
             // Profile, the same way a brand-new document's first save does, so
@@ -1596,6 +1691,71 @@ private struct HubDocumentEditor: View {
         } catch {
             errorMessage = humanReadable(error)
         }
+    }
+
+    /// One-click Lead → Quotation. Reuses the lead's converted Customer (or
+    /// creates one and marks the lead Converted), links any open Opportunity,
+    /// then opens a Draft Quotation for that Customer to add line items to.
+    private func convertLeadToQuotation() {
+        errorMessage = nil
+        infoMessage = nil
+        do {
+            // 1. Reuse-or-create the Customer.
+            let customerId: String
+            var createdCustomer = false
+            if let existing = stringValue(document.fields["converted_customer"]),
+               !existing.isEmpty,
+               ((try? engine.fetch(docType: "Customer", id: existing)) ?? nil) != nil {
+                customerId = existing
+            } else {
+                let savedCustomer = try engine.save(HubDocumentConversion.leadToCustomer(document))
+                customerId = savedCustomer.id
+                createdCustomer = true
+                // Write the customer back onto the lead and mark it Converted.
+                var lead = document
+                lead.fields["converted_customer"] = .string(customerId)
+                lead.fields["status"] = .string("Converted")
+                _ = try engine.save(lead)
+            }
+
+            // 2. Best-effort: link an Opportunity already raised for this lead.
+            let opportunityId = (try? engine.list(
+                docType: "Opportunity",
+                filters: ["lead": .string(document.id)],
+                applyRowAccess: false
+            ))?.first(where: { stringValue($0.fields["status"]) != "Lost" })?.id
+
+            // 3. Create the Draft Quotation for the customer.
+            var quote = HubDocumentConversion.quotationForCustomer(
+                customerId: customerId, opportunityId: opportunityId, company: document.company)
+            if let quoteType = HubManifest.docType(for: "Quotation"),
+               let profile = (try? engine.list(docType: "Company"))?.first {
+                quote = HubBusinessProfileDefaultsPolicy.prepareForFirstSave(quote, docType: quoteType, businessProfile: profile)
+            }
+            let savedQuote = try engine.save(quote)
+
+            infoMessage = createdCustomer
+                ? "Created customer \(customerId) and quotation \(savedQuote.id) — open it to add line items."
+                : "Created quotation \(savedQuote.id) for \(customerId) — open it to add line items."
+            // Refresh so the lead shows its new Converted status.
+            refreshBinding(toID: document.id)
+            onPersist()
+        } catch {
+            errorMessage = humanReadable(error)
+        }
+    }
+
+    /// Qty already fulfilled per item for an order, summed from its submitted
+    /// fulfilment documents (Deliveries / Receipts / Invoices), matched by
+    /// `linkField`. Drives the remaining-qty defaulting when converting an
+    /// order again.
+    private func fulfilledByItem(orderId: String, docType: String, linkField: String) -> [String: Double] {
+        let docs = (try? engine.list(
+            docType: docType,
+            filters: [linkField: .string(orderId)],
+            applyRowAccess: false
+        )) ?? []
+        return SalesOrderFulfilmentCalculator.fulfilledByItem(docs)
     }
 
     private var workspaceActions: [WorkspaceActionDescriptor] {
@@ -2283,6 +2443,17 @@ private struct HubDocumentEditor: View {
 
     private func runWorkflow(_ transition: WorkflowTransition) {
         guard let workflow else { return }
+        // Completing a Work Order consumes its raw materials; block it up front
+        // when the source warehouse is short, the same way the dedicated
+        // completion screen does, so the document can't reach Completed and then
+        // fail to post its Stock Entry.
+        if docType.id == "WorkOrder", transition.action == "Complete" {
+            let shortages = MaterialAvailabilityChecker.shortages(forWorkOrder: document, engine: engine)
+            if let message = MaterialAvailabilityChecker.message(for: shortages) {
+                errorMessage = message
+                return
+            }
+        }
         do {
             _ = try workflowEngine.transition(
                 document: &document,

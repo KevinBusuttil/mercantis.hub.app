@@ -45,6 +45,10 @@ public nonisolated final class SalesOrderConversionService: @unchecked Sendable 
             cascade = [("SalesOrder", "quotation")]
         case "SalesOrder":
             cascade = [("SalesDelivery", "sales_order"), ("SalesInvoice", "sales_order")]
+        case "SalesDelivery":
+            // A draft Invoice built from this delivery (deliver-then-invoice)
+            // references a now-void source.
+            cascade = [("SalesInvoice", "sales_delivery")]
         default:
             return
         }

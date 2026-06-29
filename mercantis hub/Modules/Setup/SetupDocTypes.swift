@@ -60,6 +60,14 @@ enum Setup {
                             type: .link, required: false, linkedDocType: "Warehouse"),
             FieldDefinition(key: "allow_negative_stock", label: "Allow Negative Stock",
                             type: .boolean, required: false, defaultValue: .bool(false)),
+            FieldDefinition(key: "allow_over_delivery", label: "Allow Over-Delivery",
+                            type: .boolean, required: false,
+                            helpText: "When off, a Sales Delivery can't ship more of an item than its Sales Order ordered.",
+                            defaultValue: .bool(false)),
+            FieldDefinition(key: "allow_over_receipt", label: "Allow Over-Receipt",
+                            type: .boolean, required: false,
+                            helpText: "When off, a Purchase Receipt can't receive more of an item than its Purchase Order ordered.",
+                            defaultValue: .bool(false)),
             FieldDefinition(key: "default_receivable_account", label: "Default Receivable Account",
                             type: .link, required: false, linkedDocType: "Account"),
             FieldDefinition(key: "default_payable_account", label: "Default Payable Account",
@@ -120,7 +128,7 @@ enum Setup {
                 title: "Defaults",
                 helpText: "Used as defaults for future sales, buying, stock, and accounting setup.",
                 columns: 2,
-                fieldKeys: ["default_currency", "default_warehouse", "allow_negative_stock", "books_lock_date"]
+                fieldKeys: ["default_currency", "default_warehouse", "allow_negative_stock", "allow_over_delivery", "books_lock_date"]
             ),
             FormLayoutSection(
                 key: "accounts",

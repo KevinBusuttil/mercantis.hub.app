@@ -24,6 +24,8 @@ extension Selling {
             HubMenuGroup(label: "Reports", items: [
                 .report(id: HubReports.salesRegister.id,
                         label: HubReports.salesRegister.name),
+                .report(id: HubReports.salesOrdersToDeliver.id,
+                        label: HubReports.salesOrdersToDeliver.name),
                 .report(id: HubReports.customerAging.id,
                         label: HubReports.customerAging.name)
             ]),
