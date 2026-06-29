@@ -150,8 +150,8 @@ struct RootView: View {
         List(selection: $selection) {
             Section {
                 MercantisSidebarBrandHeader(
-                    title: "Mercantis Hub",
-                    subtitle: "Business workspace",
+                    title: "Neuradix Atlas",
+                    subtitle: "Your business control centre",
                     systemImage: "shippingbox"
                 )
                 .listRowBackground(Color.clear)
@@ -192,7 +192,7 @@ struct RootView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Mercantis Hub")
+        .navigationTitle("Neuradix Atlas")
         .frame(minWidth: 240)
     }
 
@@ -504,7 +504,7 @@ struct RootView: View {
                 }
             }
         }
-        .navigationTitle(selection?.label ?? "Mercantis Hub")
+        .navigationTitle(selection?.label ?? "Neuradix Atlas")
     }
 
     /// Navigate to another DocType's record (lineage "Related" links). Stashes
@@ -2748,7 +2748,7 @@ extension FocusedValues {
     }
 }
 
-/// Focused, native macOS menu commands for Mercantis Hub.
+/// Focused, native macOS menu commands for Neuradix Atlas.
 ///
 /// Deliberately minimal: these mirror on-screen affordances and add keyboard
 /// access — they do not introduce menu-only features. Wired into the app via
@@ -2807,10 +2807,10 @@ struct HubCommands: Commands {
             .keyboardShortcut("s", modifiers: [.control, .command])
         }
 
-        // Help ▸ Mercantis Glossary — a searchable reference of the ERP /
-        // accounting terms the Hub uses.
+        // Help ▸ Atlas Glossary — a searchable reference of the ERP /
+        // accounting terms the app uses.
         CommandGroup(after: .help) {
-            Button("Mercantis Glossary…") { openWindow(id: HubWindows.glossary) }
+            Button("Atlas Glossary…") { openWindow(id: HubWindows.glossary) }
                 .keyboardShortcut("/", modifiers: [.command, .shift])
         }
 

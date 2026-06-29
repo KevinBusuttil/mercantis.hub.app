@@ -260,7 +260,7 @@ Items that aren't blocking any module but are blocking *deployment*.
 **Touches**: new `Print/HubPrintFormats.swift` declaring formats per DocType, `mercantis_hubApp.swift` registers them on a `PrintService` instance, `HubDocTypeView` gains a "Print" button when the current DocType has at least one registered format
 **Acceptance**:
 - Sales Invoice / Purchase Order / Quotation / Delivery Note each have at least one `PrintFormat` in `HubPrintFormats.swift`.
-- A letter-head ("Mercantis Hub — \{company\}") is registered per Company.
+- A letter-head ("Neuradix Atlas — \{company\}") is registered per Company.
 - The print button in `HubDocTypeView` opens a sheet with format choice + plain-text / PDF output kind.
 - Generated PDFs are persisted as `Attachment`s on the source document.
 

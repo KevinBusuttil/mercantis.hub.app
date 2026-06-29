@@ -140,7 +140,7 @@ DB=$(find ~/Library -name "hub.sqlite" 2>/dev/null | head -1)
 
 # App registered?
 sqlite3 "$DB" "SELECT id, name, version FROM apps;"
-# Expected: app.mercantis.hub|Mercantis Hub|0.1.0
+# Expected: app.mercantis.hub|Neuradix Atlas|0.1.0
 
 # DocType registered?
 sqlite3 "$DB" "SELECT id, name, module, appId FROM doctypes;"

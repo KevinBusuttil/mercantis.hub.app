@@ -1,4 +1,4 @@
-# Mercantis Hub Implementation Tracker
+# Neuradix Atlas Implementation Tracker
 
 | Epic | Issue | Status | Branch | PR | Last updated | Dependencies | Notes |
 |---|---:|---|---|---:|---|---|---|

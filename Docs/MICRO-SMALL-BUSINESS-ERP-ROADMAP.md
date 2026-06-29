@@ -1,8 +1,8 @@
-# Mercantis Hub — Micro/Small-Business ERP Roadmap
+# Neuradix Atlas — Micro/Small-Business ERP Roadmap
 
 ## Product direction
 
-Mercantis Hub is not intended to be an ERPNext clone or a simplified enterprise ERP.
+Neuradix Atlas is not intended to be an ERPNext clone or a simplified enterprise ERP.
 
 It should be:
 - simple for micro/small-business users;

@@ -74,7 +74,7 @@ struct LockScreen: View {
                 .foregroundStyle(.white)
                 .frame(width: 56, height: 56)
                 .background(MercantisTheme.brandPrimary, in: RoundedRectangle(cornerRadius: 14))
-            Text("Mercantis Hub")
+            Text("Neuradix Atlas")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(MercantisTheme.textPrimary)
             Text("Choose an operator to sign in")

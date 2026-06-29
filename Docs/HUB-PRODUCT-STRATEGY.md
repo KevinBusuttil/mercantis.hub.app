@@ -2,7 +2,7 @@
 
 _Last updated: 2026-05-05_
 
-This document captures the strategic direction for Mercantis Hub: take
+This document captures the strategic direction for Neuradix Atlas: take
 ERPNext's metadata-driven DocType architecture as the foundation, then
 selectively import the subledger / posting / tax patterns from Dynamics
 AX 2012 R3 that materially improve life for micro and small business
@@ -19,7 +19,7 @@ positioning is sketched at the end and will be expanded in
 
 ## 1. Positioning
 
-**Mercantis Hub is an offline-first, metadata-driven ERP for
+**Neuradix Atlas is an offline-first, metadata-driven ERP for
 businesses that have outgrown spreadsheets but are far below the budget
 or operational scale of Dynamics 365 / SAP Business One / NetSuite.**
 
@@ -455,7 +455,7 @@ on the enterprise side of the line.
 
 ## 7. What this changes about the project's identity
 
-Mercantis Hub remains:
+Neuradix Atlas remains:
 
 1. **Offline-first.** SQLite-backed, ADR-002 / ADR-010. The subledger
    tables are just more local tables.

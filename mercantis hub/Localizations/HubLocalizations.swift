@@ -19,7 +19,7 @@ public enum HubLocalizations: Sendable {
 
     /// Localization bundle for the **English** (`en`) locale.
     ///
-    /// This is the primary / fallback locale for Mercantis Hub.
+    /// This is the primary / fallback locale for Neuradix Atlas.
     ///
     /// - TODO: Populate with all Hub UI string keys mapped to English values.
     /// - TODO: Implement using `LocalizationBundle` from MercantisCore.
@@ -32,7 +32,7 @@ public enum HubLocalizations: Sendable {
     /// Localization bundle for the **Maltese** (`mt`) locale.
     ///
     /// Maltese is a co-official language of Malta and is supported as a first-class
-    /// locale in Mercantis Hub given the target market.
+    /// locale in Neuradix Atlas given the target market.
     ///
     /// - TODO: Populate with all Hub UI string keys mapped to Maltese translations.
     /// - TODO: Implement using `LocalizationBundle` from MercantisCore.

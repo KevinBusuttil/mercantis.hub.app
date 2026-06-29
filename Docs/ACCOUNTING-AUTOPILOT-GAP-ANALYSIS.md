@@ -1,4 +1,4 @@
-# Mercantis Hub — Accounting Autopilot Gap Analysis
+# Neuradix Atlas — Accounting Autopilot Gap Analysis
 
 > Target user: a **non-accounting-aware micro/small-business CEO**. The product
 > goal is that the owner chooses country, business type, tax registration, and

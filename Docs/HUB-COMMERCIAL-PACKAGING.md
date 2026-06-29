@@ -1,4 +1,4 @@
-# Mercantis Hub — Commercial Packaging Strategy
+# Neuradix Atlas — Commercial Packaging Strategy
 
 _Last updated: 2026-05-16_
 
@@ -6,7 +6,7 @@ _Last updated: 2026-05-16_
 
 ## 1. Purpose
 
-This document defines how Mercantis Hub should be commercially packaged, priced, and positioned for micro and small businesses.
+This document defines how Neuradix Atlas should be commercially packaged, priced, and positioned for micro and small businesses.
 
 It covers the subscription-tier model, App Store strategy, business preset system, and the design rules that govern how capability is bundled and sold.
 
@@ -16,13 +16,13 @@ It covers the subscription-tier model, App Store strategy, business preset syste
 
 ## 2. Product Family Model
 
-Mercantis Hub is the first-party ERP/business application built on Mercantis Core. Core owns the reusable platform runtime: the metadata engine, document engine, workflow engine, generic UI, sync, permissions, reporting foundation, and related infrastructure. Hub owns the ERP/business domain model, DocTypes, workflows, reports, dashboards, navigation composition, and the business-specific product experience.
+Neuradix Atlas is the first-party ERP/business application built on Mercantis Core. Core owns the reusable platform runtime: the metadata engine, document engine, workflow engine, generic UI, sync, permissions, reporting foundation, and related infrastructure. Hub owns the ERP/business domain model, DocTypes, workflows, reports, dashboards, navigation composition, and the business-specific product experience.
 
 | Layer | Meaning |
 |---|---|
-| Product | Mercantis Hub |
-| App Store app | One app called **Mercantis Hub** |
-| Subscription group | **Mercantis Hub Plans** |
+| Product | Neuradix Atlas |
+| App Store app | One app called **Neuradix Atlas** |
+| Subscription group | **Neuradix Atlas Plans** |
 | Subscription tier | Essential / Stock / Trade / Complete |
 | Business preset | Retail / Distribution / Warehouse / Service / Finance / Light Manufacturing |
 | Module | Internal functional area such as CRM, Selling, Buying, Stock, Accounting |
@@ -30,8 +30,8 @@ Mercantis Hub is the first-party ERP/business application built on Mercantis Cor
 
 ### Product family overview
 
-- **Product family:** Mercantis Hub
-- **App Store app:** Mercantis Hub (one app)
+- **Product family:** Neuradix Atlas
+- **App Store app:** Neuradix Atlas (one app)
 - **Internal platform:** Mercantis Core
 - **Business presets:** Retail, Distribution, Warehouse, Service, Light Manufacturing, Finance
 - **Capability tiers:** Essential, Stock, Trade, Complete
@@ -43,20 +43,20 @@ Tier and preset are orthogonal. A customer chooses a tier (what depth of capabil
 
 ## 3. One App, Multiple Configurations
 
-Mercantis Hub must be distributed as **one App Store app**, not a collection of separate apps.
+Neuradix Atlas must be distributed as **one App Store app**, not a collection of separate apps.
 
 The following would be the wrong model:
 
-- Mercantis Hub Distribution
-- Mercantis Hub Finance
-- Mercantis Hub Warehouse
-- Mercantis Hub Retail
+- Neuradix Atlas Distribution
+- Neuradix Atlas Finance
+- Neuradix Atlas Warehouse
+- Neuradix Atlas Retail
 
-Those names may appear in marketing copy or onboarding flows, but commercially and technically the product is one app: **Mercantis Hub**.
+Those names may appear in marketing copy or onboarding flows, but commercially and technically the product is one app: **Neuradix Atlas**.
 
 The correct model is:
 
-> `Mercantis Hub + subscription tier + business preset`
+> `Neuradix Atlas + subscription tier + business preset`
 
 ### Configuration examples
 
@@ -70,10 +70,10 @@ The correct model is:
 
 For example:
 
-- `Mercantis Hub — Trade tier — Distribution preset`
-- `Mercantis Hub — Stock tier — Warehouse preset`
-- `Mercantis Hub — Complete tier — Retail preset`
-- `Mercantis Hub — Essential tier — Service preset`
+- `Neuradix Atlas — Trade tier — Distribution preset`
+- `Neuradix Atlas — Stock tier — Warehouse preset`
+- `Neuradix Atlas — Complete tier — Retail preset`
+- `Neuradix Atlas — Essential tier — Service preset`
 
 The shared Hub data model and single company/workspace database underpin all configurations. A preset does not fork the data model or create a separate database.
 
@@ -85,7 +85,7 @@ Apple's App Store groups related subscription products into a **subscription gro
 
 ### Recommended group
 
-**Group name:** `Mercantis Hub Plans`
+**Group name:** `Neuradix Atlas Plans`
 
 **Subscription products inside the group:**
 
@@ -107,9 +107,9 @@ The user holds **one active plan** at a time. Upgrading or downgrading moves the
 Do **not** create separate subscription groups for Distribution, Warehouse, Finance, Retail, or other business presets. That would force customers to purchase multiple overlapping subscriptions and create support and data nightmares.
 
 Do **not** create subscription products like:
-- `Mercantis Hub Distribution`
-- `Mercantis Hub Finance + Warehouse`
-- `Mercantis Hub Retail Pro`
+- `Neuradix Atlas Distribution`
+- `Neuradix Atlas Finance + Warehouse`
+- `Neuradix Atlas Retail Pro`
 
 Business presets are **in-app configurations**, not App Store subscription products.
 
@@ -236,7 +236,7 @@ Trade is the natural home for distributors, importers, wholesalers, and stock-ba
 
 ### Complete
 
-**For small businesses using Mercantis Hub as their full operational and financial system.**
+**For small businesses using Neuradix Atlas as their full operational and financial system.**
 
 Complete is for businesses that need not just trading capability but a full accounting and financial reporting picture — together with advanced operational controls.
 
@@ -256,7 +256,7 @@ Includes everything in Trade, plus:
 
 ## 7. Business Presets
 
-Business presets are **not App Store subscription products**. They are in-app configurations that adapt Mercantis Hub's navigation, terminology, setup checklist, reports, dashboards, and workflow emphasis to a specific type of business.
+Business presets are **not App Store subscription products**. They are in-app configurations that adapt Neuradix Atlas's navigation, terminology, setup checklist, reports, dashboards, and workflow emphasis to a specific type of business.
 
 A customer does not buy a preset. They choose a tier (what capabilities they need), and then choose a preset (how they want the app configured for their business type).
 
@@ -380,7 +380,7 @@ These rules govern all future decisions about commercial packaging, tiering, and
 
 ## 11. Summary
 
-Mercantis Hub is one App Store app, one product family, and one shared data model.
+Neuradix Atlas is one App Store app, one product family, and one shared data model.
 
 Customers subscribe to a **capability tier** — Essential, Stock, Trade, or Complete — and choose a **business preset** — Retail, Distribution, Warehouse, Service, Finance, or Light Manufacturing — that configures the in-app experience for their type of business.
 

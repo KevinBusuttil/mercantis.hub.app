@@ -1,8 +1,8 @@
-# Mercantis Hub — Document Lifecycle & Business Status
+# Neuradix Atlas — Document Lifecycle & Business Status
 
 _Last updated: 2026-05-31_
 
-This document explains how Mercantis Hub separates **Core's internal document
+This document explains how Neuradix Atlas separates **Core's internal document
 lifecycle** (used for posting, audit, immutability and reversal) from the
 **business-facing wording** a small-business user actually sees, and how the
 internal AX-style transaction spine stays hidden until it's wanted.
@@ -117,7 +117,7 @@ badge carries a glyph. Tones (light/dark safe):
 ## 4. Posting and the AX-style transaction spine
 
 Posting a document is what creates the internal accounting/audit rows. This is
-a strength of Mercantis and is fully preserved:
+a strength of Neuradix Atlas and is fully preserved:
 
 | Internal table | Created from | Purpose |
 |----------------|--------------|---------|

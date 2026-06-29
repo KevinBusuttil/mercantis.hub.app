@@ -2,7 +2,7 @@ import SwiftUI
 import MercantisCore
 import MercantisCoreUI
 
-/// Default landing page for Mercantis Hub.
+/// Default landing page for Neuradix Atlas.
 ///
 /// Shown when no sidebar item is selected. This is the first-run experience,
 /// so it is written for a business user evaluating the app — not as an
@@ -72,7 +72,7 @@ struct HubHomeView: View {
             Button("Load Sample Data") { loadSampleBusiness() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This adds a few clearly-labelled demo records (customers, suppliers, and items) so you can explore Mercantis Hub with realistic content. Every sample record is tagged “(Sample)” and is safe to delete. Only do this on an empty or test database.")
+            Text("This adds a few clearly-labelled demo records (customers, suppliers, and items) so you can explore Neuradix Atlas with realistic content. Every sample record is tagged “(Sample)” and is safe to delete. Only do this on an empty or test database.")
         }
     }
 
@@ -108,7 +108,7 @@ struct HubHomeView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Explore with a sample business")
                     .font(.headline)
-                Text("Your database is empty. Load a small set of demo customers, suppliers, and items — all clearly tagged “(Sample)” — to see Mercantis Hub in action. You can delete them any time.")
+                Text("Your database is empty. Load a small set of demo customers, suppliers, and items — all clearly tagged “(Sample)” — to see Neuradix Atlas in action. You can delete them any time.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

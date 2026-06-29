@@ -61,7 +61,7 @@ struct HubOnboardingView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(isUpdate ? "Review your setup" : "Welcome to Mercantis Hub").font(.title).bold()
+            Text(isUpdate ? "Review your setup" : "Welcome to Neuradix Atlas").font(.title).bold()
             Text(isUpdate
                  ? "Update your business details below. We'll apply the changes and top up anything that's missing — your existing accounts and records stay exactly as they are."
                  : "Tell us a few things about your business and we'll set up your accounts, tax, and a focused workspace automatically. You won't need to understand any accounting — and you can change all of this later.")
