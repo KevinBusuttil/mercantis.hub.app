@@ -1,4 +1,4 @@
-# GitHub Issue Drafts — Mercantis Hub ERP Epics
+# GitHub Issue Drafts — Neuradix Atlas ERP Epics
 
 > These are ready-to-copy issue bodies for `KevinBusuttil/mercantis.hub.app`.
 

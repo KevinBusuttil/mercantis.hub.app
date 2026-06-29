@@ -73,7 +73,7 @@ struct HubOpeningBalanceView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Enter your opening balances").font(.title2).bold()
-            Text("Type in where your business stood when you started using Mercantis. We'll record it correctly for you — no accounting needed. The difference becomes your starting capital automatically.")
+            Text("Type in where your business stood when you started using Neuradix Atlas. We'll record it correctly for you — no accounting needed. The difference becomes your starting capital automatically.")
                 .font(.callout).foregroundStyle(.secondary)
         }
     }

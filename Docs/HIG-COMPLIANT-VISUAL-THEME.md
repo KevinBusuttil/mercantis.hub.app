@@ -1,6 +1,6 @@
-# Mercantis Hub — HIG-Compliant Visual Theme
+# Neuradix Atlas — HIG-Compliant Visual Theme
 
-> Visual direction for Mercantis Hub: a polished, native-macOS small-business
+> Visual direction for Neuradix Atlas: a polished, native-macOS small-business
 > ERP. This document explains how the "clean business dashboard" reference was
 > translated into native macOS, which pieces live in Core UI vs. Hub, and the
 > rules that keep the app HIG-compliant in light **and** dark mode.
@@ -9,7 +9,7 @@
 
 ## 1. Visual direction
 
-Mercantis Hub should read as a **premium desktop ERP for micro / small
+Neuradix Atlas should read as a **premium desktop ERP for micro / small
 businesses**: calm, high-trust, scan-friendly, and dense enough to be
 productive for data-entry users — but never cramped.
 

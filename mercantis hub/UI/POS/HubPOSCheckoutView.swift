@@ -489,7 +489,7 @@ struct HubPOSCheckoutView: View {
     // MARK: - Receipt
 
     private func makeReceipt(id: String, grand: Double, currency: String?) -> String {
-        let store = stringValue(businessProfile?.fields["business_name"]) ?? "Mercantis Hub"
+        let store = stringValue(businessProfile?.fields["business_name"]) ?? "Neuradix Atlas"
         var lines = [store, "Sale \(id)", "", ]
         for line in cart {
             let amt = money(line.qty * line.rate)

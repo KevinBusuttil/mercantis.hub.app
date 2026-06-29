@@ -1,10 +1,10 @@
-# Mercantis Hub — ERP UX Direction & Native macOS Product Strategy
+# Neuradix Atlas — ERP UX Direction & Native macOS Product Strategy
 
 _Last updated: 2026-05-04_
 
 ## 1. Purpose
 
-Mercantis Hub is the first-party ERP application built exclusively on Mercantis Core's public APIs. Its UX has two responsibilities:
+Neuradix Atlas is the first-party ERP application built exclusively on Mercantis Core's public APIs. Its UX has two responsibilities:
 
 1. Demonstrate Core's metadata-driven platform capabilities through real business workflows.
 2. Deliver a polished, native macOS ERP experience that business users find productive and trustworthy.
@@ -54,7 +54,7 @@ Hub's current `RootView` is a necessary interim shell. As Core matures, the righ
 ```swift
 NavigationShell(
     configuration: ShellConfiguration(
-        appTitle: "Mercantis Hub",
+        appTitle: "Neuradix Atlas",
         modules: HubNavigation.allModules,
         defaultWorkspace: .dashboard("hub.home"),
         branding: .init(

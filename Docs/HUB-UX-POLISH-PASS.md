@@ -1,10 +1,10 @@
-# Mercantis Hub — UX / Product Polish Pass
+# Neuradix Atlas — UX / Product Polish Pass
 
 _Last updated: 2026-05-30_
 
 ## 1. What changed
 
-This pass reframes Mercantis Hub's first-run experience from an engineering
+This pass reframes Neuradix Atlas's first-run experience from an engineering
 preview into a business-ready workspace, without removing any working
 functionality or the metadata-driven architecture. All changes are Hub-side;
 Core was not modified.

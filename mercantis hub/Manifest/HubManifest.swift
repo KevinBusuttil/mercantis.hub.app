@@ -2,7 +2,7 @@ import MercantisCore
 
 public enum HubManifest: Sendable {
     public static let appID   = "app.mercantis.hub"
-    public static let appName = "Mercantis Hub"
+    public static let appName = "Neuradix Atlas"
     public static let version = "0.1.0"
 
     // P0.3: each module's DocTypes are decorated with role-based PermissionRules
@@ -35,7 +35,7 @@ public enum HubManifest: Sendable {
             name: appName,
             version: version,
             minimumCoreVersion: "0.1.0",
-            description: "Mercantis Hub — first-party ERP application built on Mercantis Core.",
+            description: "Neuradix Atlas — the all-in-one control centre for running your business: sales, purchases, stock, POS, invoices, payments, tax and reports, with the accounting handled for you.",
             doctypes: allDocTypes,
             workflows: HubWorkflows.allWorkflows,
             permissions: [],

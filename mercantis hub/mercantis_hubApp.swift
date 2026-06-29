@@ -283,7 +283,7 @@ struct mercantis_hubApp: App {
                 // lifecycle controls can explain themselves with a "?".
                 .environment(\.glossary, HubGlossary.glossary)
                 // Retint native selection (sidebar/list highlight, segmented
-                // tabs, focus rings) to the Mercantis brand indigo, so the app
+                // tabs, focus rings) to the Neuradix Atlas brand indigo, so the app
                 // shows one accent instead of brand-purple + system-azure.
                 .tint(MercantisTheme.brandPrimary)
             }
@@ -371,7 +371,7 @@ struct mercantis_hubApp: App {
     }
 }
 
-/// Product-safe local identity for Mercantis Hub.
+/// Product-safe local identity for Neuradix Atlas.
 ///
 /// This pass replaces the previously hard-coded `userId: "kevin"` with a
 /// stable, locally generated identifier. There is intentionally **no**
