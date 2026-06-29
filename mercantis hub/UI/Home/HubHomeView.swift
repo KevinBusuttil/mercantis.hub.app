@@ -81,9 +81,8 @@ struct HubHomeView: View {
     private var welcomeHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image(systemName: "globe.americas.fill")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(MercantisTheme.brandPrimary)
+                BrandMark()
+                    .frame(width: 34, height: 34)
                 Text(HubManifest.appName)
                     .font(.largeTitle.weight(.semibold))
             }

@@ -149,10 +149,9 @@ struct RootView: View {
     private var sidebar: some View {
         List(selection: $selection) {
             Section {
-                MercantisSidebarBrandHeader(
+                HubBrandHeader(
                     title: "Neuradix Atlas",
-                    subtitle: "Your business control centre",
-                    systemImage: "globe.americas.fill"
+                    subtitle: "Your business control centre"
                 )
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
