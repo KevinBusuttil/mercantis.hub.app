@@ -39,6 +39,13 @@ nonisolated enum SalesOrderFulfilmentCalculator {
                  none: "To Deliver", partial: "Partially Delivered", full: "Fully Delivered")
     }
 
+    /// Purchase-side receipt progress (shared maths, buy-side labels).
+    static func receiptStatus(orderedQty: Double, receivedQty: Double) -> String {
+        progress(ordered: orderedQty, fulfilled: receivedQty,
+                 none: "To Receive", partial: "Partially Received", full: "Fully Received")
+    }
+
+    /// Billing progress — same labels for the sales and purchase order sides.
     static func billingStatus(orderedQty: Double, billedQty: Double) -> String {
         progress(ordered: orderedQty, fulfilled: billedQty,
                  none: "To Bill", partial: "Partially Billed", full: "Fully Billed")

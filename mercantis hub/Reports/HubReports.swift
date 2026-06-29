@@ -122,6 +122,21 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles + salesRoles + stockRoles
     )
 
+    /// Purchase Orders to Receive — buy-side mirror of "Sales Orders to
+    /// Deliver". Confirmed Purchase Orders with goods still owed by the
+    /// supplier: ordered vs received vs remaining, for orders not yet fully
+    /// received. Kept current by `PurchaseOrderFulfilmentService`.
+    public static let purchaseOrdersToReceive = ReportDefinition(
+        id: "purchase-orders-to-receive",
+        name: "Purchase Orders to Receive",
+        docType: "PurchaseOrder",
+        columns: ["Order", "Supplier", "Date", "Ordered", "Received", "Remaining", "Status"],
+        filters: [
+            ReportFilter(fieldKey: "supplier", label: "Supplier"),
+        ],
+        allowedRoles: financeRoles + buyingRoles + stockRoles
+    )
+
     /// Pending Receipts — Phase 4. Purchase Receipts still in Draft, i.e.
     /// goods expected but not yet confirmed into stock.
     public static let pendingReceipts = ReportDefinition(
@@ -330,7 +345,7 @@ public enum HubReports: Sendable {
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
-        salesOrdersToDeliver,
+        salesOrdersToDeliver, purchaseOrdersToReceive,
         openDeliveries, pendingReceipts, todaysRoutes,
         customerAging, supplierAging,
         trialBalance, balanceSheet, incomeStatement, generalLedger,
@@ -363,6 +378,8 @@ public enum HubReports: Sendable {
             return try runStockOnHand(engine: engine, filters: filters)
         case "sales-orders-to-deliver":
             return try runSalesOrdersToDeliver(engine: engine, filters: filters)
+        case "purchase-orders-to-receive":
+            return try runPurchaseOrdersToReceive(engine: engine, filters: filters)
         case "open-deliveries":
             return try runOpenDeliveries(engine: engine, filters: filters)
         case "pending-receipts":
@@ -557,6 +574,43 @@ public enum HubReports: Sendable {
             ]
         }
         return ReportResult(columns: salesOrdersToDeliver.columns, rows: rows)
+    }
+
+    /// Buy-side mirror: submitted Purchase Orders that still owe goods —
+    /// ordered vs received vs remaining, newest first. Fully-received and
+    /// cancelled orders drop out.
+    private static func runPurchaseOrdersToReceive(
+        engine: DocumentEngine,
+        filters: [String: FieldValue]
+    ) throws -> ReportResult {
+        let orders = try engine.list(
+            docType: "PurchaseOrder",
+            filters: filters.isEmpty ? nil : filters,
+            sortBy: [ListSort(fieldKey: "createdAt", direction: .descending)],
+            applyRowAccess: false
+        )
+        let supplierNames = displayNames(engine: engine, docType: "Supplier")
+
+        let rows: [[String?]] = orders.compactMap { doc in
+            guard doc.docStatus == 1 else { return nil }
+            let status = asString(doc.fields["receipt_status"]) ?? "To Receive"
+            guard status != "Fully Received" else { return nil }
+            let ordered = (doc.children["items"] ?? [])
+                .reduce(0.0) { $0 + (asDouble($1.fields["qty"]) ?? 0) }
+            let received = asDouble(doc.fields["received_qty"]) ?? 0
+            let remaining = max(0, ordered - received)
+            let supplierID = asString(doc.fields["supplier"]) ?? ""
+            return [
+                doc.id,
+                supplierNames[supplierID] ?? supplierID,
+                format(value: doc.fields["transaction_date"]),
+                formatCurrency(ordered),
+                formatCurrency(received),
+                formatCurrency(remaining),
+                status,
+            ]
+        }
+        return ReportResult(columns: purchaseOrdersToReceive.columns, rows: rows)
     }
 
     private static func runOpenDeliveries(

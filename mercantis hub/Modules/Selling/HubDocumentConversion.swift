@@ -71,11 +71,12 @@ enum HubDocumentConversion {
             "sales_order": .string(order.id),
         ]
         copy(["customer", "currency", "conversion_rate", "price_list", "tax_code"], from: order.fields, into: &fields)
+        // The order link lives on the invoice header (`sales_order`); the
+        // SalesItem line type carries no per-line link, so none is set.
         let items = remainingLines(
             order.children["items"] ?? [],
             fulfilledByItem: billedByItem,
-            carryKeys: ["item", "description", "uom", "rate", "tax_code", "warehouse"],
-            backLink: (key: "sales_order", value: order.id)
+            carryKeys: ["item", "description", "uom", "rate", "tax_code", "warehouse"]
         )
         return draft(docType: "SalesInvoice", company: order.company, fields: fields, items: items)
     }
@@ -103,18 +104,84 @@ enum HubDocumentConversion {
         return draft(docType: "SalesInvoice", company: delivery.company, fields: fields, items: items)
     }
 
+    // MARK: - Buying
+
+    /// Purchase Order → Purchase Receipt draft. Header (supplier / date /
+    /// currency / default warehouse) and item lines (item / uom / rate /
+    /// warehouse) are carried over; each line links back to the originating
+    /// order and defaults to the qty still to receive (ordered − already
+    /// received), dropping fully-received lines.
+    static func purchaseOrderToReceipt(_ order: Document, receivedByItem: [String: Double] = [:]) -> Document {
+        var fields: [String: FieldValue] = [
+            "transaction_date": .date(Date()),
+            "purchase_order": .string(order.id),
+        ]
+        copy(["supplier", "currency", "conversion_rate"], from: order.fields, into: &fields)
+        if let warehouse = order.fields["set_warehouse"] ?? order.fields["warehouse"] {
+            fields["set_warehouse"] = warehouse
+        }
+        let items = remainingLines(
+            order.children["items"] ?? [],
+            fulfilledByItem: receivedByItem,
+            carryKeys: ["item", "description", "uom", "rate", "warehouse"],
+            backLink: (key: "purchase_order", value: order.id)
+        )
+        return draft(docType: "PurchaseReceipt", company: order.company, fields: fields, items: items)
+    }
+
+    /// Purchase Order → Purchase Invoice draft. Header and item lines (the
+    /// Purchase Invoice shares the PurchaseItem child shape) are carried over;
+    /// each line defaults to the qty still to bill (ordered − already billed),
+    /// dropping fully-billed lines. Posting accounts / totals are filled by the
+    /// Business Profile defaults / tax policy when the caller saves it.
+    static func purchaseOrderToInvoice(_ order: Document, billedByItem: [String: Double] = [:]) -> Document {
+        var fields: [String: FieldValue] = [
+            "transaction_date": .date(Date()),
+            "purchase_order": .string(order.id),
+        ]
+        copy(["supplier", "currency", "conversion_rate", "price_list", "tax_code"], from: order.fields, into: &fields)
+        // The order link lives on the invoice header (`purchase_order`); the
+        // PurchaseItem line type carries no per-line link, so none is set.
+        let items = remainingLines(
+            order.children["items"] ?? [],
+            fulfilledByItem: billedByItem,
+            carryKeys: ["item", "description", "uom", "rate", "tax_code", "warehouse"]
+        )
+        return draft(docType: "PurchaseInvoice", company: order.company, fields: fields, items: items)
+    }
+
+    /// Purchase Receipt → Purchase Invoice draft (receive-then-bill). Bills the
+    /// goods physically received: the receipt's lines are carried over verbatim,
+    /// the invoice links back to the receipt, and the order link threads through
+    /// when the receipt itself came from an order.
+    static func receiptToInvoice(_ receipt: Document) -> Document {
+        var fields: [String: FieldValue] = [
+            "transaction_date": .date(Date()),
+            "purchase_receipt": .string(receipt.id),
+        ]
+        copy(["supplier", "currency", "conversion_rate"], from: receipt.fields, into: &fields)
+        if let order = receipt.fields["purchase_order"] { fields["purchase_order"] = order }
+        let items = (receipt.children["items"] ?? []).enumerated().map { index, row -> ChildRow in
+            var lineFields: [String: FieldValue] = [:]
+            copy(["item", "description", "qty", "uom", "rate", "warehouse"], from: row.fields, into: &lineFields)
+            return ChildRow(id: UUID().uuidString, rowIndex: index, fields: lineFields)
+        }
+        return draft(docType: "PurchaseInvoice", company: receipt.company, fields: fields, items: items)
+    }
+
     // MARK: - Helpers
 
     /// Carry source lines into a downstream table, defaulting each line's qty to
     /// the amount still un-fulfilled (ordered − already fulfilled for that
     /// item). `fulfilledByItem` is consumed greedily across lines of the same
-    /// item, and a line with nothing left is dropped. Each surviving line gets
-    /// the `backLink` field set to the source id.
+    /// item, and a line with nothing left is dropped. When `backLink` is given
+    /// (delivery / receipt lines, whose child type declares the link field),
+    /// each surviving line gets it set to the source id; invoice lines pass nil.
     static func remainingLines(
         _ rows: [ChildRow],
         fulfilledByItem: [String: Double],
         carryKeys: [String],
-        backLink: (key: String, value: String)
+        backLink: (key: String, value: String)? = nil
     ) -> [ChildRow] {
         var pool = fulfilledByItem
         var result: [ChildRow] = []
@@ -127,7 +194,8 @@ enum HubDocumentConversion {
                 pool[itemId] = already - netted
             }
             guard remaining > 0.0000001 else { continue }
-            var lineFields: [String: FieldValue] = [backLink.key: .string(backLink.value)]
+            var lineFields: [String: FieldValue] = [:]
+            if let backLink { lineFields[backLink.key] = .string(backLink.value) }
             copy(carryKeys, from: row.fields, into: &lineFields)
             lineFields["qty"] = .double(remaining)
             result.append(ChildRow(id: UUID().uuidString, rowIndex: result.count, fields: lineFields))

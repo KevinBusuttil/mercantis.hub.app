@@ -16,6 +16,8 @@ extension Buying {
             ]),
             HubMenuGroup(label: "Receiving", items: [
                 .docType(Buying.purchaseReceipt, label: "Purchase Receipts"),
+                .report(id: HubReports.purchaseOrdersToReceive.id,
+                        label: HubReports.purchaseOrdersToReceive.name),
                 .report(id: HubReports.pendingReceipts.id,
                         label: HubReports.pendingReceipts.name)
             ]),

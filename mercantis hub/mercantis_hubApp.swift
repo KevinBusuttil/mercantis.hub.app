@@ -32,6 +32,15 @@ struct mercantis_hubApp: App {
     /// Keeps each Sales Order's delivery / billing progress in step with the
     /// Deliveries / Invoices submitted against it. Same retention contract.
     let salesOrderFulfilmentService: SalesOrderFulfilmentService
+    /// Buy-side mirror: keeps each Purchase Order's receipt / billing progress
+    /// in step with its Receipts / Invoices. Same retention contract.
+    let purchaseOrderFulfilmentService: PurchaseOrderFulfilmentService
+    /// Discards draft Receipt / Invoice conversions when their Purchase Order
+    /// (or Receipt) is cancelled. Same retention contract.
+    let purchaseOrderConversionService: PurchaseOrderConversionService
+    /// Flips invoices to Paid when a payment clears their balance (and marks
+    /// them Overdue past their due date). Same retention contract.
+    let invoiceStatusService: InvoiceStatusService
     /// Wall 9 — engines for report execution and dashboard resolution.
     let reportEngine: ReportEngine
     let dashboardEngine: DashboardEngine
@@ -172,6 +181,21 @@ struct mercantis_hubApp: App {
         // Roll delivery / billing progress up onto the Sales Order as its
         // Deliveries / Invoices are submitted or cancelled.
         self.salesOrderFulfilmentService = SalesOrderFulfilmentService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Buy-side mirror: roll receipt / billing progress onto the Purchase
+        // Order, and discard draft purchase conversions on cancel.
+        self.purchaseOrderFulfilmentService = PurchaseOrderFulfilmentService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        self.purchaseOrderConversionService = PurchaseOrderConversionService(
+            engine: documentEngine,
+            emitter: emitter
+        )
+        // Flip invoices Paid/Overdue as payments clear them / due dates pass.
+        self.invoiceStatusService = InvoiceStatusService(
             engine: documentEngine,
             emitter: emitter
         )

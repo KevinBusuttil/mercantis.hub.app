@@ -41,6 +41,8 @@ struct RootView: View {
     /// Set once the persisted navigation state has been restored, so the
     /// restore runs a single time per launch.
     @State private var navStateRestored = false
+    /// Runs the invoice-overdue sweep a single time per launch.
+    @State private var overdueSwept = false
 
     private static let expandedModulesKey = "hub.nav.expandedModules"
     private static let collapsedGroupsKey = "hub.nav.collapsedGroups"
@@ -73,6 +75,7 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.12), value: showCommandPalette)
         .onAppear(perform: restoreNavStateIfNeeded)
+        .onAppear(perform: sweepOverdueInvoicesIfNeeded)
         .onChange(of: selection) { _, newValue in
             // Keep the selected item's module open and remember where we are.
             if let moduleID = HubNavigation.moduleID(for: newValue, settings: visibility) {
@@ -125,6 +128,14 @@ struct RootView: View {
                 + ". Open Money ▸ Chart of Accounts to review it."
         }
         showChartRepairAlert = true
+    }
+
+    /// Mark past-due, still-unpaid invoices Overdue once per launch (there is no
+    /// background scheduler, so opening the app is the natural daily trigger).
+    private func sweepOverdueInvoicesIfNeeded() {
+        guard !overdueSwept else { return }
+        overdueSwept = true
+        InvoiceStatusService.sweepOverdue(engine: engine)
     }
 
     private var visibleModules: [HubModule] {
@@ -1566,6 +1577,32 @@ private struct HubDocumentEditor: View {
                     perform: { convertDocument(to: "SalesInvoice", label: "invoice", linkField: "sales_delivery") }
                 ),
             ]
+        case "PurchaseOrder":
+            // Buy-side mirror: hide a conversion once that side is fully done.
+            var actions: [WorkspaceActionDescriptor] = []
+            if stringValue(document.fields["receipt_status"]) != "Fully Received" {
+                actions.append(WorkspaceActionDescriptor(
+                    id: "convert:receipt", label: "Convert to Receipt", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseReceipt", label: "receipt", linkField: "purchase_order") }
+                ))
+            }
+            if stringValue(document.fields["billing_status"]) != "Fully Billed" {
+                actions.append(WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseInvoice", label: "invoice", linkField: "purchase_order") }
+                ))
+            }
+            return actions
+        case "PurchaseReceipt":
+            // Receive-then-bill: invoice the goods physically received. A return
+            // (goods going back out) isn't billed.
+            guard document.fields["is_return"] != .bool(true) else { return [] }
+            return [
+                WorkspaceActionDescriptor(
+                    id: "convert:invoice", label: "Convert to Invoice", role: nil, isPrimary: false,
+                    perform: { convertDocument(to: "PurchaseInvoice", label: "invoice", linkField: "purchase_receipt") }
+                ),
+            ]
         default:
             return []
         }
@@ -1583,8 +1620,10 @@ private struct HubDocumentEditor: View {
             // unfinished DRAFT blocks a new one (finish or cancel it first).
             // Every other conversion stays one-to-one: any non-cancelled target
             // blocks a duplicate.
-            let allowsInstalments = document.docType == "SalesOrder"
-                && (targetDocType == "SalesDelivery" || targetDocType == "SalesInvoice")
+            let allowsInstalments = (document.docType == "SalesOrder"
+                    && (targetDocType == "SalesDelivery" || targetDocType == "SalesInvoice"))
+                || (document.docType == "PurchaseOrder"
+                    && (targetDocType == "PurchaseReceipt" || targetDocType == "PurchaseInvoice"))
             let existing = (try? engine.list(
                 docType: targetDocType,
                 filters: [linkField: .string(document.id)],
@@ -1603,12 +1642,20 @@ private struct HubDocumentEditor: View {
                 draft = HubDocumentConversion.quotationToSalesOrder(document)
             case ("SalesOrder", "SalesDelivery"):
                 draft = HubDocumentConversion.salesOrderToDelivery(
-                    document, deliveredByItem: fulfilledByItem(orderId: document.id, docType: "SalesDelivery"))
+                    document, deliveredByItem: fulfilledByItem(orderId: document.id, docType: "SalesDelivery", linkField: "sales_order"))
             case ("SalesOrder", "SalesInvoice"):
                 draft = HubDocumentConversion.salesOrderToInvoice(
-                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "SalesInvoice"))
+                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "SalesInvoice", linkField: "sales_order"))
             case ("SalesDelivery", "SalesInvoice"):
                 draft = HubDocumentConversion.deliveryToInvoice(document)
+            case ("PurchaseOrder", "PurchaseReceipt"):
+                draft = HubDocumentConversion.purchaseOrderToReceipt(
+                    document, receivedByItem: fulfilledByItem(orderId: document.id, docType: "PurchaseReceipt", linkField: "purchase_order"))
+            case ("PurchaseOrder", "PurchaseInvoice"):
+                draft = HubDocumentConversion.purchaseOrderToInvoice(
+                    document, billedByItem: fulfilledByItem(orderId: document.id, docType: "PurchaseInvoice", linkField: "purchase_order"))
+            case ("PurchaseReceipt", "PurchaseInvoice"):
+                draft = HubDocumentConversion.receiptToInvoice(document)
             default: return
             }
             // A re-converted order may have nothing left on that side once the
@@ -1633,12 +1680,13 @@ private struct HubDocumentEditor: View {
     }
 
     /// Qty already fulfilled per item for an order, summed from its submitted
-    /// `docType` documents (SalesDelivery / SalesInvoice). Drives the
-    /// remaining-qty defaulting when converting an order again.
-    private func fulfilledByItem(orderId: String, docType: String) -> [String: Double] {
+    /// fulfilment documents (Deliveries / Receipts / Invoices), matched by
+    /// `linkField`. Drives the remaining-qty defaulting when converting an
+    /// order again.
+    private func fulfilledByItem(orderId: String, docType: String, linkField: String) -> [String: Double] {
         let docs = (try? engine.list(
             docType: docType,
-            filters: ["sales_order": .string(orderId)],
+            filters: [linkField: .string(orderId)],
             applyRowAccess: false
         )) ?? []
         return SalesOrderFulfilmentCalculator.fulfilledByItem(docs)

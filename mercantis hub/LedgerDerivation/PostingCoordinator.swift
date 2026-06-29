@@ -50,6 +50,9 @@ public nonisolated enum PostingValidationError: LocalizedError {
     /// Delivering this line would ship more of an item than its Sales Order
     /// ordered, and the company has not opted into over-delivery.
     case overDelivery(item: String, ordered: Double, alreadyDelivered: Double, requested: Double)
+    /// Receiving this line would take in more of an item than its Purchase
+    /// Order ordered, and the company has not opted into over-receipt.
+    case overReceipt(item: String, ordered: Double, alreadyReceived: Double, requested: Double)
 
     public var errorDescription: String? {
         switch self {
@@ -64,6 +67,9 @@ public nonisolated enum PostingValidationError: LocalizedError {
         case .overDelivery(let item, let ordered, let alreadyDelivered, let requested):
             let remaining = Self.qtyText(max(0, ordered - alreadyDelivered))
             return "Over-delivery of \(item): the Sales Order has \(remaining) left to deliver (\(Self.qtyText(ordered)) ordered, \(Self.qtyText(alreadyDelivered)) already delivered) but this delivery ships \(Self.qtyText(requested)). Reduce the quantity, or enable “Allow Over-Delivery” in the Business Profile."
+        case .overReceipt(let item, let ordered, let alreadyReceived, let requested):
+            let remaining = Self.qtyText(max(0, ordered - alreadyReceived))
+            return "Over-receipt of \(item): the Purchase Order has \(remaining) left to receive (\(Self.qtyText(ordered)) ordered, \(Self.qtyText(alreadyReceived)) already received) but this receipt takes in \(Self.qtyText(requested)). Reduce the quantity, or enable “Allow Over-Receipt” in the Business Profile."
         }
     }
 
@@ -201,6 +207,7 @@ nonisolated final class PostingCoordinator {
                 ?? booksLockViolation(for: doc, engine: engine)
                 ?? (isReturn ? nil : stockAvailabilityViolation(for: doc, engine: engine, uomFactors: inputs.uomFactors))
                 ?? (isReturn ? nil : overDeliveryViolation(for: doc, engine: engine))
+                ?? (isReturn ? nil : overReceiptViolation(for: doc, engine: engine))
         }
         return inputs
     }
@@ -259,6 +266,60 @@ nonisolated final class PostingCoordinator {
     private static func allowsOverDelivery(engine: DocumentEngine) -> Bool {
         guard let company = (try? engine.list(docType: "Company"))?.first else { return false }
         if case .bool(true)? = company.fields["allow_over_delivery"] { return true }
+        return false
+    }
+
+    /// Buy-side mirror of `overDeliveryViolation`: reject a Purchase Receipt that
+    /// would take in more of an item than its linked Purchase Order ordered,
+    /// unless the company has opted into over-receipt. Already-received
+    /// quantities are summed from the order's other SUBMITTED receipts (read
+    /// OUTSIDE the write transaction). Dormant when the receipt isn't tied to an
+    /// order.
+    private static func overReceiptViolation(for doc: Document, engine: DocumentEngine) -> PostingValidationError? {
+        guard doc.docType == "PurchaseReceipt" else { return nil }
+        guard let orderId = nonEmptyString(doc.fields["purchase_order"]) else { return nil }
+        if allowsOverReceipt(engine: engine) { return nil }
+        guard let order = (try? engine.fetch(docType: "PurchaseOrder", id: orderId)) ?? nil else { return nil }
+
+        var ordered: [String: Double] = [:]
+        for row in order.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            ordered[itemId, default: 0] += asDouble(row.fields["qty"]) ?? 0
+        }
+        guard !ordered.isEmpty else { return nil }
+
+        let priorReceipts = (try? engine.list(
+            docType: "PurchaseReceipt",
+            filters: ["purchase_order": .string(orderId)],
+            applyRowAccess: false
+        )) ?? []
+        var alreadyReceived: [String: Double] = [:]
+        for receipt in priorReceipts where receipt.docStatus == 1 && receipt.id != doc.id {
+            for row in receipt.children["items"] ?? [] {
+                guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+                alreadyReceived[itemId, default: 0] += asDouble(row.fields["qty"]) ?? 0
+            }
+        }
+
+        var requested: [String: Double] = [:]
+        for row in doc.children["items"] ?? [] {
+            guard let itemId = nonEmptyString(row.fields["item"]) else { continue }
+            requested[itemId, default: 0] += asDouble(row.fields["qty"]) ?? 0
+        }
+
+        for (itemId, requestedQty) in requested {
+            guard let orderedQty = ordered[itemId] else { continue }
+            let prior = alreadyReceived[itemId] ?? 0
+            if prior + requestedQty > orderedQty + 0.0000001 {
+                return .overReceipt(item: itemId, ordered: orderedQty, alreadyReceived: prior, requested: requestedQty)
+            }
+        }
+        return nil
+    }
+
+    private static func allowsOverReceipt(engine: DocumentEngine) -> Bool {
+        guard let company = (try? engine.list(docType: "Company"))?.first else { return false }
+        if case .bool(true)? = company.fields["allow_over_receipt"] { return true }
         return false
     }
 
