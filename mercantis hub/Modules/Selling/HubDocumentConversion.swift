@@ -262,7 +262,11 @@ enum HubDocumentConversion {
 
     private static func draft(docType: String, company: String, fields: [String: FieldValue], items: [ChildRow]) -> Document {
         Document(
-            id: "", docType: docType, company: company, status: "",
+            // Start in the workflow's initial state ("Draft") rather than an
+            // empty status — every submittable target's workflow declares Draft
+            // as its default. An empty status makes the Submit ("Confirm Order")
+            // transition fail, since its `from` is "Draft".
+            id: "", docType: docType, company: company, status: "Draft",
             createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
             docStatus: 0, fields: fields, children: ["items": items]
         )

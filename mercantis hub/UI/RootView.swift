@@ -2360,12 +2360,16 @@ private struct HubDocumentEditor: View {
                 document = refreshed
             }
             // 3. Run the workflow's Submit transition so Document.status
-            //    moves Draft → Submitted (or whichever first transition the
-            //    workflow declares from the initial state).
+            //    moves Draft → Submitted. Check availability against the
+            //    document's LIVE status (not a hardcoded "Draft") so the lookup
+            //    stays consistent with the transition call below — otherwise a
+            //    document that started in any other state (e.g. a converted
+            //    draft whose status wasn't "Draft") makes the inner transition
+            //    throw `transitionNotAllowed`.
             if let workflow,
                let transition = (try? workflowEngine.availableTransitions(
                     workflow: workflow,
-                    currentState: "Draft",
+                    currentState: document.status,
                     userRoles: ["System Manager"],
                     document: document,
                     expressionEvaluator: evaluator

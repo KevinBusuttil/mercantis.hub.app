@@ -33,6 +33,7 @@ final class HubPurchaseOrderFulfilmentTests: XCTestCase {
         let receipt = HubDocumentConversion.purchaseOrderToReceipt(src, receivedByItem: ["A": 6, "B": 4])
 
         XCTAssertEqual(receipt.docType, "PurchaseReceipt")
+        XCTAssertEqual(receipt.status, "Draft")           // so "Submit" works on the converted draft
         let items = receipt.children["items"] ?? []
         XCTAssertEqual(items.count, 1, "Fully-received line B should be dropped")
         XCTAssertEqual(items[0].fields["item"], .string("A"))
