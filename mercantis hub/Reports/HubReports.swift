@@ -277,6 +277,40 @@ public enum HubReports: Sendable {
         allowedRoles: financeRoles
     )
 
+    /// X-Report — a mid-shift read of the **open** POS session: sales, tax,
+    /// payments by tender, and the expected cash drawer. Run any number of
+    /// times; it changes nothing.
+    public static let posXReport = ReportDefinition(
+        id: "pos-x-report",
+        name: "X-Report (Current Shift)",
+        docType: "POSSession",
+        columns: ["Item", "Amount"],
+        filters: [],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    /// Z-Report — the end-of-shift close for the most recently **closed**
+    /// session, adding the counted-cash reconciliation (over / short).
+    public static let posZReport = ReportDefinition(
+        id: "pos-z-report",
+        name: "Z-Report (Shift Close)",
+        docType: "POSSession",
+        columns: ["Item", "Amount"],
+        filters: [],
+        allowedRoles: financeRoles + salesRoles
+    )
+
+    /// POS Shifts — one row per session with its sales and over/short, newest
+    /// first: the shift history behind the X / Z reports.
+    public static let posShifts = ReportDefinition(
+        id: "pos-shifts",
+        name: "POS Shifts",
+        docType: "POSSession",
+        columns: ["Shift", "Opened", "Status", "Sales", "Items", "Over / (short)"],
+        filters: [],
+        allowedRoles: financeRoles + salesRoles
+    )
+
     public static let allReports: [ReportDefinition] = [
         salesRegister, purchaseRegister,
         stockLedgerView, stockOnHand,
@@ -285,6 +319,7 @@ public enum HubReports: Sendable {
         trialBalance, balanceSheet, incomeStatement, generalLedger,
         customerStatement, supplierLedger,
         vatSummary, postingAudit,
+        posXReport, posZReport, posShifts,
     ]
 
     public static func report(forId id: String) -> ReportDefinition? {
@@ -357,6 +392,12 @@ public enum HubReports: Sendable {
             )
         case "vat-summary":
             return try runVatSummary(engine: engine)
+        case "pos-x-report":
+            return try runShiftReport(engine: engine, closing: false)
+        case "pos-z-report":
+            return try runShiftReport(engine: engine, closing: true)
+        case "pos-shifts":
+            return try runPOSShifts(engine: engine)
         default:
             return nil
         }
@@ -1019,6 +1060,106 @@ public enum HubReports: Sendable {
             ]
         }
         return ReportResult(columns: columns, rows: rows)
+    }
+
+    // MARK: - POS shift reports (X / Z)
+
+    /// X-Report (open shift) / Z-Report (most recent closed shift) for a single
+    /// POS session: sales, tax, payments by tender, and the cash-drawer
+    /// reconciliation.
+    private static func runShiftReport(engine: DocumentEngine, closing: Bool) throws -> ReportResult {
+        let columns = (closing ? posZReport : posXReport).columns
+        let sessions = try engine.list(docType: "POSSession", applyRowAccess: false)
+        let session: Document?
+        if closing {
+            session = sessions.filter { asString($0.fields["status"]) == "Closed" }
+                .max { (asDate($0.fields["closing_date"]) ?? .distantPast) < (asDate($1.fields["closing_date"]) ?? .distantPast) }
+                ?? sessions.first { asString($0.fields["status"]) == "Open" }
+        } else {
+            session = sessions.first { asString($0.fields["status"]) == "Open" }
+                ?? sessions.max { (asDate($0.fields["opening_date"]) ?? .distantPast) < (asDate($1.fields["opening_date"]) ?? .distantPast) }
+        }
+        guard let session else {
+            return ReportResult(columns: columns, rows: [["No POS sessions yet", nil]])
+        }
+        let summary = shiftSummary(for: session, engine: engine)
+        return ReportResult(columns: columns, rows: shiftRows(summary, closing: closing))
+    }
+
+    /// POS Shifts — one row per session, newest first.
+    private static func runPOSShifts(engine: DocumentEngine) throws -> ReportResult {
+        let sessions = try engine.list(docType: "POSSession", applyRowAccess: false)
+            .sorted { (asDate($0.fields["opening_date"]) ?? .distantPast) > (asDate($1.fields["opening_date"]) ?? .distantPast) }
+        let rows: [[String?]] = sessions.map { session in
+            let summary = shiftSummary(for: session, engine: engine)
+            return [
+                summary.profile,
+                summary.opened.map(shiftDateText) ?? "—",
+                summary.status,
+                formatCurrency(summary.grossSales),
+                String(format: "%g", summary.itemsSold),
+                summary.overShort.map(formatCurrency),
+            ]
+        }
+        return ReportResult(columns: posShifts.columns, rows: rows)
+    }
+
+    private static func shiftSummary(for session: Document, engine: DocumentEngine) -> POSShiftReportBuilder.Summary {
+        let invoices = ((try? engine.list(docType: "POSInvoice", applyRowAccess: false)) ?? [])
+            .filter { asString($0.fields["pos_session"]) == session.id && $0.docStatus == 1 }
+        return POSShiftReportBuilder.summarize(
+            session: session, invoices: invoices,
+            profileName: posProfileName(session: session, engine: engine))
+    }
+
+    private static func posProfileName(session: Document, engine: DocumentEngine) -> String? {
+        guard let id = asString(session.fields["pos_profile"]),
+              let profile = try? engine.fetch(docType: "POSProfile", id: id) else { return nil }
+        return asString(profile.fields["profile_name"])
+    }
+
+    private static func shiftRows(_ summary: POSShiftReportBuilder.Summary, closing: Bool) -> [[String?]] {
+        var rows: [[String?]] = []
+        func line(_ label: String, _ value: String) { rows.append([label, value]) }
+        func section(_ title: String) { rows.append([title, nil]) }
+
+        line("Shift", summary.profile)
+        line("Status", summary.status)
+        if let opened = summary.opened { line("Opened", shiftDateText(opened)) }
+        if closing, let closed = summary.closed { line("Closed", shiftDateText(closed)) }
+
+        section("Sales")
+        line("Transactions", String(summary.transactions))
+        line("Items sold", String(format: "%g", summary.itemsSold))
+        line("Net sales", formatCurrency(summary.netSales))
+        line("Tax", formatCurrency(summary.tax))
+        line("Gross sales", formatCurrency(summary.grossSales))
+
+        section("Payments")
+        for tender in summary.tenders { line(tender.type, formatCurrency(tender.amount)) }
+        line("Total taken", formatCurrency(summary.totalTaken))
+
+        section("Cash drawer")
+        line("Opening float", formatCurrency(summary.openingFloat))
+        line("Cash sales", formatCurrency(summary.cashTaken))
+        line("Change given", formatCurrency(summary.changeGiven))
+        line("Expected in drawer", formatCurrency(summary.expectedCash))
+        if closing {
+            if let counted = summary.countedCash {
+                line("Counted", formatCurrency(counted))
+                line("Over / (short)", formatCurrency(summary.overShort ?? 0))
+            } else {
+                line("Counted", "—")
+            }
+        }
+        return rows
+    }
+
+    private static func shiftDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     // MARK: - Cell helpers

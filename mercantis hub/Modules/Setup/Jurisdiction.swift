@@ -55,6 +55,13 @@ enum HubJurisdictionLibrary {
 
     static let generic: Jurisdiction = all[0]
 
+    /// Distinct tax-regime labels across all jurisdictions, in definition order
+    /// — the options for the Business-Profile "Tax Regime" picker.
+    static let taxRegimeLabels: [String] = {
+        var seen = Set<String>()
+        return all.map(\.taxRegimeLabel).filter { seen.insert($0).inserted }
+    }()
+
     static func jurisdiction(id: String) -> Jurisdiction {
         all.first { $0.id == id } ?? generic
     }

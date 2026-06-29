@@ -15,6 +15,11 @@ extension POS {
                 .docType(POS.posInvoice, label: "POS Sales"),
                 .docType(POS.posSession, label: "Sessions")
             ]),
+            HubMenuGroup(label: "Reports", items: [
+                .report(id: HubReports.posXReport.id, label: HubReports.posXReport.name),
+                .report(id: HubReports.posZReport.id, label: HubReports.posZReport.name),
+                .report(id: HubReports.posShifts.id, label: HubReports.posShifts.name)
+            ]),
             HubMenuGroup(label: "Setup", items: [
                 .docType(POS.posProfile, label: "POS Profiles")
             ])

@@ -180,7 +180,7 @@ enum HubOnboardingSeeder {
             registered: registered,
             taxId: taxId,
             basis: basis,
-            businessType: preset?.rawValue ?? ""
+            businessType: preset?.title ?? ""
         )
 
         return summary
@@ -353,6 +353,12 @@ enum HubOnboardingSeeder {
         let existing = (try? engine.list(docType: "Company"))?.first
         if var company = existing {
             var changed = false
+            // Upgrade a legacy raw business-type value ("tradeDistribution") to
+            // its friendly label ("Trade / Distribution") so the picker shows it.
+            if case .string(let stored)? = company.fields["business_type"],
+               let preset = HubPreset(rawValue: stored) {
+                company.fields["business_type"] = .string(preset.title); changed = true
+            }
             for (key, value) in profileDefaults where isEmpty(company.fields[key]) {
                 company.fields[key] = value; changed = true
             }
