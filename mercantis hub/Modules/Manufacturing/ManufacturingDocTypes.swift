@@ -480,6 +480,22 @@ enum Manufacturing {
                             type: .link, required: false, linkedDocType: "Warehouse"),
             FieldDefinition(key: "items_to_manufacture", label: "Items to Manufacture",
                             type: .table, required: true, childDocType: "ProductionPlanItem"),
+            // Production progress, written back by ManufacturingDerivationService
+            // as the plan's Work Orders complete. allowOnSubmit so the
+            // post-completion update lands on the submitted plan; read-only in
+            // the form (derived totals, never typed in).
+            FieldDefinition(key: "production_status", label: "Production Status",
+                            type: .select, required: false,
+                            helpText: "How much of this plan has been produced. Updated automatically as its Work Orders complete.",
+                            defaultValue: .string("To Produce"),
+                            options: ["To Produce", "In Production", "Produced"],
+                            readOnlyExpression: "true", allowOnSubmit: true),
+            FieldDefinition(key: "produced_qty", label: "Produced Qty",
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true", allowOnSubmit: true),
+            FieldDefinition(key: "per_produced", label: "% Produced",
+                            type: .decimal, required: false,
+                            readOnlyExpression: "true", allowOnSubmit: true),
             FieldDefinition(key: "notes", label: "Notes",
                             type: .longText, required: false, allowOnSubmit: true)
         ],
@@ -504,6 +520,12 @@ enum Manufacturing {
             FormLayoutSection(
                 key: "items", title: "Items to Manufacture",
                 fieldKeys: ["items_to_manufacture"]
+            ),
+            FormLayoutSection(
+                key: "progress", title: "Progress",
+                helpText: "Updated automatically as this plan's Work Orders complete.",
+                columns: 2,
+                fieldKeys: ["production_status", "per_produced"]
             ),
             FormLayoutSection(
                 key: "notes", title: "Notes",

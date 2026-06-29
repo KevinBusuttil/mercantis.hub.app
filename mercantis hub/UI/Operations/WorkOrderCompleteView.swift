@@ -115,6 +115,14 @@ struct WorkOrderCompleteView: View {
                 }
             }
 
+            let shortages = MaterialAvailabilityChecker.shortages(forWorkOrder: wo, engine: engine)
+            if !shortages.isEmpty {
+                Label(shortages.map { "\($0.item): short \(formatQty($0.short))" }.joined(separator: ", "),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(MercantisTheme.warning)
+            }
+
             TextField("Produced quantity", text: $producedQty)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 240)
@@ -180,6 +188,15 @@ struct WorkOrderCompleteView: View {
         }
         guard let workflow = HubWorkflows.workflow(forDocTypeId: "WorkOrder") else {
             errorMessage = "Work Order workflow is unavailable."
+            return
+        }
+        // Proactively block completion when the source warehouse is short of a
+        // required material — otherwise the completion Stock Entry posted by the
+        // derivation service would fail after the Work Order is already marked
+        // Completed, leaving it inconsistent.
+        let shortages = MaterialAvailabilityChecker.shortages(forWorkOrder: wo, engine: engine)
+        if let message = MaterialAvailabilityChecker.message(for: shortages) {
+            errorMessage = message
             return
         }
         do {

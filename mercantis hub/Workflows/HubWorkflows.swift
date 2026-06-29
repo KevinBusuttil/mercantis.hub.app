@@ -31,6 +31,7 @@ public enum HubWorkflows: Sendable {
             WorkflowState(name: "Submitted", isDefault: false, allowEdit: false),
             WorkflowState(name: "Ordered",   isDefault: false, allowEdit: false),
             WorkflowState(name: "Lost",      isDefault: false, allowEdit: false),
+            WorkflowState(name: "Expired",   isDefault: false, allowEdit: false),
             WorkflowState(name: "Cancelled", isDefault: false, allowEdit: false),
         ],
         transitions: [
@@ -39,6 +40,12 @@ public enum HubWorkflows: Sendable {
             WorkflowTransition(from: "Submitted", to: "Ordered",   action: "Mark as Ordered",
                                allowedRoles: [systemManagerRole]),
             WorkflowTransition(from: "Submitted", to: "Lost",      action: "Mark as Lost",
+                               allowedRoles: [systemManagerRole]),
+            // Past its valid-till date the quote auto-expires (or the owner can
+            // mark it); a late acceptance can still convert it to an order.
+            WorkflowTransition(from: "Submitted", to: "Expired",   action: "Mark as Expired",
+                               allowedRoles: [systemManagerRole]),
+            WorkflowTransition(from: "Expired",   to: "Ordered",   action: "Mark as Ordered",
                                allowedRoles: [systemManagerRole]),
             WorkflowTransition(from: "Submitted", to: "Cancelled", action: "Cancel",
                                allowedRoles: [systemManagerRole]),

@@ -51,6 +51,12 @@ nonisolated enum SalesOrderFulfilmentCalculator {
                  none: "To Bill", partial: "Partially Billed", full: "Fully Billed")
     }
 
+    /// Manufacturing progress for a Production Plan (shared maths, plan labels).
+    static func productionStatus(plannedQty: Double, producedQty: Double) -> String {
+        progress(ordered: plannedQty, fulfilled: producedQty,
+                 none: "To Produce", partial: "In Production", full: "Produced")
+    }
+
     /// Percentage fulfilled, capped at 100 for display (over-fulfilment shows as
     /// fully complete rather than > 100%).
     static func percent(orderedQty: Double, fulfilledQty: Double) -> Double {

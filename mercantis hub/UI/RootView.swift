@@ -75,7 +75,7 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.12), value: showCommandPalette)
         .onAppear(perform: restoreNavStateIfNeeded)
-        .onAppear(perform: sweepOverdueInvoicesIfNeeded)
+        .onAppear(perform: runStartupSweepsIfNeeded)
         .onChange(of: selection) { _, newValue in
             // Keep the selected item's module open and remember where we are.
             if let moduleID = HubNavigation.moduleID(for: newValue, settings: visibility) {
@@ -130,12 +130,14 @@ struct RootView: View {
         showChartRepairAlert = true
     }
 
-    /// Mark past-due, still-unpaid invoices Overdue once per launch (there is no
-    /// background scheduler, so opening the app is the natural daily trigger).
-    private func sweepOverdueInvoicesIfNeeded() {
+    /// Run the time-driven status sweeps once per launch (there is no background
+    /// scheduler, so opening the app is the natural daily trigger): mark past-due
+    /// invoices Overdue and expired quotations Expired.
+    private func runStartupSweepsIfNeeded() {
         guard !overdueSwept else { return }
         overdueSwept = true
         InvoiceStatusService.sweepOverdue(engine: engine)
+        QuotationExpiryService.sweepExpired(engine: engine)
     }
 
     private var visibleModules: [HubModule] {
@@ -2377,6 +2379,17 @@ private struct HubDocumentEditor: View {
 
     private func runWorkflow(_ transition: WorkflowTransition) {
         guard let workflow else { return }
+        // Completing a Work Order consumes its raw materials; block it up front
+        // when the source warehouse is short, the same way the dedicated
+        // completion screen does, so the document can't reach Completed and then
+        // fail to post its Stock Entry.
+        if docType.id == "WorkOrder", transition.action == "Complete" {
+            let shortages = MaterialAvailabilityChecker.shortages(forWorkOrder: document, engine: engine)
+            if let message = MaterialAvailabilityChecker.message(for: shortages) {
+                errorMessage = message
+                return
+            }
+        }
         do {
             _ = try workflowEngine.transition(
                 document: &document,

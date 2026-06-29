@@ -76,9 +76,15 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
         let transitionToken = emitter.subscribe(WorkflowTransitionEvent.self) { [weak self] event in
             self?.handleTransition(event)
         }
+        // Roll production progress back to a Work Order's Production Plan when
+        // the order is cancelled (its produced qty no longer counts).
+        let cancelToken = emitter.subscribe(DocumentCancelledEvent.self) { [weak self] event in
+            self?.handleCancel(document: event.document)
+        }
         tokens.append(savedToken)
         tokens.append(submitToken)
         tokens.append(transitionToken)
+        tokens.append(cancelToken)
     }
 
     private func handleSave(document: Document) {
@@ -114,7 +120,72 @@ public nonisolated final class ManufacturingDerivationService: @unchecked Sendab
         } catch {
             print("ManufacturingDerivation completion error for WO \(event.document.id): \(error)")
         }
+        // Roll the produced quantity up to the originating Production Plan.
+        recomputePlanIfLinked(workOrder: event.document)
     }
+
+    private func handleCancel(document: Document) {
+        guard document.docType == "WorkOrder" else { return }
+        recomputePlanIfLinked(workOrder: document)
+    }
+
+    private func recomputePlanIfLinked(workOrder: Document) {
+        guard case .string(let planId)? = workOrder.fields["against_production_plan"],
+              !planId.isEmpty else { return }
+        do {
+            try recomputeProductionPlan(planId: planId, triggeredBy: workOrder)
+        } catch {
+            print("ManufacturingDerivation plan rollup error for \(planId): \(error)")
+        }
+    }
+
+    /// Recompute a Production Plan's produced quantity / status from every
+    /// Completed Work Order raised against it (cancelled ones drop out), and
+    /// persist the changed fields. No-ops when nothing changed. The plan's
+    /// progress fields are `allowOnSubmit`, so this lands on the submitted plan;
+    /// the write fires `DocumentSavedEvent`, which this service handles only for
+    /// `BOM`, so there's no re-entrancy.
+    ///
+    /// `triggeredBy` is the Work Order whose event drove this recompute; its
+    /// in-memory copy overrides the persisted row, because the `Complete`
+    /// workflow-transition event fires before the order's `Completed` status is
+    /// saved — without this, the just-completed order would be missed.
+    private func recomputeProductionPlan(planId: String, triggeredBy: Document?) throws {
+        guard var plan = try engine.fetch(docType: "ProductionPlan", id: planId) else { return }
+        let planned = (plan.children["items_to_manufacture"] ?? [])
+            .reduce(0.0) { $0 + asDouble($1.fields["planned_qty"]) }
+        var workOrders = (try? engine.list(
+            docType: "WorkOrder",
+            filters: ["against_production_plan": .string(planId)],
+            applyRowAccess: false
+        )) ?? []
+        if let triggeredBy {
+            if let idx = workOrders.firstIndex(where: { $0.id == triggeredBy.id }) {
+                workOrders[idx] = triggeredBy
+            } else {
+                workOrders.append(triggeredBy)
+            }
+        }
+        let produced = workOrders
+            .filter { $0.status == "Completed" }
+            .reduce(0.0) { $0 + asDouble($1.fields["produced_qty"]) }
+        let percent = planned > 0 ? min(100, (produced / planned) * 100) : 0
+
+        var changed = false
+        changed = setField(&plan, "produced_qty", .double(round2(produced))) || changed
+        changed = setField(&plan, "per_produced", .double(round2(percent))) || changed
+        changed = setField(&plan, "production_status",
+                           .string(SalesOrderFulfilmentCalculator.productionStatus(plannedQty: planned, producedQty: produced))) || changed
+        if changed { try engine.save(plan, context: systemContext) }
+    }
+
+    private func setField(_ doc: inout Document, _ key: String, _ value: FieldValue) -> Bool {
+        if doc.fields[key] == value { return false }
+        doc.fields[key] = value
+        return true
+    }
+
+    private func round2(_ value: Double) -> Double { (value * 100).rounded() / 100 }
 
     // MARK: - 1. BOM rollup
 

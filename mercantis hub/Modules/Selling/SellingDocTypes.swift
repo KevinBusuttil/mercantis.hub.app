@@ -210,31 +210,6 @@ enum Selling {
         ])
     )
 
-    private static let salesParentLayout: [FormLayoutSection] = [
-        FormLayoutSection(
-            key: "header",
-            title: "Header",
-            columns: 2,
-            fieldKeys: ["customer", "transaction_date", "currency", "price_list"]
-        ),
-        FormLayoutSection(
-            key: "items",
-            title: "Items",
-            fieldKeys: ["items"]
-        ),
-        FormLayoutSection(
-            key: "totals",
-            title: "Totals",
-            columns: 2,
-            fieldKeys: ["total_qty", "grand_total"]
-        ),
-        FormLayoutSection(
-            key: "notes",
-            title: "Notes",
-            fieldKeys: ["notes"]
-        )
-    ]
-
     /// Submittable transactional DocTypes need the version-checked /
     /// immutable-after-submit policy.
     private static let submittableSyncPolicy = SyncPolicy(
@@ -292,9 +267,44 @@ enum Selling {
         return fields
     }
 
+    /// Quotation layout = the shared sales layout plus a "valid till" date in
+    /// the header and the Opportunity link, so a quote shows its expiry and the
+    /// pipeline deal it belongs to.
+    private static let quotationLayout: [FormLayoutSection] = [
+        FormLayoutSection(
+            key: "header",
+            title: "Header",
+            columns: 2,
+            fieldKeys: ["customer", "transaction_date", "valid_till", "currency", "price_list"]
+        ),
+        FormLayoutSection(
+            key: "items",
+            title: "Items",
+            fieldKeys: ["items"]
+        ),
+        FormLayoutSection(
+            key: "totals",
+            title: "Totals",
+            columns: 2,
+            fieldKeys: ["total_qty", "grand_total"]
+        ),
+        FormLayoutSection(
+            key: "pipeline",
+            title: "Pipeline",
+            helpText: "The Opportunity this quote was raised for, if any.",
+            fieldKeys: ["opportunity"]
+        ),
+        FormLayoutSection(
+            key: "notes",
+            title: "Notes",
+            fieldKeys: ["notes"]
+        )
+    ]
+
     /// Quotation — pre-sale offer to a Customer / Lead. Wall 6 makes it
     /// submittable with the `wf-quotation` workflow (Draft → Submitted →
-    /// Ordered / Lost / Cancelled).
+    /// Ordered / Lost / Expired / Cancelled). `valid_till` drives the
+    /// auto-expiry sweep; `opportunity` ties it to a CRM deal.
     static let quotation = DocType(
         id: "Quotation",
         name: "Quotation",
@@ -302,7 +312,14 @@ enum Selling {
         appId: HubManifest.appID,
         isChildTable: false,
         isSubmittable: true,
-        fields: salesParentFields(includeDelivery: true),
+        fields: salesParentFields(includeDelivery: true) + [
+            FieldDefinition(key: "valid_till", label: "Valid Till",
+                            type: .date, required: false,
+                            helpText: "After this date the quote is marked Expired automatically. Leave blank for no expiry.",
+                            allowOnSubmit: true),
+            FieldDefinition(key: "opportunity", label: "Opportunity",
+                            type: .link, required: false, linkedDocType: "Opportunity")
+        ],
         permissions: [systemManagerPermission],
         workflowId: "wf-quotation",
         autoname: "naming_series:SQTN-.YYYY.-.####",
@@ -310,7 +327,7 @@ enum Selling {
         indexes: [],
         searchFields: ["customer"],
         titleField: "customer",
-        formLayout: FormLayout(sections: salesParentLayout)
+        formLayout: FormLayout(sections: quotationLayout)
     )
 
     /// Fulfilment progress, written back by `SalesOrderFulfilmentService` as
