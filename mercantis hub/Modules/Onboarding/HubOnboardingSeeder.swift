@@ -336,30 +336,42 @@ enum HubOnboardingSeeder {
         basis: HubAccountingBasis,
         businessType: String = ""
     ) -> Bool {
-        // The jurisdiction/identity fields backfilled onto the Company record.
-        var profileDefaults: [String: FieldValue] = [
+        // The wizard choices the user just made (identity, jurisdiction, tax,
+        // accounting basis). These are applied AUTHORITATIVELY — overwriting any
+        // existing value — so re-running setup actually updates them. (They used
+        // to be backfill-only, which is why a changed Accounting Basis / Country
+        // / Tax Regime never took effect on an existing profile.)
+        var authoritative: [String: FieldValue] = [
             "default_currency": .string(currencyCode),
             "country": .string(jurisdiction.name),
             "tax_regime": .string(jurisdiction.taxRegimeLabel),
             "tax_registered": .bool(registered),
             "accounting_basis": .string(basis.rawValue),
         ]
-        if !businessType.isEmpty { profileDefaults["business_type"] = .string(businessType) }
-        for (key, accountId) in accountDefaults { profileDefaults[key] = .string(accountId) }
-        if let defaultTaxCode { profileDefaults["default_tax_code"] = .string(defaultTaxCode) }
+        if !businessType.isEmpty { authoritative["business_type"] = .string(businessType) }
+        if let defaultTaxCode { authoritative["default_tax_code"] = .string(defaultTaxCode) }
         let trimmedTaxId = taxId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmedTaxId.isEmpty { profileDefaults["vat_tax_number"] = .string(trimmedTaxId) }
+        if !trimmedTaxId.isEmpty { authoritative["vat_tax_number"] = .string(trimmedTaxId) }
+
+        // The default-account links — BACKFILLED only, so a manual re-mapping is
+        // never clobbered by a re-seed.
+        var accountLinks: [String: FieldValue] = [:]
+        for (key, accountId) in accountDefaults { accountLinks[key] = .string(accountId) }
 
         let existing = (try? engine.list(docType: "Company"))?.first
         if var company = existing {
             var changed = false
             // Upgrade a legacy raw business-type value ("tradeDistribution") to
-            // its friendly label ("Trade / Distribution") so the picker shows it.
-            if case .string(let stored)? = company.fields["business_type"],
+            // its friendly label, when this run isn't itself setting one.
+            if authoritative["business_type"] == nil,
+               case .string(let stored)? = company.fields["business_type"],
                let preset = HubPreset(rawValue: stored) {
                 company.fields["business_type"] = .string(preset.title); changed = true
             }
-            for (key, value) in profileDefaults where isEmpty(company.fields[key]) {
+            for (key, value) in authoritative where company.fields[key] != value {
+                company.fields[key] = value; changed = true
+            }
+            for (key, value) in accountLinks where isEmpty(company.fields[key]) {
                 company.fields[key] = value; changed = true
             }
             if isEmpty(company.fields["business_name"]), !businessName.isEmpty {
@@ -372,7 +384,8 @@ enum HubOnboardingSeeder {
         var fields: [String: FieldValue] = [
             "business_name": .string(businessName.isEmpty ? "My Business" : businessName),
         ]
-        for (key, value) in profileDefaults { fields[key] = value }
+        for (key, value) in authoritative { fields[key] = value }
+        for (key, value) in accountLinks { fields[key] = value }
         let company = Document(
             id: "", docType: "Company", company: "", status: "",
             createdAt: Date(), updatedAt: Date(), syncVersion: 0, syncState: .local,
