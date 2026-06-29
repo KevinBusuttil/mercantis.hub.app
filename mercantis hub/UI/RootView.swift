@@ -152,7 +152,7 @@ struct RootView: View {
                 MercantisSidebarBrandHeader(
                     title: "Neuradix Atlas",
                     subtitle: "Your business control centre",
-                    systemImage: "shippingbox"
+                    systemImage: "globe.americas.fill"
                 )
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))

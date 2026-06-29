@@ -81,7 +81,7 @@ struct HubHomeView: View {
     private var welcomeHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image(systemName: "shippingbox.fill")
+                Image(systemName: "globe.americas.fill")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(MercantisTheme.brandPrimary)
                 Text(HubManifest.appName)
