@@ -24,7 +24,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		0AA63F2D2F8C4394006B68B5 /* mercantis hub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "mercantis hub.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		0AA63F2D2F8C4394006B68B5 /* mercantis hub.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "mercantis hub.app"; path = "Neuradix Atlas.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		0AB1000000000000000000A2 /* mercantis hubTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "mercantis hubTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
