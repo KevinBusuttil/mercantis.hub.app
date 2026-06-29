@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// The app's Settings (⌘,) window. Houses workspace configuration that used
 /// to clutter the navigation sidebar: the business-type preset, the optional
@@ -64,6 +67,13 @@ struct HubSettingsView: View {
             Section("Setup") {
                 Button("Run setup wizard…") {
                     settings.onboardingComplete = false
+                    #if os(macOS)
+                    // The wizard opens as a sheet on the MAIN window; close this
+                    // Settings window (the key window) so the wizard isn't left
+                    // hidden behind it.
+                    NSApplication.shared.keyWindow?.close()
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    #endif
                 }
                 .help("Re-open the first-run wizard to change your business type or re-seed defaults.")
             }
