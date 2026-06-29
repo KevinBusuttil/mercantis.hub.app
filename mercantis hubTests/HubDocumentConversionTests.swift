@@ -30,6 +30,7 @@ final class HubDocumentConversionTests: XCTestCase {
 
         XCTAssertEqual(order.docType, "SalesOrder")
         XCTAssertEqual(order.docStatus, 0)               // a fresh draft
+        XCTAssertEqual(order.status, "Draft")            // workflow initial state, so Submit works
         XCTAssertTrue(order.id.isEmpty)                  // unsaved; engine names it
         XCTAssertEqual(order.company, "Acme")
         // Lineage + header carried over.

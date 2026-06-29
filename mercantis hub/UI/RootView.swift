@@ -1101,6 +1101,8 @@ private struct HubDocumentEditor: View {
             }
         }
         .frame(minWidth: 480, minHeight: 400)
+        .onAppear(perform: healWorkflowStatusIfNeeded)
+        .onChange(of: document.id) { _, _ in healWorkflowStatusIfNeeded() }
         .confirmationDialog(
             pendingConfirmation?.title ?? "",
             isPresented: confirmationBinding,
@@ -2328,6 +2330,26 @@ private struct HubDocumentEditor: View {
 
     // MARK: - Engine actions
 
+    /// Repair documents left with a blank (or still-"Draft") workflow status
+    /// after a submit whose status transition failed — the converted-document
+    /// bug fixed in this branch left some orders posted (docStatus 1) without
+    /// their workflow status advancing. Backfills the status to the Submit
+    /// transition's actual target (e.g. Sales Delivery → "Scheduled", most
+    /// others → "Submitted"). Idempotent: a healthy document is left untouched.
+    private func healWorkflowStatusIfNeeded() {
+        guard docType.isSubmittable, document.docStatus == 1, !document.id.isEmpty,
+              let workflow else { return }
+        guard document.status.isEmpty || document.status == "Draft" else { return }
+        guard let submitTarget = workflow.transitions.first(where: { $0.action == "Submit" })?.to
+        else { return }
+        var healed = document
+        healed.status = submitTarget
+        if let saved = try? engine.save(healed) {
+            document = saved
+            onPersist()
+        }
+    }
+
     private func submit() {
         do {
             // Phase 2 (VAT): make sure taxes + totals reflect the latest
@@ -2360,12 +2382,16 @@ private struct HubDocumentEditor: View {
                 document = refreshed
             }
             // 3. Run the workflow's Submit transition so Document.status
-            //    moves Draft → Submitted (or whichever first transition the
-            //    workflow declares from the initial state).
+            //    moves Draft → Submitted. Check availability against the
+            //    document's LIVE status (not a hardcoded "Draft") so the lookup
+            //    stays consistent with the transition call below — otherwise a
+            //    document that started in any other state (e.g. a converted
+            //    draft whose status wasn't "Draft") makes the inner transition
+            //    throw `transitionNotAllowed`.
             if let workflow,
                let transition = (try? workflowEngine.availableTransitions(
                     workflow: workflow,
-                    currentState: "Draft",
+                    currentState: document.status,
                     userRoles: ["System Manager"],
                     document: document,
                     expressionEvaluator: evaluator
@@ -2454,6 +2480,22 @@ private struct HubDocumentEditor: View {
                 return
             }
         }
+        // Re-validate against the live status before transitioning. A workflow
+        // button can go stale if the document changed since it was rendered
+        // (e.g. a derivation service updated it); transitioning anyway throws a
+        // raw WorkflowError. Refresh and explain instead.
+        let live = (try? workflowEngine.availableTransitions(
+            workflow: workflow,
+            currentState: document.status,
+            userRoles: ["System Manager"],
+            document: document,
+            expressionEvaluator: evaluator
+        )) ?? []
+        guard live.contains(where: { $0.action == transition.action }) else {
+            refreshBinding(toID: document.id)
+            errorMessage = "That action isn’t available anymore — this \(docType.name.lowercased())’s status changed since the button appeared. I’ve refreshed it; check the current status and try again."
+            return
+        }
         do {
             _ = try workflowEngine.transition(
                 document: &document,
@@ -2488,6 +2530,11 @@ private struct HubDocumentEditor: View {
     }
 
     private func humanReadable(_ error: Error) -> String {
+        // WorkflowError isn't a LocalizedError, so its NSError description is the
+        // unhelpful "… WorkflowError error 0." — translate it to plain language.
+        if case WorkflowEngine.WorkflowError.transitionNotAllowed(let action, _, _) = error {
+            return "“\(action)” isn’t available for this \(docType.name.lowercased()) in its current status. It may have changed since the button appeared — refresh and try again."
+        }
         let description = (error as NSError).localizedDescription
         if description.isEmpty || description == "The operation couldn’t be completed." {
             return String(describing: error)

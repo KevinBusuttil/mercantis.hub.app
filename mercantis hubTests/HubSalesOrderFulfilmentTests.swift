@@ -92,6 +92,7 @@ final class HubSalesOrderFulfilmentTests: XCTestCase {
         let delivery = HubDocumentConversion.salesOrderToDelivery(src, deliveredByItem: ["A": 6, "B": 4])
 
         XCTAssertEqual(delivery.docType, "SalesDelivery")
+        XCTAssertEqual(delivery.status, "Draft")          // so "Submit" works on the converted draft
         let items = delivery.children["items"] ?? []
         XCTAssertEqual(items.count, 1, "Fully-delivered line B should be dropped")
         XCTAssertEqual(items[0].fields["item"], .string("A"))
