@@ -1101,6 +1101,8 @@ private struct HubDocumentEditor: View {
             }
         }
         .frame(minWidth: 480, minHeight: 400)
+        .onAppear(perform: healWorkflowStatusIfNeeded)
+        .onChange(of: document.id) { _, _ in healWorkflowStatusIfNeeded() }
         .confirmationDialog(
             pendingConfirmation?.title ?? "",
             isPresented: confirmationBinding,
@@ -2327,6 +2329,26 @@ private struct HubDocumentEditor: View {
     }
 
     // MARK: - Engine actions
+
+    /// Repair documents left with a blank (or still-"Draft") workflow status
+    /// after a submit whose status transition failed — the converted-document
+    /// bug fixed in this branch left some orders posted (docStatus 1) without
+    /// their workflow status advancing. Backfills the status to the Submit
+    /// transition's actual target (e.g. Sales Delivery → "Scheduled", most
+    /// others → "Submitted"). Idempotent: a healthy document is left untouched.
+    private func healWorkflowStatusIfNeeded() {
+        guard docType.isSubmittable, document.docStatus == 1, !document.id.isEmpty,
+              let workflow else { return }
+        guard document.status.isEmpty || document.status == "Draft" else { return }
+        guard let submitTarget = workflow.transitions.first(where: { $0.action == "Submit" })?.to
+        else { return }
+        var healed = document
+        healed.status = submitTarget
+        if let saved = try? engine.save(healed) {
+            document = saved
+            onPersist()
+        }
+    }
 
     private func submit() {
         do {
